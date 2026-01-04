@@ -1,0 +1,16 @@
+{
+    "name": "tobari",
+    "version": "0.0.0",
+    "private": true,
+    "workspaces": [
+        "packages/*",
+        "apps/*"
+    ],
+    "scripts": {
+        "test": "bun test"
+    },
+    "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5.0.0"
+    }
+}
