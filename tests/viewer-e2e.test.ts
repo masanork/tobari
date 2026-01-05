@@ -2,9 +2,8 @@ import { test, expect } from '@playwright/test';
 import path from 'path';
 
 test('viewer should render juminhyo correctly', async ({ page }) => {
-    const filePath = path.resolve('juminhyo-verifiable.html');
-
-    // Load the generated HTML file
+    // Path to the generated juminhyo-verifiable.html
+    const filePath = path.resolve('examples/juminhyo/juminhyo-verifiable.html');
     await page.goto(`file://${filePath}`);
 
     // Check for the title
@@ -15,12 +14,13 @@ test('viewer should render juminhyo correctly', async ({ page }) => {
     const memberName = page.locator('.name-val').first();
     await expect(memberName).not.toBeEmpty();
 
-    // Check for the "Verified" badge
-    const badge = page.locator('.status-badge');
-    await expect(badge).toBeVisible();
-    await expect(badge).toContainText('検証済みバイナリ');
+    // The badge has been removed for a more subtle design.
+    // Let's check for the meta-info in the footer instead.
+    const metaInfo = page.locator('.meta-info');
+    await expect(metaInfo).toBeVisible();
+    await expect(metaInfo).toContainText('Sig: ES384');
 
-    // Check if the font is applied (indirectly by checking if the element is visible and has content)
+    // Check if the font is applied
     const body = page.locator('body');
     await expect(body).toHaveCSS('font-family', /TobariSubset/);
 });

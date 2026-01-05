@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tobari Document Verifier</title>
+    <style>
+        :root {
+            --primary-color: #4a5568;
+            --bg-color: #f7fafc;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--primary-color);
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 500;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #edf2f7;
+            padding-bottom: 15px;
+        }
+
+        .drop-zone {
+            border: 2px dashed #cbd5e0;
+            border-radius: 6px;
+            padding: 60px 20px;
+            text-align: center;
+            color: #a0aec0;
+            transition: all 0.2s;
+            cursor: pointer;
+            background: #fff;
+        }
+
+        .drop-zone.dragover {
+            border-color: #4a5568;
+            background: #edf2f7;
+            color: #4a5568;
+        }
+
+        .result-section {
+            margin-top: 40px;
+            border-top: 1px solid #edf2f7;
+            padding-top: 30px;
+            display: none;
+        }
+
+        .status-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .status-icon {
+            font-size: 24px;
+            margin-right: 12px;
+        }
+
+        .status-text {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .is-valid {
+            color: #2f855a;
+        }
+
+        .is-invalid {
+            color: #c53030;
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 10px;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+
+        .meta-label {
+            color: #718096;
+        }
+
+        .data-preview {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 20px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+
+        .sd-info {
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .disclosed {
+            color: #38a169;
+        }
+
+        .undisclosed {
+            color: #718096;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Tobari 整合性検証ツール</h1>
+        <div id="drop-zone" class="drop-zone">
+            検証するファイル（HTMLまたは.tobari）をここに移動、またはクリックして選択
+        </div>
+        <input type="file" id="file-input" style="display: none">
+
+        <div id="result-card" class="result-section">
+            <div class="status-header">
+                <span id="status-icon" class="status-icon"></span>
+                <span id="status-text" class="status-text"></span>
+            </div>
+
+            <div class="meta-grid">
+                <div class="meta-label">署名アルゴリズム</div>
+                <div id="alg"></div>
+                <div class="meta-label">スキーマID</div>
+                <div id="schema-id"></div>
+                <div class="meta-label">証明書発行日時</div>
+                <div id="created-at"></div>
+            </div>
+
+            <div style="font-weight: 500; margin-bottom: 10px; font-size: 14px;">検証済みデータ内容</div>
+            <div id="payload-view" class="data-preview"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        /* BUNDLED_VERIFIER_JS */
+    </script>
+</body>
+
+</html>

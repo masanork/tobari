@@ -6,9 +6,9 @@ import { subsetFont, bufferToDataUrl } from './font-engine';
 async function buildViewer() {
     console.log("Bundling Self-Contained Tobari Viewer with Font Embedding...");
 
-    const tobariBinaryPath = path.resolve('juminhyo.tobari');
+    const tobariBinaryPath = path.resolve('examples/juminhyo/juminhyo.tobari');
     if (!fs.existsSync(tobariBinaryPath)) {
-        console.error("Error: juminhyo.tobari not found. Run gen-tobari.ts first.");
+        console.error("Error: juminhyo.tobari not found. Run examples/juminhyo/gen-tobari.ts first.");
         process.exit(1);
     }
 
@@ -70,7 +70,7 @@ if (window.initTobari) {
     // Find the script tag and replace it
     const finalHtml = html.replace(/<script type="module">[\s\S]*?<\/script>/, scriptBlock);
 
-    const outPath = path.resolve('juminhyo-verifiable.html');
+    const outPath = path.resolve('examples/juminhyo/juminhyo-verifiable.html');
     fs.writeFileSync(outPath, finalHtml);
     console.log(`Successfully generated verifiable viewer: ${outPath} (${finalHtml.length} bytes)`);
 }
