@@ -95,16 +95,31 @@ async function main() {
                     );
 
                     const deviceAuthCose = result.doc.deviceSigned.deviceAuth.deviceSignature;
-                    const { verifyCoseSign1 } = await import('@tobari/crypto/validator');
-                    // Note: verifyCoseSign1 signature differs from logic needed here?
-                    // We need to verify the detached payload implied by mdoc structure?
-                    // For now, let's assume standard COSE validation on the blob.
-                    // Actually, the payload is "DeviceAuthentication" structure including SessionTranscript.
 
-                    // In the present-cli, we signed the full payload and embedded it.
-                    // So verifyCoseSign1 should work if we pass the key.
+                    // Manual Verification of COSE_Sign1 (Device Auth)
+                    const coseArray = decode(deviceAuthCose);
+                    if (!Array.isArray(coseArray) || coseArray.length !== 4) {
+                        throw new Error("Invalid Device Auth COSE structure");
+                    }
+                    const [protectedHeaderBytes, unprotectedHeader, payloadBytes, signature] = coseArray;
 
-                    const isValid = await verifyCoseSign1(deviceAuthCose, deviceKey);
+                    // Setup Sig_structure
+                    const sigStructure = [
+                        "Signature1",
+                        protectedHeaderBytes,
+                        new Uint8Array(0), // external_aad
+                        payloadBytes
+                    ];
+
+                    const { encodeCanonical } = await import('@tobari/crypto/cbor');
+                    const toBeSigned = encodeCanonical(sigStructure);
+
+                    const isValid = await crypto.subtle.verify(
+                        { name: "ECDSA", hash: { name: "SHA-384" } },
+                        deviceKey,
+                        signature,
+                        toBeSigned as any
+                    );
 
                     if (isValid) {
                         console.log("✅ Device Signature: VALID");
@@ -116,9 +131,22 @@ async function main() {
                         const sessionTranscript = payload[1];
                         // check if sessionTranscript follows our simplified structure
                         if (Array.isArray(sessionTranscript) && Array.isArray(sessionTranscript[2])) {
-                            const [nonce, audience] = sessionTranscript[2];
-                            console.log(`   Session Nonce: ${nonce}`);
-                            console.log(`   Audience: ${audience}`);
+                            const handover = sessionTranscript[2];
+                            if (Array.isArray(handover) && handover.length === 3) {
+                                // OID4VP Handover: [clientIdHash, responseUriHash, nonce]
+                                const [clientIdHash, responseUriHash, nonce] = handover;
+                                console.log(`\n   [OID4VP Session Data]`);
+                                console.log(`   Nonce: ${nonce}`);
+                                console.log(`   ClientID Hash (SHA-256): ${Buffer.from(clientIdHash).toString('hex')}`);
+                                console.log(`   ResponseURI Hash (SHA-256): ${Buffer.from(responseUriHash).toString('hex')}`);
+                            } else if (Array.isArray(handover) && handover.length === 2) {
+                                // Legacy/Simplified: [nonce, audience]
+                                const [nonce, audience] = handover;
+                                console.log(`   Session Nonce: ${nonce}`);
+                                console.log(`   Audience: ${audience}`);
+                            } else {
+                                console.log(`   Unknown Handover Format:`, handover);
+                            }
                         }
                     } else {
                         console.log("❌ Device Signature: INVALID");
@@ -157,9 +185,6 @@ async function main() {
             try {
                 const deviceKeyMap = mso.deviceKeyInfo?.deviceKey; // mso is available here
                 if (!deviceKeyMap) throw new Error("No Device Key found in Issuer MSO");
-
-                // DEBUG: Inspect structure
-                console.log('DEBUG: deviceKeyMap:', deviceKeyMap);
 
                 // Convert COSE Key Map to CryptoKey
                 let x, y;
@@ -218,9 +243,22 @@ async function main() {
                     const payload = decode(coseStruct[2]);
                     const sessionTranscript = payload[1];
                     if (Array.isArray(sessionTranscript) && Array.isArray(sessionTranscript[2])) {
-                        const [nonce, audience] = sessionTranscript[2];
-                        console.log(`   Session Nonce: ${nonce}`);
-                        console.log(`   Audience: ${audience}`);
+                        const handover = sessionTranscript[2];
+                        if (Array.isArray(handover) && handover.length === 3) {
+                            // OID4VP Handover: [clientIdHash, responseUriHash, nonce]
+                            const [clientIdHash, responseUriHash, nonce] = handover;
+                            console.log(`\n   [OID4VP Session Data]`);
+                            console.log(`   Nonce: ${nonce}`);
+                            console.log(`   ClientID Hash (SHA-256): ${Buffer.from(clientIdHash).toString('hex')}`);
+                            console.log(`   ResponseURI Hash (SHA-256): ${Buffer.from(responseUriHash).toString('hex')}`);
+                        } else if (Array.isArray(handover) && handover.length === 2) {
+                            // Legacy/Simplified: [nonce, audience]
+                            const [nonce, audience] = handover;
+                            console.log(`   Session Nonce: ${nonce}`);
+                            console.log(`   Audience: ${audience}`);
+                        } else {
+                            console.log(`   Unknown Handover Format:`, handover);
+                        }
                     }
                 } else {
                     console.log("❌ Device Signature: INVALID");

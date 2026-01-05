@@ -8,21 +8,27 @@ async function main() {
     const outputPath = process.argv[3];
     const fieldsArg = process.argv.find(arg => arg.startsWith('--fields='));
     const nonceArg = process.argv.find(arg => arg.startsWith('--nonce='));
-    const audienceArg = process.argv.find(arg => arg.startsWith('--audience='));
+    const audienceArg = process.argv.find(arg => arg.startsWith('--audience=')); // Client ID
+    const responseUriArg = process.argv.find(arg => arg.startsWith('--response-uri='));
 
     if (!inputPath || !outputPath || !fieldsArg) {
-        console.log("\nUsage: bun run present-cli.ts <input.cose> <output.cose> --fields=key1,key2 [--nonce=abc --audience=xyz]");
+        console.log("\nUsage: bun run present-cli.ts <input.cose> <output.cose> --fields=key1,key2 [--nonce=... --audience=... --response-uri=...]");
         process.exit(1);
     }
 
     const fields = fieldsArg.split('=')[1].split(',').map(s => s.trim());
     const nonce = nonceArg ? nonceArg.split('=')[1] : null;
-    const audience = audienceArg ? audienceArg.split('=')[1] : null;
+    const clientId = audienceArg ? audienceArg.split('=')[1] : null;
+    const responseUri = responseUriArg ? responseUriArg.split('=')[1] : clientId; // Default to clientId if not provided
 
     console.log(`\nGenerating Verifiable Presentation...`);
     console.log(`Input: ${inputPath}`);
     console.log(`Disclosing: ${fields.join(', ')}`);
-    if (nonce) console.log(`Session: Nonce=${nonce}, Audience=${audience || 'None'}`);
+    if (nonce) {
+        console.log(`Session: Nonce=${nonce}`);
+        console.log(`         ClientID=${clientId}`);
+        console.log(`         ResponseURI=${responseUri}`);
+    }
 
     const binary = fs.readFileSync(path.resolve(inputPath));
     const doc = decode(binary);
@@ -31,7 +37,7 @@ async function main() {
     const vp = await createPresentation(doc, fields);
 
     // Add DeviceSigned (Holder Binding) if nonce is present
-    if (nonce) {
+    if (nonce && clientId && responseUri) {
         if (!fs.existsSync("device-key.json")) {
             console.error("Error: device-key.json not found. Cannot sign presentation.");
             process.exit(1);
@@ -41,15 +47,21 @@ async function main() {
             "jwk", jwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["sign"]
         );
 
+        // OID4VP Handover Construction
+        const textEncoder = new TextEncoder();
+        const clientIdHash = new Uint8Array(await crypto.subtle.digest("SHA-256", textEncoder.encode(clientId)));
+        const responseUriHash = new Uint8Array(await crypto.subtle.digest("SHA-256", textEncoder.encode(responseUri)));
+
+        // Handover = [clientIdHash, responseUriHash, nonce]
+        const oid4vpHandover = [clientIdHash, responseUriHash, nonce];
+
         // SessionTranscript = [DeviceEngagementBytes, ERCReaderKeyBytes, Handover]
-        // For CLI, we simplify and just sign [nonce, audience] as the transcript
-        const sessionTranscript = [null, null, [nonce, audience]];
+        const sessionTranscript = [null, null, oid4vpHandover];
+
         const { encodeCanonical } = await import('@tobari/crypto/cbor');
         const { signCoseSign1 } = await import('@tobari/crypto/cose');
 
         // DeviceAuthentication = ["DeviceAuthentication", SessionTranscript, DocType, DeviceNameSpacesBytes]
-        // Since we have no Device Namespaces (yet), bytes is null/empty
-        // Check MSO to get DocType
         const { decode: decodeCbor } = await import('@tobari/crypto/cbor');
         const mso = decodeCbor(decodeCbor(doc.issuerSigned.issuerAuth)[2]);
 
