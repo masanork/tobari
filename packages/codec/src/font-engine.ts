@@ -257,20 +257,28 @@ export async function subsetFont(fontPath: string, text: string): Promise<{ buff
     for (let i = 0; i < chars.length; i++) {
         const char = chars[i]!;
         const code = char.codePointAt(0)!;
-        let vsCode = 0;
+
+        // Add base character to Unicode map
+        unicodeMap.push({ code, gid: addGlyphToSubset(font.charToGlyph(char)) });
+
+        // Check for Variation Selector
         if (i + 1 < chars.length) {
             const nextCode = chars[i + 1]!.codePointAt(0)!;
-            if (isVariationSelector(nextCode)) { vsCode = nextCode; i++; }
-        }
-        if (vsCode && ivsMap && ivsMap[vsCode]?.[code] !== undefined) {
-            const originalGid = ivsMap[vsCode]![code]!;
-            const variantGlyph = font.glyphs.get(originalGid);
-            if (variantGlyph) {
-                const g = new opentype.Glyph({ name: variantGlyph.name || `u${code.toString(16)}_v${vsCode.toString(16)}`, advanceWidth: variantGlyph.advanceWidth, path: variantGlyph.path });
-                ivsRecords.push({ vs: vsCode, code, gid: addGlyphToSubset(g) });
+            if (isVariationSelector(nextCode)) {
+                // Add the VS codepoint itself to the Unicode map (usually maps to null/blank)
+                unicodeMap.push({ code: nextCode, gid: 0 });
+
+                if (ivsMap && ivsMap[nextCode]?.[code] !== undefined) {
+                    const originalGid = ivsMap[nextCode]![code]!;
+                    const variantGlyph = font.glyphs.get(originalGid);
+                    if (variantGlyph) {
+                        // Directly add the variant glyph to the subset and register in IVS records
+                        ivsRecords.push({ vs: nextCode, code, gid: addGlyphToSubset(variantGlyph) });
+                    }
+                }
+                i++; // Skip the VS in the next loop iteration
             }
         }
-        unicodeMap.push({ code, gid: addGlyphToSubset(font.charToGlyph(char)) });
     }
     const subset = new opentype.Font({ familyName: 'TobariSubset', styleName: 'Regular', unitsPerEm: font.unitsPerEm, ascender: font.ascender, descender: font.descender, glyphs });
     let finalBuffer = injectNativeCmap(subset.toArrayBuffer(), unicodeMap, ivsRecords);

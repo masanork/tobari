@@ -12,6 +12,7 @@ export interface TobariFile {
     data: any;
     disclosures?: string[];
     display?: any;
+    fields: any[]; // Include field metadata for auto-rendering
 }
 
 export async function generateSignedTobari(
@@ -25,24 +26,23 @@ export async function generateSignedTobari(
     // 1. Transform data to SD format
     const { redacted, disclosures } = await transformToSdData(data, schema.fields);
 
-    // 2. Load the design template to be signed
-    const layoutPath = path.resolve('packages/codec/src/juminhyo-layout.html');
-    const template = fs.readFileSync(layoutPath, 'utf-8');
-
     const payload: TobariFile = {
         schema_id: schema.id,
         version: schema.version,
         created_at: Math.floor(Date.now() / 1000),
         data: redacted,
         disclosures: disclosures,
-        display: {
-            ...schema.display,
-            template: template // The layout is now part of the signed payload!
-        }
+        display: schema.display || {},
+        fields: schema.fields // The human-friendly schema is now signed too!
     };
 
+    // Only include template if provided in schema.display
+    if (!payload.display.template) {
+        // Leave empty for auto-rendering
+    }
+
     return await signCoseSign1(payload, privateKey, {
-        alg: options.alg || COSE_ALG.ES384,
+        alg: options.alg || (COSE_ALG.ES384 as any),
         kid: options.kid
     });
 }
