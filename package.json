@@ -7,10 +7,15 @@
         "apps/*"
     ],
     "scripts": {
-        "test": "bun test"
+        "test": "bun test packages/**/*",
+        "test:e2e": "npx playwright test",
+        "build": "bun run gen-tobari.ts && bun run packages/codec/src/bundle-viewer.ts",
+        "ci": "bun run build && bun run test && npx playwright test"
     },
     "devDependencies": {
+        "@playwright/test": "^1.57.0",
         "bun-types": "latest",
+        "playwright": "^1.57.0",
         "typescript": "^5.0.0"
     }
 }

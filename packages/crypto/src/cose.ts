@@ -48,6 +48,8 @@ export async function signCoseSign1(
     let webCryptoAlg: AlgorithmIdentifier | RsaPssParams | EcdsaParams;
     if (options.alg === COSE_ALG.ES256) {
         webCryptoAlg = { name: 'ECDSA', hash: { name: 'SHA-256' } };
+    } else if (options.alg === COSE_ALG.ES384) {
+        webCryptoAlg = { name: 'ECDSA', hash: { name: 'SHA-384' } };
     } else if (options.alg === COSE_ALG.EdDSA) {
         webCryptoAlg = { name: 'Ed25519' }; // Note: Ed25519 support varies by runtime/browser (Bun supports it)
     } else {
@@ -119,6 +121,8 @@ export async function verifyFormToken(
     let webCryptoAlg: AlgorithmIdentifier | RsaPssParams | EcdsaParams;
     if (alg === COSE_ALG.ES256) {
         webCryptoAlg = { name: 'ECDSA', hash: { name: 'SHA-256' } };
+    } else if (alg === COSE_ALG.ES384) {
+        webCryptoAlg = { name: 'ECDSA', hash: { name: 'SHA-384' } };
     } else if (alg === COSE_ALG.EdDSA) {
         webCryptoAlg = { name: 'Ed25519' };
     } else {

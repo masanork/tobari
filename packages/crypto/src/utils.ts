@@ -1,6 +1,7 @@
 // Algorithm identifiers for COSE
 export const COSE_ALG = {
     ES256: -7, // ECDSA w/ SHA-256
+    ES384: -35, // ECDSA w/ SHA-384
     EdDSA: -8  // EdDSA (Ed25519)
 } as const;
 

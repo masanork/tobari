@@ -1,7 +1,9 @@
 {
     "compilerOptions": {
         "lib": [
-            "ESNext"
+            "ESNext",
+            "DOM",
+            "DOM.Iterable"
         ],
         "module": "esnext",
         "target": "esnext",
@@ -19,6 +21,18 @@
         "allowJs": true,
         "types": [
             "bun-types"
-        ]
+        ],
+        "baseUrl": ".",
+        "paths": {
+            "@tobari/crypto/*": [
+                "packages/crypto/src/*"
+            ],
+            "@tobari/schema/*": [
+                "packages/schema/src/*"
+            ],
+            "@tobari/codec/*": [
+                "packages/codec/src/*"
+            ]
+        }
     }
 }
