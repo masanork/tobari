@@ -51,6 +51,31 @@ Tobari は高精度な日本語描画のために **IPAmj明朝** を使用し�
 # examples/juminhyo/juminhyo.cose -> 署名済み原本データ（COSE）
 # examples/verifier.html -> 事業者向け検証ツール
 
+## CLI Verifier
+開発者やCI/CD環境向けに、コマンドラインから `.cose` ファイルを検証・閲覧できるツールを提供しています。
+
+```bash
+# 原本データのデコードと表示
+bun run verify:cli examples/juminhyo/juminhyo.cose
+
+# 公開鍵を指定した署名検証
+bun run verify:cli examples/juminhyo/juminhyo.cose pubkey.json
+```
+
+## Library Usage (TypeScript)
+独自のアプリケーションに検証ロジックを組み込む場合は、`@tobari/codec` の API を利用します。
+
+```typescript
+import { verifyTobari } from '@tobari/codec';
+
+// .cose バイナリの検証
+const result = await verifyTobari(binaryData, issuerPublicKey);
+
+if (result.isValid) {
+  console.log("Verified payload:", result.payload);
+}
+```
+
 ## How it Works
 
 1. **Schema (YAML)**: `juminhyo.yaml` でフィールド定義と「どこを秘匿可能にするか（selective: true）」および表示上のヒント（primary, section）を定義します。

@@ -1,11 +1,12 @@
 import { decode } from 'cbor-x';
 import { verifyFormToken } from '@tobari/crypto/cose';
 import { base64url } from '@tobari/crypto/utils';
+import { MSO } from './sd';
 
 export interface VerificationResult {
     isValid: boolean;
-    header: any;
-    payload: any;
+    mso: MSO | null;
+    doc: any;
     error?: string;
 }
 
@@ -19,32 +20,32 @@ export async function verifyTobari(
     try {
         let binary: Uint8Array;
         if (typeof input === 'string') {
-            // Support both raw base64 and DataURI
             const b64 = input.includes(',') ? input.split(',')[1] : input;
             binary = base64url.decode(b64);
         } else {
             binary = input;
         }
 
-        // Verify COSE signature and decode payload
-        // Note: verifyFormToken in crypto package handles the COSE state machine
-        const token = base64url.encode(binary);
-        const payload = await verifyFormToken(token, publicKey);
+        const doc = decode(binary);
+        if (!doc.issuerSigned || !doc.issuerSigned.issuerAuth) {
+            throw new Error("Invalid Tobari document: missing issuerSigned or issuerAuth");
+        }
 
-        // Also peek at protected header for alg info
-        const coseArray = decode(binary);
-        const protectedHeader = decode(coseArray[0]);
+        // Verify MSO signature
+        // In mdoc, issuerAuth is a COSE_Sign1 containing the MSO
+        const issuerAuthToken = base64url.encode(doc.issuerSigned.issuerAuth);
+        const mso = await verifyFormToken(issuerAuthToken, publicKey) as MSO;
 
         return {
             isValid: true,
-            header: protectedHeader,
-            payload: payload
+            mso: mso,
+            doc: doc
         };
     } catch (e: any) {
         return {
             isValid: false,
-            header: null,
-            payload: null,
+            mso: null,
+            doc: null,
             error: e.message || String(e)
         };
     }

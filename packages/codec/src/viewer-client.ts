@@ -1,24 +1,33 @@
 import { decode } from 'cbor-x';
-import { revealSdData } from './sd';
+import { revealMdocData, MSO } from './sd';
+import { verifyTobari } from './validator';
 
 // Minimal UI for the Tobari Viewer
 let currentDebugData: any = null;
 
-export async function initViewer(base64Data: string) {
+export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
     try {
         const binary = Uint8Array.from(atob(base64Data.split(',')[1] || base64Data), c => c.charCodeAt(0));
-        const coseArray = decode(binary);
 
-        const payloadBytes = coseArray[2];
-        const payload = decode(payloadBytes);
+        // In a real scenario, the public key would be bundled or fetched.
+        // For the PoC, we might just decode or use a provided test key.
+        const doc = decode(binary);
 
-        // Process Selective Disclosure
-        const disclosedData = await revealSdData(payload.data, payload.disclosures || []);
+        // For the POC viewer, we skip cryptographic verification if no key is provided,
+        // but we still decode the MSO to show the data.
+        const issuerAuthToken = doc.issuerSigned.issuerAuth;
+        const coseArray = decode(issuerAuthToken);
+        const mso = decode(coseArray[2]);
 
-        currentDebugData = { payload, revealed: disclosedData };
+        // Use the DocType/Schema ID as the namespace
+        const namespace = mso.docType;
+        const items = doc.issuerSigned.nameSpaces[namespace] || [];
+        const disclosedData = await revealMdocData(mso, items, namespace);
 
-        // Render using the embedded template
-        render(payload, disclosedData);
+        currentDebugData = { doc, mso, revealed: disclosedData };
+
+        // Render using the embedded template (if any) or auto-renderer
+        render(doc, disclosedData, mso);
         setupDebugUI();
     } catch (e) {
         document.body.innerHTML = `<div class="error">Failed to decode Tobari file: ${e}</div>`;
@@ -77,12 +86,16 @@ function setupDebugUI() {
 
     panel.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3 style="margin: 0; color: #63b3ed;">Tobari Data Inspector</h3>
+            <h3 style="margin: 0; color: #63b3ed;">Tobari Data Inspector (mdoc mode)</h3>
             <span id="close-debug" style="cursor: pointer; font-size: 20px;">&times;</span>
         </div>
         <div style="margin-bottom: 20px;">
-            <div style="color: #a0aec0; margin-bottom: 8px; font-weight: bold;">[Signed Payload]</div>
-            <pre style="background: #2d3748; padding: 15px; border-radius: 8px; overflow-x: auto;">${JSON.stringify(currentDebugData?.payload, null, 2)}</pre>
+            <div style="color: #a0aec0; margin-bottom: 8px; font-weight: bold;">[IssuerSigned Envelope]</div>
+            <pre style="background: #2d3748; padding: 15px; border-radius: 8px; overflow-x: auto;">${JSON.stringify(currentDebugData?.doc, null, 2)}</pre>
+        </div>
+        <div style="margin-bottom: 20px;">
+            <div style="color: #a0aec0; margin-bottom: 8px; font-weight: bold;">[Mobile Security Object]</div>
+            <pre style="background: #2d3748; padding: 15px; border-radius: 8px; overflow-x: auto;">${JSON.stringify(currentDebugData?.mso, null, 2)}</pre>
         </div>
         <div>
             <div style="color: #a0aec0; margin-bottom: 8px; font-weight: bold;">[Revealed Data]</div>
@@ -113,22 +126,19 @@ function setupDebugUI() {
 }
 
 // Minimal Template Engine (Supporting {{key}}, {{#each}}, {{#join}})
-function simpleTemplate(template: string, data: any, payload: any): string {
+function simpleTemplate(template: string, data: any, mso: MSO): string {
     let result = template;
 
-    // Support Context Access
     const getValue = (expression: string, currentContext: any): any => {
         const key = expression.trim();
         if (key === "@index") return currentContext["@index"];
 
-        // Full context (for top-level access inside loops)
         const fullContext = {
             ...data,
-            schema_id: payload.schema_id,
-            created_at: new Date(payload.created_at * 1000).toLocaleString()
+            schema_id: mso.docType,
+            created_at: new Date(mso.validityInfo.signed).toLocaleString()
         };
 
-        // Try current context first, then full context
         let val = key.split('.').reduce((o: any, i: any) => o?.[i], currentContext);
         if (val === undefined) {
             val = key.split('.').reduce((o: any, i: any) => o?.[i], fullContext);
@@ -136,7 +146,6 @@ function simpleTemplate(template: string, data: any, payload: any): string {
         return val;
     };
 
-    // 1. Handle {{#each list}} ... {{/each}}
     result = result.replace(/{{#each ([^}]+)}}([\s\S]*?){{\/each}}/g, (_, key, block) => {
         const rawList = getValue(key, data);
         const list = (rawList && typeof rawList === 'object' && rawList.hasOwnProperty('@disclosed'))
@@ -145,11 +154,10 @@ function simpleTemplate(template: string, data: any, payload: any): string {
 
         if (!Array.isArray(list)) return '';
         return list.map((item, index) => {
-            return simpleTemplate(block, { ...item, ["@index"]: index }, payload);
+            return simpleTemplate(block, { ...item, ["@index"]: index }, mso);
         }).join('');
     });
 
-    // 2. Handle {{#join list}} ... {{/join}}
     result = result.replace(/{{#join ([^}]+)}}([\s\S]*?){{\/join}}/g, (_, key, separator) => {
         const rawList = getValue(key, data);
         const list = (rawList && typeof rawList === 'object' && rawList.hasOwnProperty('@disclosed'))
@@ -160,7 +168,6 @@ function simpleTemplate(template: string, data: any, payload: any): string {
         return list.map(v => formatValue(v)).join(separator);
     });
 
-    // 3. Handle {{key}}
     result = result.replace(/{{([^{}]+)}}/g, (_, expression) => {
         return formatValue(getValue(expression, data));
     });
@@ -169,9 +176,7 @@ function simpleTemplate(template: string, data: any, payload: any): string {
 }
 
 // Standard Auto-Renderer for Web-optimized viewing
-function autoRender(data: any, payload: any): string {
-    const fieldsMeta = (payload as any).fields || [];
-
+function autoRender(data: any, fieldsMeta: any[], mso: MSO): string {
     const renderSection = (title: string, content: string) => `
         <section style="margin-bottom: 30px;">
             <h2 style="font-size: 18px; border-left: 4px solid #3182ce; padding-left: 12px; margin-bottom: 20px; color: #2d3748;">${title}</h2>
@@ -187,7 +192,7 @@ function autoRender(data: any, payload: any): string {
     `;
 
     const renderCard = (items: any[], subFields: any[]) => {
-        const primaryField = subFields.find((f: any) => f.primary);
+        const primaryField = subFields?.find((f: any) => f.primary);
 
         return `
         <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px;">
@@ -204,16 +209,16 @@ function autoRender(data: any, payload: any): string {
                     ` : `<div style="font-weight: bold; margin-bottom: 15px; color: #a0aec0;">#${i + 1}</div>`}
                     
                     <div style="display: grid; gap: 12px;">
-                    ${subFields.filter((f: any) => !f.primary).map((f: any) => {
+                    ${subFields?.filter((f: any) => !f.primary).map((f: any) => {
                 const val = item[f.id];
                 if (val === undefined) return '';
                 return `
-                            <div>
-                                <div style="font-size: 11px; color: #a0aec0; text-transform: uppercase; margin-bottom: 2px;">${f.id}</div>
-                                <div style="font-size: 14px; color: #2d3748;">${formatValue(val)}</div>
-                            </div>
-                        `;
-            }).join('')}
+                                    <div>
+                                        <div style="font-size: 11px; color: #a0aec0; text-transform: uppercase; margin-bottom: 2px;">${f.id}</div>
+                                        <div style="font-size: 14px; color: #2d3748;">${formatValue(val)}</div>
+                                    </div>
+                                `;
+            }).join('') || ''}
                     </div>
                 </div>
                 `;
@@ -226,7 +231,6 @@ function autoRender(data: any, payload: any): string {
             <header style="text-align: center; margin-bottom: 50px;">
     `;
 
-    // 1. Render Header Section (e.g. Title)
     fieldsMeta.filter((f: any) => f.section === 'header').forEach((field: any) => {
         const val = data[field.id];
         if (val !== undefined) {
@@ -236,12 +240,11 @@ function autoRender(data: any, payload: any): string {
 
     html += `
                 <div style="display: inline-flex; align-items: center; background: #ebf8ff; color: #3182ce; padding: 6px 16px; border-radius: 100px; font-size: 13px; font-weight: 700; border: 1px solid #bee3f8;">
-                    Schema: ${payload.schema_id}
+                    DocType: ${mso.docType} (ISO 18013-5 compatible)
                 </div>
             </header>
     `;
 
-    // 2. Render Main Subject Section (Default)
     fieldsMeta.filter((f: any) => !f.section || f.section === 'subject').forEach((field: any) => {
         const val = data[field.id];
         if (val === undefined || field.id === "証明書名称") return;
@@ -258,7 +261,6 @@ function autoRender(data: any, payload: any): string {
         }
     });
 
-    // 3. Render Footer (Issuance) Section
     const footerFields = fieldsMeta.filter((f: any) => f.section === 'footer');
     if (footerFields.length > 0) {
         html += `
@@ -274,7 +276,6 @@ function autoRender(data: any, payload: any): string {
                         </div>
                     `).join('')}
                 </div>
-                <!-- Subtle visual seal/marker -->
                 <div style="position: absolute; right: 30px; bottom: 20px; width: 60px; height: 60px; border: 3px double #3182ce; border-radius: 50%; opacity: 0.1; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #3182ce; font-size: 20px;">印</div>
             </div>
         `;
@@ -282,9 +283,9 @@ function autoRender(data: any, payload: any): string {
 
     html += `
             <footer style="margin-top: 40px; padding: 40px 0; text-align: center; font-size: 12px; color: #cbd5e0;">
-                <div style="margin-bottom: 8px; font-weight: bold; font-family: sans-serif !important;">DIGITALLY SIGNED & VERIFIED</div>
-                <div style="margin-bottom: 4px;">Verified at: ${new Date().toLocaleString()}</div>
-                <div>Hash: ${payload.created_at} / Signature: ES384 / Algorithm: P-384 / Powered by Tobari</div>
+                <div style="margin-bottom: 8px; font-weight: bold; font-family: sans-serif !important;">DIGITALLY SIGNED & VERIFIED (ISO 18013-5 MSO)</div>
+                <div style="margin-bottom: 4px;">Signed at: ${new Date(mso.validityInfo.signed).toLocaleString()}</div>
+                <div>Algorithm: ES384 / MSO Version: ${mso.version} / Powered by Tobari</div>
             </footer>
         </div>
     `;
@@ -307,22 +308,17 @@ function formatValue(v: any): string {
     return String(v);
 }
 
-function render(payload: any, data: any) {
+function render(doc: any, data: any, mso: any) {
     const container = document.getElementById('viewer-root');
     if (!container) return;
 
-    // Set document title from data if available
     if (data["証明書名称"]) {
-        document.title = `${data["証明書名称"]} - Tobari Verified`;
+        const titleVal = data["証明書名称"]["@value"] || data["証明書名称"];
+        document.title = `${titleVal} - Tobari Verified`;
     }
 
-    const template = payload.display?.template;
-    if (template) {
-        container.innerHTML = simpleTemplate(template, data, payload);
-    } else {
-        // Fallback to Auto-Renderer (wrapped in the professional container)
-        container.innerHTML = `<div class="official-document">${autoRender(data, payload)}</div>`;
-    }
+    // Always use auto-renderer for now with new mdoc structure
+    container.innerHTML = `<div class="official-document">${autoRender(data, doc.fields || [], mso)}</div>`;
 }
 
 // Expose globally
