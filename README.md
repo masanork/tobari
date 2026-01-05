@@ -1,22 +1,27 @@
 # Tobari (帳)
 
-Tobari is a modular, schema-driven infrastructure for secure data entry and management.
-Born from the need to decouple the "Web/A Form" logic from the monolithic SRN codebase, Tobari focuses on modularity, strict boundaries, and a "Headless" runtime architecture.
+Tobari is a compact, machine-readable format for secure and verifiable documents, based on CBOR and COSE.
+
+Born from the need to provide a digital alternative to PDFs, Tobari focuses on data integrity, authenticity, and extreme compactness while maintaining human readability through standard tools.
 
 ## Core Philosophy
 
-*   **Modular by Default**: Every component is designed as an independent package.
-*   **Schema Driven**: Forms are defined by pure JSON/YAML schemas, not hardcoded UI logic.
-*   **Secure & Private**: Designed with future Layer 2 Encryption (L2E) integration in mind ("Tobari" implies privacy/curtain).
+*   **Compact & Efficient**: Built on CBOR for minimal binary size, suitable for QR codes or limited bandwidth.
+*   **Verifiable by Default**: Built-in support for digital signatures (COSE) to ensure authenticity and integrity.
+*   **Machine & Human Readable**: Structured data for automated processing, with a clear path to self-rendering/visual representation.
+*   **Modular Architecture**: Independent packages for schema validation, binary encoding, and cryptographic operations.
 
-## Project Structure (Planned)
+## Project Structure
 
-The project is organized as a monorepo.
+*   `packages/schema`: Data schema definitions and validation logic (Zod-based).
+*   `packages/crypto`: CBOR/COSE implementation for signing and basic integrity.
+*   `packages/codec`: (Planned) High-level generator/parser for Tobari files.
 
-*   `packages/core`: Pure logic for schema validation and state management.
-*   `packages/runtime`: Headless runtime engine for the browser.
-*   `packages/cli`: Tools for generating static forms.
-*   `apps/maker`: GUI application for authoring forms.
+## Roadmap
+
+1.  **Phase 1: Foundation**: Establish standardized CBOR/COSE signing formats.
+2.  **Phase 2: Generator**: Build tools to convert structured input (JSON/YAML) into signed `.tobari` files.
+3.  **Phase 3: Human-Readable Layer**: Implement lightweight viewers or self-contained HTML rendering for the binary data.
 
 ## License
 
