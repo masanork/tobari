@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import path from 'path';
 
 test('viewer should render juminhyo correctly', async ({ page }) => {
-    const filePath = path.resolve('examples/juminhyo/juminhyo-verifiable.html');
+    const filePath = path.resolve('examples/juminhyo/juminhyo.html');
     await page.goto(`file://${filePath}`);
 
     // The auto-renderer uses <h1> for the title

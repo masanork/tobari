@@ -1,87 +1,28 @@
 import { generateSignedTobari } from '../../packages/codec/src/tobari-gen';
 import fs from 'fs';
 import path from 'path';
+import yaml from 'js-yaml';
 
 async function main() {
-    console.log("Generating full-spec juminhyo.tobari with High-Fidelity IVS data...");
+    console.log("Generating full-spec juminhyo.cose with local YAML data...");
 
     const schemaPath = path.resolve(__dirname, 'juminhyo.yaml');
     const schemaYaml = fs.readFileSync(schemaPath, 'utf-8');
 
-    // Sample data with explicit IVS (Variation Selectors)
-    const sampleData = {
-        "証明書名称": "住民票の写し（世帯連記式）",
-        "交付年月日": "2026-01-15",
-        "世帯住所": "東京都港区虎ノ門2-2-1 虎ノ門ハイツ101号",
-        "世帯主氏名": "䶒藤󠄃 太朗󠄅",
-        "世帯員": [
-            {
-                "氏名": "䶒藤󠄃 太朗󠄅",
-                "フリガナ": "サイトウ タロウ",
-                "生年月日": "1989-01-01",
-                "性別": "男",
-                "続柄": "世帯主",
-                "住民となった日": "2019-12-04",
-                "住民となった事由": "転入",
-                "住所を定めた日": "2019-12-04",
-                "届出日": "2019-12-01",
-                "前住所": "東京都千代田区霞が関2丁目2番1号",
-                "本籍": ["東京都千代田区千代田1-1", "筆頭者：䶒藤󠄃 太朗󠄅"],
-                "個人番号": "379474484458",
-                "住民票コード": "24727059608",
-                "備考": ["自動交付機利用者"]
-            },
-            {
-                "氏名": "䶒藤󠄃 花󠄃子",
-                "フリガナ": "サイトウ ハナコ",
-                "旧氏": "渡𮞽",
-                "旧氏カナ": "ワタナベ",
-                "生年月日": "1993-05-05",
-                "性別": "女",
-                "続柄": "妻",
-                "住民となった日": "2019-12-04",
-                "住民となった事由": "転入",
-                "住所を定めた日": "2019-12-04",
-                "届出日": "2019-12-01",
-                "前住所": "東京都千代田区霞が関2丁目2番1号",
-                "本籍": ["東京都千代田区千代田1-1", "筆頭者：䶒藤󠄃 太朗󠄅"],
-                "個人番号": "454972364860",
-                "住民票コード": "24846016224"
-            },
-            {
-                "氏名": "䶒藤󠄃 一朗󠄅",
-                "フリガナ": "サイトウ イチロウ",
-                "生年月日": "2019-05-01",
-                "性別": "男",
-                "続柄": "子",
-                "住民となった日": "2019-12-04",
-                "住民となった事由": "出生",
-                "住所を定めた日": "＊＊＊",
-                "届出日": "2019-12-01",
-                "前住所": "東京都千代田区霞が関2丁目2番1号",
-                "本籍": ["東京都千代田区千代田1-1", "筆頭者：䶒藤󠄃 太朗󠄅"],
-                "個人番号": "507957100721",
-                "住民票コード": "25208017643"
-            },
-            {
-                "氏名": "䶒藤󠄃 二朗󠄅",
-                "フリガナ": "サイトウ ジロウ",
-                "生年月日": "2019-05-01",
-                "性別": "男",
-                "続柄": "子",
-                "住民となった日": "2019-12-04",
-                "住民となった事由": "出生",
-                "住所を定めた日": "＊＊＊",
-                "届出日": "2019-12-01",
-                "前住所": "東京都千代田区霞が関2丁目2番1号",
-                "本籍": ["東京都千代田区千代田1-1", "筆頭者：䶒藤󠄃 太朗󠄅"],
-                "個人番号": "507957100722",
-                "住民票コード": "25208017644"
-            }
-        ],
-        "発行者役職": "△△△△長",
-        "発行者氏名": "○○　○○"
-    };
+    const yamlDataPath = path.resolve(__dirname, 'juminhyo-data.yaml');
+    const jsonDataPath = path.resolve(__dirname, 'juminhyo-data.json');
+    let sampleData: any;
+
+    if (fs.existsSync(yamlDataPath)) {
+        console.log("Loading data from juminhyo-data.yaml...");
+        sampleData = yaml.load(fs.readFileSync(yamlDataPath, 'utf-8'));
+    } else if (fs.existsSync(jsonDataPath)) {
+        console.log("Loading data from juminhyo-data.json...");
+        sampleData = JSON.parse(fs.readFileSync(jsonDataPath, 'utf-8'));
+    } else {
+        console.error("Error: No data file found (juminhyo-data.yaml or .json)");
+        process.exit(1);
+    }
 
     const keyPair = await crypto.subtle.generateKey(
         { name: "ECDSA", namedCurve: "P-384" },
@@ -89,14 +30,14 @@ async function main() {
         ["sign", "verify"]
     );
 
-    const tobariBinary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
-        kid: "iss-full-p384-ivs"
+    const binary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
+        kid: "iss-local-p384"
     });
 
-    const outputPath = path.resolve(__dirname, 'juminhyo.tobari');
-    fs.writeFileSync(outputPath, tobariBinary);
+    const outputPath = path.resolve(__dirname, 'juminhyo.cose');
+    fs.writeFileSync(outputPath, binary);
 
-    console.log(`Successfully generated Tobari file: ${outputPath} (${tobariBinary.length} bytes)`);
+    console.log(`Successfully generated COSE file: ${outputPath} (${binary.length} bytes)`);
 }
 
 main().catch(console.error);

@@ -23,30 +23,40 @@ PDF や紙の書類が持つ「完成された様式」への信頼感と、現�
 
 ## Project Structure
 
-- `packages/codec`: YAML スキーマからの CDDL 生成、署名済みバイナリ（.tobari）の生成、HTML ビューアのバンドル。
+- `packages/codec`: YAML スキーマからの CDDL 生成、署名済みバイナリ（.cose）の生成、HTML ビューアのバンドル。
 - `packages/crypto`: P-384 対応の COSE 署名・検証コア実装。
 - `examples/juminhyo`: 住民票（世帯連記式）をモデルとした実装例。
 
 ## Quick Start (Demo Generation)
 
-```bash
-# 依存関係のインストール
-bun install
+Tobari は高精度な日本語描画のために **IPAmj明朝** を使用します。ライセンスの都合上、フォントファイルはリポジトリに含まれていません。
 
-# デモ・バリデーターの生成
-bun run build
+1. **フォントの準備**:
+   [IPAのサイト](https://moji.ipa.go.jp/mojikiban/mjmincho/)から `ipamjm.ttf` をダウンロードし、以下のパスに配置してください：
+   `shared/fonts/ipamjm.ttf`
+
+2. **依存関係のインストール**:
+   ```bash
+   bun install
+   ```
+
+3. **デモ・バリデーターの生成**:
+   ```bash
+   bun run build
+   ```
 
 # 生成物の確認
-# examples/juminhyo/juminhyo-verifiable.html -> 利用者向けビューア
+# examples/juminhyo/juminhyo.html -> 利用者向けビューア
+# (URLに ?debug=1 を付与することで、内部データ構造を確認できるデバッグモードが有効になります)
+# examples/juminhyo/juminhyo.cose -> 署名済み原本データ（COSE）
 # examples/verifier.html -> 事業者向け検証ツール
-```
 
 ## How it Works
 
-1. **Schema (YAML)**: フィールド定義と「どこを秘匿可能にするか（selective: true）」を定義します。
-2. **Payload (CBOR)**: データをハッシュ化し、レイアウト定義と共に CBOR 形式でパッキング。
-3. **Sign (COSE)**: 発行者の秘密鍵（P-384）で署名。
-4. **Bundle (HTML)**: バイナリ、ビューアロジック、サブセットフォントを 1 つの HTML に集約。
+1. **Schema (YAML)**: `juminhyo.yaml` でフィールド定義と「どこを秘匿可能にするか（selective: true）」および表示上のヒント（primary, section）を定義します。
+2. **Data (YAML)**: `juminhyo-data.yaml` に実際のデータを記述します（Human-writable）。
+3. **Payload (CBOR/COSE)**: データをパッキングし、P-384 秘密鍵で署名。`.cose` ファイルとして出力。
+3. **Bundle (HTML)**: `.cose` バイナリ、閲覧ロジック、サブセットフォントを 1 つの HTML に集約。
 
 ---
 Produced by the Tobari Project - *Building silent trust in every digital document.*
