@@ -56,7 +56,8 @@ export async function transformToMdocData(
     docType: string,
     data: any,
     fields: any[],
-    namespace: string = 'io.github.masanork.tobari.v1'
+    namespace: string = 'io.github.masanork.tobari.v1',
+    devicePublicKey?: any // CryptoKey (Public)
 ): Promise<{ mso: MSO, issuerSignedItems: IssuerSignedItemBytes[] }> {
     const valueDigests: { [id: number]: Uint8Array } = {};
     const issuerSignedItems: IssuerSignedItemBytes[] = [];
@@ -82,6 +83,20 @@ export async function transformToMdocData(
         issuerSignedItems.push(encoded);
     }
 
+    // Convert CryptoKey to COSE_Key map
+    let deviceKeyMap = new Map();
+
+    if (devicePublicKey) {
+        const jwk = await crypto.subtle.exportKey('jwk', devicePublicKey);
+        // Minimal COSE_Key for EC2 P-384
+        deviceKeyMap = new Map<number, any>([
+            [1, 2], // kty: EC2
+            [-1, 2], // crv: P-384
+            [-2, Uint8Array.from(atob(jwk.x!.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))],
+            [-3, Uint8Array.from(atob(jwk.y!.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))]
+        ]);
+    }
+
     const now = new Date();
     const mso: MSO = {
         version: "1.0",
@@ -90,7 +105,7 @@ export async function transformToMdocData(
             [namespace]: valueDigests
         },
         deviceKeyInfo: {
-            deviceKey: {} // Placeholder for later device binding
+            deviceKey: deviceKeyMap
         },
         docType,
         validityInfo: {
@@ -148,6 +163,55 @@ export async function revealMdocData(
     }
 
     return revealed;
+}
+
+/**
+ * Creates a Verifiable Presentation (VP) by selectively disclosing items.
+ */
+export async function createPresentation(
+    fullDoc: any,
+    disclosedKeys: string[]
+): Promise<any> {
+    const { decode } = await import('@tobari/crypto/cbor');
+
+    // Deep clone the doc structure to avoid mutating original
+    // JSON.stringify corrupts Uint8Array, use structuredClone or manual copy.
+    // Since we only modify nameSpaces, we can shallow copy the upper layers.
+    const vp = {
+        ...fullDoc,
+        issuerSigned: {
+            ...fullDoc.issuerSigned,
+            nameSpaces: { ...fullDoc.issuerSigned.nameSpaces }
+        }
+    };
+
+    // In mdoc, valueDigests are in the MSO (which is signed and immutable).
+    // We only filter the items in the IssuerSigned structure.
+
+    const msoBytes = fullDoc.issuerSigned.issuerAuth; // COSE_Sign1
+    // We decode MSO just to find the docType/Namespace if needed, 
+    // but here we can just iterate over all namespaces found in the doc.
+
+    for (const ns of Object.keys(vp.issuerSigned.nameSpaces)) {
+        const originalItems = fullDoc.issuerSigned.nameSpaces[ns];
+        const filteredItems: Uint8Array[] = [];
+
+        for (const itemBytes of originalItems) {
+            // We must decode to check the key (elementIdentifier)
+            // item is [digestID, random, elementIdentifier, elementValue]
+            // Note: This relies on the item structure being standard.
+            const item = decode(new Uint8Array(itemBytes));
+            const key = item[2]; // elementIdentifier
+
+            if (disclosedKeys.includes(key)) {
+                filteredItems.push(itemBytes);
+            }
+        }
+
+        vp.issuerSigned.nameSpaces[ns] = filteredItems;
+    }
+
+    return vp;
 }
 
 function compareUint8Arrays(a: Uint8Array, b: Uint8Array): boolean {

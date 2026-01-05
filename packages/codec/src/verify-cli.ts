@@ -43,6 +43,93 @@ async function main() {
 
             console.log("\n[Revealed Data]");
             console.log(JSON.stringify(revealed, null, 2));
+
+            // Verify Device Signature (Holder Binding)
+            if (result.doc.deviceSigned && result.doc.deviceSigned.deviceAuth) {
+                console.log("\n------------------------------------------");
+                console.log("🔒 Holder Binding Verification (Device Signed)");
+
+                try {
+                    // To safely extract COSE Key (which uses negative integer keys),
+                    // we should re-decode MSO using a decoder configured to preserve Maps.
+                    const { Decoder, decode } = await import('@tobari/crypto/cbor');
+                    // @ts-ignore: cbor-x types might be missing useMaps
+                    const mapDecoder = new Decoder({ mapsAsObjects: false, useMaps: true });
+
+                    // MSO is inside issuerAuth (COSE_Sign1) which is inside doc.issuerSigned.issuerAuth
+                    // result.doc is already decoded with default settings (object).
+                    // We need to look at the raw bytes for MSO.
+
+                    // Re-read binary from file to get COSE_Sign1 of MSO
+                    // We are in `verify-cli.ts`, we have `binary` which is the whole file.
+                    // Let's manually traverse to get MSO bytes.
+
+                    // 1. Decode main doc (Standard decoder ok for outer structure)
+                    const mainDoc = decode(fs.readFileSync(path.resolve(process.argv[2])));
+
+                    // 2. Get IssuerAuth (COSE_Sign1)
+                    const issuerAuthCose = decode(mainDoc.issuerSigned.issuerAuth);
+                    // COSE_Sign1 = [Header, Map, Payload, Signature]
+                    const msoBytes = issuerAuthCose[2];
+
+                    // 3. Decode MSO with Map support
+                    const msoMap = mapDecoder.decode(msoBytes);
+                    const deviceKeyMap = msoMap.deviceKeyInfo.deviceKey; // This should be a Map now
+
+                    if (!deviceKeyMap || !(deviceKeyMap instanceof Map)) {
+                        throw new Error("Failed to extract Device Key as Map from MSO");
+                    }
+
+                    // Convert COSE Key Map to CryptoKey
+                    // Curve P-384
+                    const x = deviceKeyMap.get(-2);
+                    const y = deviceKeyMap.get(-3);
+
+                    if (!x || !y) throw new Error("Invalid Device Key structure: Missing x/y coordinates");
+
+                    const jwk = {
+                        kty: "EC", crv: "P-384", x: Buffer.from(x).toString('base64url'), y: Buffer.from(y).toString('base64url')
+                    };
+                    const deviceKey = await crypto.subtle.importKey(
+                        "jwk", jwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["verify"]
+                    );
+
+                    const deviceAuthCose = result.doc.deviceSigned.deviceAuth.deviceSignature;
+                    const { verifyCoseSign1 } = await import('@tobari/crypto/validator');
+                    // Note: verifyCoseSign1 signature differs from logic needed here?
+                    // We need to verify the detached payload implied by mdoc structure?
+                    // For now, let's assume standard COSE validation on the blob.
+                    // Actually, the payload is "DeviceAuthentication" structure including SessionTranscript.
+
+                    // In the present-cli, we signed the full payload and embedded it.
+                    // So verifyCoseSign1 should work if we pass the key.
+
+                    const isValid = await verifyCoseSign1(deviceAuthCose, deviceKey);
+
+                    if (isValid) {
+                        console.log("✅ Device Signature: VALID");
+                        // Decode payload to show session info
+                        const coseStruct = decode(deviceAuthCose);
+                        const payload = decode(coseStruct[2]);
+                        // Payload is ["DeviceAuthentication", SessionTranscript, DocType, Bytes]
+                        // SessionTranscript is [DeviceEngagement, Key, [Nonce, Audience]]
+                        const sessionTranscript = payload[1];
+                        // check if sessionTranscript follows our simplified structure
+                        if (Array.isArray(sessionTranscript) && Array.isArray(sessionTranscript[2])) {
+                            const [nonce, audience] = sessionTranscript[2];
+                            console.log(`   Session Nonce: ${nonce}`);
+                            console.log(`   Audience: ${audience}`);
+                        }
+                    } else {
+                        console.log("❌ Device Signature: INVALID");
+                    }
+
+                } catch (e: any) {
+                    console.log(`❌ Holder Binding Error: ${e.message}`);
+                }
+            } else {
+                console.log("\n⚠️  No Holder Binding (Device Signature) found.");
+            }
         } else {
             console.log("❌ Signature: INVALID");
             console.log(`Error: ${result.error}`);
@@ -61,6 +148,88 @@ async function main() {
         console.log(`   DocType: ${mso.docType}`);
         console.log("\n[Decoded Data]");
         console.log(JSON.stringify(revealed, null, 2));
+
+        // Verify Device Signature (Holder Binding) - Copy of logic above
+        if (doc.deviceSigned && doc.deviceSigned.deviceAuth) {
+            console.log("\n------------------------------------------");
+            console.log("🔒 Holder Binding Verification (Device Signed)");
+
+            try {
+                const deviceKeyMap = mso.deviceKeyInfo?.deviceKey; // mso is available here
+                if (!deviceKeyMap) throw new Error("No Device Key found in Issuer MSO");
+
+                // DEBUG: Inspect structure
+                console.log('DEBUG: deviceKeyMap:', deviceKeyMap);
+
+                // Convert COSE Key Map to CryptoKey
+                let x, y;
+                if (deviceKeyMap instanceof Map) {
+                    x = deviceKeyMap.get(-2);
+                    y = deviceKeyMap.get(-3);
+                } else {
+                    x = deviceKeyMap[-2] || deviceKeyMap['-2'];
+                    y = deviceKeyMap[-3] || deviceKeyMap['-3'];
+                }
+
+                if (!x || !y) throw new Error("Invalid Device Key structure: Missing x/y coordinates");
+
+                const jwk = {
+                    kty: "EC", crv: "P-384", x: Buffer.from(x).toString('base64url'), y: Buffer.from(y).toString('base64url')
+                };
+                const deviceKey = await crypto.subtle.importKey(
+                    "jwk", jwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["verify"]
+                );
+
+                const deviceAuthCose = doc.deviceSigned.deviceAuth.deviceSignature;
+
+                // Manual Verification of COSE_Sign1 (Device Auth)
+                // 1. Parse COSE_Sign1
+                const coseArray = decode(deviceAuthCose);
+                if (!Array.isArray(coseArray) || coseArray.length !== 4) {
+                    throw new Error("Invalid Device Auth COSE structure");
+                }
+                const [protectedHeaderBytes, unprotectedHeader, payloadBytes, signature] = coseArray;
+
+                // 2. Setup Sig_structure
+                // [ "Signature1", protected, external_aad, payload ]
+                const sigStructure = [
+                    "Signature1",
+                    protectedHeaderBytes,
+                    new Uint8Array(0), // external_aad
+                    payloadBytes
+                ];
+
+                // We need to encode using the canonical encoder we know about
+                const { encodeCanonical } = await import('@tobari/crypto/cbor');
+                const toBeSigned = encodeCanonical(sigStructure);
+
+                // 3. Verify
+                const isValid = await crypto.subtle.verify(
+                    { name: "ECDSA", hash: { name: "SHA-384" } }, // Assuming P-384/ES384
+                    deviceKey,
+                    signature,
+                    toBeSigned as any
+                );
+
+
+                if (isValid) {
+                    console.log("✅ Device Signature: VALID");
+                    const coseStruct = decode(deviceAuthCose);
+                    const payload = decode(coseStruct[2]);
+                    const sessionTranscript = payload[1];
+                    if (Array.isArray(sessionTranscript) && Array.isArray(sessionTranscript[2])) {
+                        const [nonce, audience] = sessionTranscript[2];
+                        console.log(`   Session Nonce: ${nonce}`);
+                        console.log(`   Audience: ${audience}`);
+                    }
+                } else {
+                    console.log("❌ Device Signature: INVALID");
+                }
+
+            } catch (e: any) {
+                console.log(`❌ Holder Binding Error: ${e.message}`);
+            }
+        }
     }
     console.log("------------------------------------------\n");
 }

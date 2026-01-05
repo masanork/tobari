@@ -1,6 +1,7 @@
 import { signCoseSign1 } from '@tobari/crypto/cose';
 import { COSE_ALG } from '@tobari/crypto/utils';
 import yaml from 'js-yaml';
+import fs from 'fs';
 import { transformToMdocData } from './sd';
 
 /**
@@ -33,8 +34,24 @@ export async function generateSignedTobari(
     // Use the schema ID itself as the mdoc Namespace
     const namespace = schema.id;
 
+    // 0. Generate "Device Key" (simulating a Passkey/Holder Key)
+    // In a real system, the holder would provide their public key.
+    // Here we generate one and save the private key for the presentation demo.
+    console.log("Generating Holder Device Key (P-384)...");
+    const deviceKeyPair = await crypto.subtle.generateKey(
+        { name: "ECDSA", namedCurve: "P-384" },
+        true,
+        ["sign", "verify"]
+    );
+
+    // Save Private Key for present-cli
+    const devicePrivateJwk = await crypto.subtle.exportKey("jwk", deviceKeyPair.privateKey);
+    fs.writeFileSync("device-key.json", JSON.stringify(devicePrivateJwk, null, 2));
+    console.log("Saved Holder Private Key to device-key.json");
+
     // 1. Transform data to mdoc format (MSO + SignedItems)
-    const { mso, issuerSignedItems } = await transformToMdocData(schema.id, data, schema.fields, namespace);
+    // Pass devicePublicKey to embed it in the MSO
+    const { mso, issuerSignedItems } = await transformToMdocData(schema.id, data, schema.fields, namespace, deviceKeyPair.publicKey);
 
     // 2. Sign the MSO
     const issuerAuth = await signCoseSign1(mso, privateKey, {
