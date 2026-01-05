@@ -13,3 +13,11 @@ shared/fonts/ipamjm.ttf
 # Binary / Build Artifacts
 dist/
 .DS_Store
+
+# Secrets
+device-key.json
+
+# Generated VP files
+*-vp.cose
+*_vp.cose
+vp-*.cose
