@@ -14,7 +14,7 @@ async function buildVerifier() {
     );
     const pubKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
 
-    // 2. Generate juminhyo.tobari using THIS key so the verifier works
+    // 2. Generate juminhyo.cose using THIS key so the verifier works
     const schemaYaml = fs.readFileSync('examples/juminhyo/juminhyo.yaml', 'utf-8');
     const sampleData = {
         "証明書名称": "住民票の写し（世帯連記式）",
@@ -22,8 +22,8 @@ async function buildVerifier() {
         "世帯住所": "検証テスト用住所",
         "世帯員": []
     };
-    const tobariBinary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, { kid: "poc-issuer" });
-    fs.writeFileSync('examples/juminhyo/juminhyo.tobari', tobariBinary);
+    const coseBinary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, { kid: "poc-issuer" });
+    fs.writeFileSync('examples/juminhyo/juminhyo.cose', coseBinary);
 
     // 3. Bundle the UI logic
     const buildResult = await Bun.build({

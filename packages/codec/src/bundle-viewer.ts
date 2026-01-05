@@ -6,9 +6,9 @@ import { subsetFont, bufferToDataUrl } from './font-engine';
 async function buildViewer() {
     console.log("Bundling High-Fidelity Tobari Viewer...");
 
-    const tobariBinaryPath = path.resolve('examples/juminhyo/juminhyo.tobari');
+    const tobariBinaryPath = path.resolve('examples/juminhyo/juminhyo.cose');
     if (!fs.existsSync(tobariBinaryPath)) {
-        console.error("Error: juminhyo.tobari not found.");
+        console.error("Error: juminhyo.cose not found.");
         process.exit(1);
     }
 
@@ -38,14 +38,26 @@ async function buildViewer() {
         }
     }
 
-    const engineText = "（非開示）Digital Certificate Signature Schema Compiled at Document Auth ID Sig ES384 Issued At 0123456789/:,.令和上記は、住民基本台帳の写しと相違ないことを証明する。交付役職名氏主印員";
-    const combinedText = templateText + dataText + engineText;
+    // Collect all field labels for subsetting
+    let labelText = "";
+    if (payload.fields) {
+        const extractLabels = (fields: any[]) => {
+            for (const f of fields) {
+                if (f.id) labelText += f.id;
+                if (f.items?.fields) extractLabels(f.items.fields);
+            }
+        };
+        extractLabels(payload.fields);
+    }
+
+    const engineText = "（非開示）Digital Certificate Signature Schema Compiled at Document Auth ID Sig ES384 Issued At 0123456789/:,.印発行者情報";
+    const combinedText = templateText + dataText + labelText + engineText;
 
     const uniqueChars = Array.from(new Set(Array.from(combinedText))).join('');
     console.log(`Unique characters to subset: ${uniqueChars.length}`);
 
     // 2. Subset Font (IPA MJ Mincho)
-    const fontPath = path.resolve('../srn/shared/fonts/ipamjm.ttf');
+    const fontPath = path.resolve('shared/fonts/ipamjm.ttf');
     let fontCss = "";
     if (fs.existsSync(fontPath)) {
         console.log("Subsetting IPA MJ Mincho font...");
@@ -92,9 +104,9 @@ if (window.initTobari) {
 }
 </script>`;
 
-    const finalHtml = html.replace(/<script type="module">[\s\S]*?<\/script>/, scriptBlock);
+    const finalHtml = html.replace(/<script type="module">[\s\S]*?<\/script>/, () => scriptBlock);
 
-    const outPath = path.resolve('examples/juminhyo/juminhyo-verifiable.html');
+    const outPath = path.resolve('examples/juminhyo/juminhyo.html');
     fs.writeFileSync(outPath, finalHtml);
     console.log(`Successfully generated verifiable viewer: ${outPath}`);
 }

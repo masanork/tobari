@@ -1,5 +1,15 @@
-node_modules
-dist
+# Dependencies
+node_modules/
+bun.lockb
+
+# Generated Files
+*.cose
+examples/juminhyo/juminhyo.html
+examples/verifier.html
+
+# Fonts (IPAmj Mincho has distribution restrictions)
+shared/fonts/ipamjm.ttf
+
+# Binary / Build Artifacts
+dist/
 .DS_Store
-.env
-.bun

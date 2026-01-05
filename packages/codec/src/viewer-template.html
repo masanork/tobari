@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>住民票の写し（電子交付版）</title>
+    <title>Tobari Verified Document</title>
     <style>
         /* BUNDLED_FONT_PLACEHOLDER */
 
@@ -13,10 +13,10 @@
         }
 
         body {
-            background: #e2e8f0;
+            background: #f8fafc;
             /* Force the subset font with a serif fallback */
-            font-family: "TobariSubset", "IPAMJMincho", "MS Mincho", "Hiragino Mincho ProN", serif;
-            color: #1a1a1a;
+            font-family: "TobariSubset", "IPAMJMincho", serif;
+            color: #1a202c;
             margin: 0;
             padding: 40px 20px;
             display: flex;
@@ -32,10 +32,12 @@
 
         .official-document {
             background: white;
-            width: 210mm;
-            min-height: 297mm;
-            padding: 25mm 20mm;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+            width: 100%;
+            max-width: 1000px;
+            min-height: 100vh;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            border-radius: 12px;
             position: relative;
         }
 
@@ -49,7 +51,9 @@
                 box-shadow: none;
                 border: none;
                 margin: 0;
-                padding: 15mm 15mm;
+                padding: 10mm;
+                max-width: none;
+                min-height: auto;
             }
         }
 

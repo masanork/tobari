@@ -2,6 +2,8 @@ import { decode } from 'cbor-x';
 import { revealSdData } from './sd';
 
 // Minimal UI for the Tobari Viewer
+let currentDebugData: any = null;
+
 export async function initViewer(base64Data: string) {
     try {
         const binary = Uint8Array.from(atob(base64Data.split(',')[1] || base64Data), c => c.charCodeAt(0));
@@ -13,12 +15,101 @@ export async function initViewer(base64Data: string) {
         // Process Selective Disclosure
         const disclosedData = await revealSdData(payload.data, payload.disclosures || []);
 
+        currentDebugData = { payload, revealed: disclosedData };
+
         // Render using the embedded template
         render(payload, disclosedData);
+        setupDebugUI();
     } catch (e) {
         document.body.innerHTML = `<div class="error">Failed to decode Tobari file: ${e}</div>`;
         console.error(e);
     }
+}
+
+function setupDebugUI() {
+    if (document.getElementById('tobari-debug-btn')) return;
+
+    // Only enable debug if ?debug=1 or similar is present
+    const params = new URLSearchParams(window.location.search);
+    const isDebug = params.get('debug') === '1' || params.get('tobari-debug') === 'true';
+    if (!isDebug) return;
+
+    const btn = document.createElement('div');
+    btn.id = 'tobari-debug-btn';
+    btn.innerHTML = 'DEBUG';
+    Object.assign(btn.style, {
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        background: '#2d3748',
+        color: 'white',
+        padding: '8px 16px',
+        borderRadius: '100px',
+        fontSize: '12px',
+        fontWeight: 'bold',
+        cursor: 'pointer',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+        zIndex: '10000',
+        transition: 'all 0.2s',
+        fontFamily: 'sans-serif'
+    });
+    btn.onmouseover = () => btn.style.background = '#4a5568';
+    btn.onmouseout = () => btn.style.background = '#2d3748';
+
+    const panel = document.createElement('div');
+    panel.id = 'tobari-debug-panel';
+    Object.assign(panel.style, {
+        position: 'fixed',
+        top: '0',
+        right: '-500px',
+        width: '500px',
+        height: '100vh',
+        background: '#1a202c',
+        color: '#e2e8f0',
+        padding: '30px',
+        boxShadow: '-10px 0 30px rgba(0,0,0,0.3)',
+        zIndex: '10001',
+        overflowY: 'auto',
+        transition: 'right 0.3s ease-in-out',
+        fontFamily: 'monospace',
+        fontSize: '13px'
+    });
+
+    panel.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: #63b3ed;">Tobari Data Inspector</h3>
+            <span id="close-debug" style="cursor: pointer; font-size: 20px;">&times;</span>
+        </div>
+        <div style="margin-bottom: 20px;">
+            <div style="color: #a0aec0; margin-bottom: 8px; font-weight: bold;">[Signed Payload]</div>
+            <pre style="background: #2d3748; padding: 15px; border-radius: 8px; overflow-x: auto;">${JSON.stringify(currentDebugData?.payload, null, 2)}</pre>
+        </div>
+        <div>
+            <div style="color: #a0aec0; margin-bottom: 8px; font-weight: bold;">[Revealed Data]</div>
+            <pre style="background: #2d3748; padding: 15px; border-radius: 8px; overflow-x: auto;">${JSON.stringify(currentDebugData?.revealed, null, 2)}</pre>
+        </div>
+    `;
+
+    document.body.appendChild(btn);
+    document.body.appendChild(panel);
+
+    let isOpen = false;
+    const toggle = () => {
+        isOpen = !isOpen;
+        panel.style.right = isOpen ? '0' : '-500px';
+        btn.style.opacity = isOpen ? '0' : '1';
+    };
+
+    btn.onclick = toggle;
+    document.getElementById('close-debug')!.onclick = toggle;
+
+    // Keyboard shortcut 'D'
+    window.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'd' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            toggle();
+        }
+    });
 }
 
 // Minimal Template Engine (Supporting {{key}}, {{#each}}, {{#join}})
@@ -220,12 +311,17 @@ function render(payload: any, data: any) {
     const container = document.getElementById('viewer-root');
     if (!container) return;
 
+    // Set document title from data if available
+    if (data["証明書名称"]) {
+        document.title = `${data["証明書名称"]} - Tobari Verified`;
+    }
+
     const template = payload.display?.template;
     if (template) {
         container.innerHTML = simpleTemplate(template, data, payload);
     } else {
-        // Fallback to Auto-Renderer
-        container.innerHTML = autoRender(data, payload);
+        // Fallback to Auto-Renderer (wrapped in the professional container)
+        container.innerHTML = `<div class="official-document">${autoRender(data, payload)}</div>`;
     }
 }
 
