@@ -1,5 +1,5 @@
 title: "住民票の写し（世帯連記式）"
-id: "jp.go.juminhyo.v1"
+id: "io.github.masanork.tobari.juminhyo.v1"
 version: "1.0.0"
 
 fields:

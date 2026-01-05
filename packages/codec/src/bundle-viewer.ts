@@ -16,42 +16,43 @@ async function buildViewer() {
 
     // 1. Extract ALL text for total font subsetting
     console.log("Extracting all possible text characters for subsetting...");
-    const coseArray = decode(tobariBinary);
-    const payload = decode(coseArray[2]);
-    const disclosures = payload.disclosures || [];
+    const doc = decode(tobariBinary);
+    const { issuerSigned, fields } = doc;
+    const issuerAuth = decode(issuerSigned.issuerAuth);
+    const mso = decode(issuerAuth[2]);
+
+    const namespace = mso.docType;
+    const items = issuerSigned.nameSpaces[namespace] || [];
 
     // Collect text from data, exposures (disclosures), and the embedded layout template
-    const templateText = payload.display?.template || "";
-    let dataText = collectAllText(payload.data);
-
-    // Decode disclosures to get the real values
-    console.log(`Parsing ${disclosures.length} disclosures...`);
+    let dataText = "";
     const { decode: decodeCbor } = await import('@tobari/crypto/cbor');
-    for (const d of disclosures) {
+
+    // Extract text from all IssuerSignedItems
+    for (const itemBytes of items) {
         try {
-            const decoded = Uint8Array.from(atob(d.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-            const disclosureArray = decodeCbor(decoded);
-            const value = disclosureArray.length === 3 ? disclosureArray[2] : disclosureArray[1];
-            dataText += collectAllText(value);
+            const item = decodeCbor(itemBytes);
+            // [digestID, random, key, value]
+            dataText += collectAllText(item[3]);
         } catch (e) {
-            console.warn("Failed to parse disclosure during subsetting:", e);
+            console.warn("Failed to parse item during subsetting:", e);
         }
     }
 
     // Collect all field labels for subsetting
     let labelText = "";
-    if (payload.fields) {
-        const extractLabels = (fields: any[]) => {
-            for (const f of fields) {
+    if (fields) {
+        const extractLabels = (fs: any[]) => {
+            for (const f of fs) {
                 if (f.id) labelText += f.id;
                 if (f.items?.fields) extractLabels(f.items.fields);
             }
         };
-        extractLabels(payload.fields);
+        extractLabels(fields);
     }
 
-    const engineText = "（非開示）Digital Certificate Signature Schema Compiled at Document Auth ID Sig ES384 Issued At 0123456789/:,.印発行者情報";
-    const combinedText = templateText + dataText + labelText + engineText;
+    const engineText = "（非開示）Digital Certificate Signature Schema Compiled at Document Auth ID Sig ES384 Issued At 0123456789/:,.印発行者情報ISO/IEC 18013-5 MSO Verified";
+    const combinedText = dataText + labelText + engineText;
 
     const uniqueChars = Array.from(new Set(Array.from(combinedText))).join('');
     console.log(`Unique characters to subset: ${uniqueChars.length}`);

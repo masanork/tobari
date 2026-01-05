@@ -23,7 +23,7 @@ async function buildVerifier() {
         "世帯員": []
     };
     const coseBinary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, { kid: "poc-issuer" });
-    fs.writeFileSync('examples/juminhyo/juminhyo.cose', coseBinary);
+    fs.writeFileSync('examples/juminhyo/poc-sample.cose', coseBinary);
 
     // 3. Bundle the UI logic
     const buildResult = await Bun.build({

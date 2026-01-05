@@ -11,6 +11,7 @@
         "test:e2e": "npx playwright test",
         "build:demo": "bun run examples/juminhyo/gen-tobari.ts && bun run packages/codec/src/bundle-viewer.ts",
         "build:verifier": "bun run packages/codec/src/bundle-verifier.ts",
+        "verify:cli": "bun run packages/codec/src/verify-cli.ts",
         "build": "bun run build:demo && bun run build:verifier",
         "ci": "bun run build && bun run test && npx playwright test"
     },
