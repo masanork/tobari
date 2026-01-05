@@ -1,62 +1,58 @@
-# 住民票の写し（世帯連記式）スキーマ定義
 title: "住民票の写し（世帯連記式）"
-version: "1.0.0"
 id: "jp.go.juminhyo.v1"
+version: "1.0.0"
 
-# デザイン・表示用メタデータ
-display:
-  font: "GJM" # IPA明朝 (Glyph Japanese Medium)
-  layout: "official-form"
-
-# フィールド定義
-# selective: true の項目は、署名を維持したまま個別に秘匿（開示・非開示を選択）可能
 fields:
   - id: "証明書名称"
     type: "string"
-    default: "住民票の写し"
-
+    section: "header"
   - id: "交付年月日"
-    type: "date"
-
+    type: "string"
+    section: "footer"
   - id: "世帯住所"
     type: "string"
     selective: true
-
   - id: "世帯主氏名"
     type: "string"
     selective: true
-
   - id: "世帯員"
     type: "array"
-    selective: true
     items:
       fields:
         - id: "氏名"
           type: "string"
           selective: true
+          primary: true
         - id: "フリガナ"
           type: "string"
+          selective: true
         - id: "旧氏"
           type: "string"
-          optional: true
+          selective: true
+        - id: "旧氏カナ"
+          type: "string"
           selective: true
         - id: "生年月日"
-          type: "date"
+          type: "string"
           selective: true
         - id: "性別"
-          type: "enum"
-          values: ["男", "女"]
+          type: "string"
+          selective: true
         - id: "続柄"
           type: "string"
           selective: true
         - id: "住民となった日"
-          type: "date"
+          type: "string"
+          selective: true
         - id: "住民となった事由"
           type: "string"
+          selective: true
         - id: "住所を定めた日"
-          type: "date"
+          type: "string"
+          selective: true
         - id: "届出日"
-          type: "date"
+          type: "string"
+          selective: true
         - id: "前住所"
           type: "string"
           selective: true
@@ -68,20 +64,16 @@ fields:
         - id: "個人番号"
           type: "string"
           selective: true
-          pattern: "^[0-9]{12}$"
         - id: "住民票コード"
           type: "string"
           selective: true
         - id: "備考"
           type: "array"
-          optional: true
           items:
             type: "string"
-
   - id: "発行者役職"
     type: "string"
+    section: "footer"
   - id: "発行者氏名"
     type: "string"
-  - id: "watermark"
-    type: "string"
-    default: "見本"
+    section: "footer"
