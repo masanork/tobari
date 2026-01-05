@@ -20,6 +20,9 @@ PDF や紙の書類が持つ「完成された様式」への信頼感と、現�
    最新の推奨アルゴリズムである P-384 (ECDSA) を標準採用し、長期に渡る真正性を担保。
 4. **Font Subsetting & IVS Support**:
    住民票などで不可欠な異体字（IVS）に対応。IPA MJ明朝から必要なグリフのみを抽出して埋め込み、数十KBで完璧な描画を実現。
+5. **Holder Binding (Device Signature)**:
+   ISO 18013-5 (mdoc) および OID4VP に準拠したデバイス認証をサポート。提示されたデータが正当な所有者から来たものであることを暗号学的に保証します。
+   [詳細ドキュメント: docs/HOLDER_BINDING.md](docs/HOLDER_BINDING.md)
 
 ## Project Structure
 
@@ -51,15 +54,27 @@ Tobari は高精度な日本語描画のために **IPAmj明朝** を使用し�
 # examples/juminhyo/juminhyo.cose -> 署名済み原本データ（COSE）
 # examples/verifier.html -> 事業者向け検証ツール
 
-## CLI Verifier
-開発者やCI/CD環境向けに、コマンドラインから `.cose` ファイルを検証・閲覧できるツールを提供しています。
+## CLI Tools
+
+開発者やCI/CD環境向けに、コマンドラインツールを提供しています。
+
+### Presentation (発行と提示)
 
 ```bash
-# 原本データのデコードと表示
-bun run verify:cli examples/juminhyo/juminhyo.cose
+# 1. 資格情報の発行 (Device Keyの生成と埋め込み)
+bun run examples/juminhyo/gen-tobari.ts
 
-# 公開鍵を指定した署名検証
-bun run verify:cli examples/juminhyo/juminhyo.cose pubkey.json
+# 2. 提示データの作成 (Selective Disclosure & Holder Binding)
+bun run present:cli examples/juminhyo/juminhyo.cose output_vp.cose \
+  --fields=世帯主氏名,交付年月日 \
+  --nonce=12345 --audience=verifier.id --response-uri=https://verifier.id/cb
+```
+
+### Verification (検証)
+
+```bash
+# 原本データのデコードと署名検証
+bun run verify:cli output_vp.cose pubkey.json
 ```
 
 ## Library Usage (TypeScript)
