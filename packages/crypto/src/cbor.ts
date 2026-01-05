@@ -1,4 +1,5 @@
 import { Encoder, Decoder } from 'cbor-x';
+export { Encoder, Decoder } from 'cbor-x';
 
 // Configure cbor-x for canonical encoding (deterministic)
 // structuredClone is used to ensure pure JS objects if needed, 
@@ -35,6 +36,15 @@ function sortKeysRecursive(value: any): any {
         if (value instanceof Uint8Array) {
             return value;
         }
+        // Handle Map (preserve it, maybe sort keys?)
+        if (value instanceof Map) {
+            // For canonical encoding, we should technically sort map keys too.
+            // But complex keys (int vs string) make simple sort hard.
+            // For now, let's at least return the Map so it's not empty!
+            // TODO: strict canonical sort for Maps
+            return value;
+        }
+
         // Prepare a new object with sorted keys
         const sortedObj: Record<string, any> = {};
         Object.keys(value).sort().forEach(key => {
