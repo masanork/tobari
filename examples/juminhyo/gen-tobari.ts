@@ -1,4 +1,4 @@
-import { generateSignedTobari } from './packages/codec/src/tobari-gen';
+import { generateSignedTobari } from '../../packages/codec/src/tobari-gen';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
@@ -7,7 +7,7 @@ async function main() {
     console.log("Generating juminhyo.tobari using ES384...");
 
     // 1. Load Schema
-    const schemaPath = path.resolve('juminhyo.yaml');
+    const schemaPath = path.resolve(__dirname, 'juminhyo.yaml');
     const schemaYaml = fs.readFileSync(schemaPath, 'utf-8');
 
     // 2. Prepare Sample Data (Extracted from juminhyo.md structure)
@@ -55,15 +55,15 @@ async function main() {
     });
 
     // 5. Save to file
-    const outputPath = path.resolve('juminhyo.tobari');
+    const outputPath = path.resolve(__dirname, 'juminhyo.tobari');
     fs.writeFileSync(outputPath, tobariBinary);
 
     console.log(`Successfully generated: ${outputPath}`);
     console.log(`Binary size: ${tobariBinary.length} bytes`);
 
     // --- Verification Check ---
-    const { verifyFormToken } = await import('./packages/crypto/src/cose');
-    const { base64url } = await import('./packages/crypto/src/utils');
+    const { verifyFormToken } = await import('../../packages/crypto/src/cose');
+    const { base64url } = await import('../../packages/crypto/src/utils');
     const token = base64url.encode(tobariBinary);
     const verified = await verifyFormToken(token, keyPair.publicKey);
 
