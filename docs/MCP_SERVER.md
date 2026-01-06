@@ -6,9 +6,14 @@ Tobari MCP (Model Context Protocol) Server は、AI エージェントがデジ�
 
 ## インストールと設定
 
-### Claude Desktop での使用例
+### 1. Claude Desktop の設定
 
-`~/Library/Application Support/Claude/claude_desktop_config.json` に以下の設定を追加します。
+Claude Desktop で Tobari MCP Server を使用するには、設定ファイル（`claude_desktop_config.json`）を編集します。設定ファイルの場所は OS によって異なります。
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+ファイルを開き（存在しない場合は作成し）、以下の設定を追加します。**注意: `/path/to/tobari` は、あなたの環境の実際の絶対パスに置き換えてください。**
 
 ```json
 {
@@ -23,6 +28,12 @@ Tobari MCP (Model Context Protocol) Server は、AI エージェントがデジ�
   }
 }
 ```
+
+### 2. 接続の確認
+
+1. Claude Desktop を完全に終了し、再起動します。
+2. チャット入力欄の右下に **ハンマーのアイコン（Tools）** が表示されていることを確認します。
+3. アイコンをクリックし、`read_tobari_file` や `analyze_service_request` などのツールがリストに含まれていれば成功です。
 
 ## 利用可能なツール
 
