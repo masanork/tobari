@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - MCP Server & Service Requests
+
+This release introduces the **Model Context Protocol (MCP) Server**, enabling AI agents to autonomously discover, read, verify, and present Tobari credentials. It also adds the **Service Request** concept, allowing procedures to define machine-readable requirements.
+
+### Features
+- **MCP Server (Digitized Agency)**:
+  - Introduced `@tobari/mcp-server` for agentic workflows.
+  - `list_available_documents`: Discovers Tobari files (HTML/CBOR) in the workspace.
+  - `read_tobari_file`: Verifies signatures and extracts credential data.
+  - `analyze_service_request`: Parses procedure requirements (Schema, Attributes).
+  - `create_presentation`: Generates Verifiable Presentations (VP) with Selective Disclosure.
+  - `verify_presentation`: Validates incoming VPs and Holder Binding.
+- **Service Request PoC**:
+  - Defined `ServiceRequest` schema for administrative procedures.
+  - Added **Bank Account Balance Certificate** example.
+  - Added **Service Request Viewer** with visual tutorial.
+- **Documentation**:
+  - Added `MCP_SERVER.md` with Claude Desktop configuration guide.
+
+### Improvements
+- **Performance**: Optimized HTML parsing and Base64 extraction in payload reader.
+- **COSE**: Fixed algorithm ID parsing and test key usage.
+
 ## [0.2.1] - 2026-01-06
 
 ### Features

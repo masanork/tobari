@@ -1,6 +1,7 @@
-bank_name: "あおぞらデジタル銀行"
+bank_name: "デジタル銀行"
 branch_name: "本店営業部"
 account_type: "普通"
 account_number: "1234567"
 account_holder: "䶒藤󠄃 太朗󠄅"
+balance: "¥1,234,567-"
 issue_date: "2026-01-06"

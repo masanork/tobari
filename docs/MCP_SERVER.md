@@ -58,6 +58,10 @@ Tobari ファイル（.cose または .html）を読み込み、中身を JSON �
 署名プロセスを 2 ステップに分けるための最初のステップです。署名対象のバイナリ（Sig_structure）を生成します。
 
 - **引数**: `requests`, `verifierNonce`
+- **任意**: `webauthn`
+  - `rpId`: WebAuthn の Relying Party ID
+  - `userVerification`: `required | preferred | discouraged`
+  - `allowCredentials`: `[{ idBase64Url, type: "public-key" }]`
 
 ### 4. `assemble_presentation` (外部署名 / Passkey 用)
 外部（ブラウザの Passkey など）で生成された署名を受け取り、最終的な VP を組み立てます。
@@ -65,6 +69,8 @@ Tobari ファイル（.cose または .html）を読み込み、中身を JSON �
 - **引数**:
   - `preparedData`: `prepare_presentation` の戻り値
   - `signatures`: Base64 エンコードされた署名の配列
+  - `signatureFormat` (任意): `der` (default) / `raw-ecdsa`
+  - `signatureEncoding` (任意): `base64` (default) / `base64url`
 
 ### 5. `verify_presentation`
 受け取った VP の真正性を検証します。Issuer 署名と Device 署名（Holder Binding）の両方をチェックします。

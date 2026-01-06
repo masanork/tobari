@@ -70,8 +70,33 @@ async function buildViewer() {
     const engineText = "（非開示）Digital Certificate Signature Schema Compiled at Document Auth ID Sig ES384 Issued At 0123456789/:,.印発行者情報ISO/IEC 18013-5 MSO Verified";
     const combinedText = dataText + labelText + engineText;
 
-    const uniqueChars = Array.from(new Set(Array.from(combinedText))).join('');
-    console.log(`Unique characters to subset: ${uniqueChars.length}`);
+    // Improve unique character extraction to handle IVS (Ideographic Variation Sequences)
+    // Naive Set() splits Base char and VS, causing IVS glyphs to be lost in subsetting.
+    // We need to keep Base+VS as a single unit or ensure VS follows Base in the subset string?
+    // Actually, subset-font usually takes a string and looks up glyphs. If we scramble the order,
+    // the shaper sees "Base" then later "VS" separately, it won't pick the IVS glyph.
+    // So we must prioritize keeping the sequence intact in the minimal text, 
+    // OR just pass the full text (but that's too big).
+    // Better approach: Extract all grapheme clusters or at least explicit IVS sequences.
+
+    const segmenter = new Intl.Segmenter("ja", { granularity: "grapheme" });
+    const segments = segmenter.segment(combinedText);
+    const uniqueSegments = new Set<string>();
+
+    for (const seg of segments) {
+        uniqueSegments.add(seg.segment);
+    }
+
+    // Join them back. Now IVS sequences like "藤󠄃" are kept as one string in the Set,
+    // and joined back together.
+    // Note: The order doesn't matter for the subsetter as long as the sequence is intact in the input string?
+    // Wait, if the subsetter takes "A B", it sees glyph A and glyph B. 
+    // If it takes "AB", it might see ligature AB.
+    // For IVS, we need "Base VS".
+    // If we join the set ie. "BaseVS" + "Other", the resulting string contains "Base" "VS" "Other".
+    // The font engine (harfbuzz or opentype) should handle it if they appear sequentially.
+    const uniqueChars = Array.from(uniqueSegments).join('');
+    console.log(`Unique characters (graphemes) to subset: ${uniqueSegments.size}`);
 
     // 2. Subset Font (IPA MJ Mincho)
     const fontPath = path.resolve('shared/fonts/ipamjm.ttf');
