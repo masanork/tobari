@@ -62,19 +62,21 @@ async function readTobariFileAsBuffer(filePath: string): Promise<Uint8Array> {
     const ext = path.extname(filePath).toLowerCase();
     if (ext === ".html") {
         const htmlContent = await fs.readFile(filePath, "utf-8");
-        // Use matchAll to find the longest assignment, avoiding partial matches
-        const matches = Array.from(htmlContent.matchAll(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/g));
-        let bestMatch = "";
-        for (const m of matches) {
-            if (m[1].length > bestMatch.length) {
-                bestMatch = m[1];
-            }
-        }
-
-        if (!bestMatch) {
+        
+        // Faster lookup than regex matchAll for large files
+        const marker = "window.__TOBARI_DATA__ = \"";
+        const startIdx = htmlContent.indexOf(marker);
+        if (startIdx === -1) {
             throw new Error("Could not find embedded Tobari data in HTML file.");
         }
-        let b64 = bestMatch.replace(/\s/g, '');
+        
+        const dataStart = startIdx + marker.length;
+        const endIdx = htmlContent.indexOf("\"", dataStart);
+        if (endIdx === -1) {
+            throw new Error("Could not find end of Tobari data in HTML file.");
+        }
+
+        let b64 = htmlContent.substring(dataStart, endIdx).replace(/\s/g, '');
         if (b64.startsWith("data:")) {
             const commaIdx = b64.indexOf(",");
             if (commaIdx !== -1) {
@@ -82,12 +84,8 @@ async function readTobariFileAsBuffer(filePath: string): Promise<Uint8Array> {
             }
         }
 
-        const binString = atob(b64);
-        const fileBuffer = new Uint8Array(binString.length);
-        for (let i = 0; i < binString.length; i++) {
-            fileBuffer[i] = binString.charCodeAt(i);
-        }
-        return fileBuffer;
+        // Use native Buffer for fast base64 decoding
+        return new Uint8Array(Buffer.from(b64, 'base64'));
     } else {
         return await fs.readFile(filePath);
     }
