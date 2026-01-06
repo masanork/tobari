@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { spawn } from "child_process";
 import { decode, encode } from "cbor-x";
 import { verifyTobari, verifyPresentation } from "@tobari/codec/validator";
 import { createPresentation, signDeviceAuth, getDeviceAuthToBeSigned, assembleDeviceAuth } from "@tobari/codec/sd";
@@ -24,7 +25,7 @@ const CreatePresentationSchema = z.object({
         path: z.string().describe("Path to the source Tobari file"),
         fields: z.array(z.string()).describe("List of field IDs to disclose from this document"),
     })),
-    devicePrivateKeyPath: z.string().describe("Path to the holder's device private key (JWK) for signing"),
+    devicePrivateKeyPath: z.string().optional().describe("Path to the holder's device private key (JWK). If omitted, attempts to launch Tobari Signer UI."),
     verifierNonce: z.string().optional().describe("Nonce provided by the verifier to prevent replay attacks"),
 });
 
@@ -195,14 +196,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         },
                         devicePrivateKeyPath: {
                             type: "string",
-                            description: "Path to holder's private key (JWK)"
+                            description: "Path to holder's private key (JWK). Optional if using external signer UI."
                         },
                         verifierNonce: {
                             type: "string",
                             description: "Optional nonce for replay protection"
                         }
                     },
-                    required: ["requests", "devicePrivateKeyPath"]
+                    required: ["requests"]
                 }
             },
             {
@@ -444,16 +445,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             const args = CreatePresentationSchema.parse(request.params.arguments);
             const documents = [];
 
-            // Load and parse private key
-            const keyContent = await fs.readFile(args.devicePrivateKeyPath, "utf-8");
-            const jwk = JSON.parse(keyContent);
-            const devicePrivateKey = await crypto.subtle.importKey(
-                "jwk",
-                jwk,
-                { name: "ECDSA", namedCurve: jwk.crv || "P-384" },
-                true,
-                ["sign"]
-            );
+            let devicePrivateKey: CryptoKey | undefined;
+            if (args.devicePrivateKeyPath) {
+                // Load and parse private key
+                const keyContent = await fs.readFile(args.devicePrivateKeyPath, "utf-8");
+                const jwk = JSON.parse(keyContent);
+                devicePrivateKey = await crypto.subtle.importKey(
+                    "jwk",
+                    jwk,
+                    { name: "ECDSA", namedCurve: jwk.crv || "P-384" },
+                    true,
+                    ["sign"]
+                );
+            }
 
             for (const req of args.requests) {
                 const filePath = req.path;
@@ -468,15 +472,97 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                 const deviceNameSpacesBytes = encode(deviceNameSpaces);
                 
                 // Session Transcript for Online Presentation (simplified)
-                // [DeviceEngagementBytes (null), ER_KeyBytes (null), Handover (Nonce)]
                 const sessionTranscript = [null, null, args.verifierNonce || null];
 
-                const deviceAuth = await signDeviceAuth(
-                    disclosedDoc.docType,
-                    deviceNameSpacesBytes,
-                    sessionTranscript,
-                    devicePrivateKey
-                );
+                let deviceAuth;
+
+                if (devicePrivateKey) {
+                    deviceAuth = await signDeviceAuth(
+                        disclosedDoc.docType,
+                        deviceNameSpacesBytes,
+                        sessionTranscript,
+                        devicePrivateKey
+                    );
+                } else {
+                    // External Signer Flow (Tauri App)
+                    const { toBeSigned, protectedHeaderBytes } = await getDeviceAuthToBeSigned(
+                        disclosedDoc.docType,
+                        deviceNameSpacesBytes,
+                        sessionTranscript
+                    );
+
+                    // Locate Signer Binary
+                    let signerPath = process.env.TOBARI_SIGNER_PATH;
+                    if (!signerPath) {
+                        // Assuming running from packages/mcp-server/src or similar
+                        // Try to find relative to project root
+                        // Current file is .../packages/mcp-server/src/index.ts
+                        const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
+                        
+                        // Check common build locations
+                        const possiblePaths = [
+                            path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer"), // Unix/Mac
+                            path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer.exe"), // Windows
+                            path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer"), // Debug Unix/Mac
+                            path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer.exe") // Debug Windows
+                        ];
+
+                        for (const p of possiblePaths) {
+                            try {
+                                await fs.access(p);
+                                signerPath = p;
+                                break;
+                            } catch {}
+                        }
+                    }
+
+                    if (!signerPath) {
+                        throw new Error("Could not find 'tobari-signer' binary. Please build the signer package or set TOBARI_SIGNER_PATH.");
+                    }
+
+                    const signRequest = {
+                        challenge: Buffer.from(toBeSigned).toString('base64url'),
+                        rp_id: "tobari-mcp-server",
+                        message: `Sign presentation for ${disclosedDoc.docType}`,
+                        user_verification: "preferred"
+                    };
+
+                    // Spawn the signer process
+                    const signerProcess = spawn(signerPath, ["--request", JSON.stringify(signRequest)]);
+                    
+                    const resultPromise = new Promise<string>((resolve, reject) => {
+                        let stdout = "";
+                        let stderr = "";
+                        signerProcess.stdout.on("data", (data) => stdout += data);
+                        signerProcess.stderr.on("data", (data) => stderr += data);
+                        signerProcess.on("close", (code) => {
+                            if (code === 0) resolve(stdout);
+                            else reject(new Error(`Signer exited with code ${code}: ${stderr}`));
+                        });
+                        signerProcess.on("error", (err) => reject(err));
+                    });
+                    
+                    const outputStr = await resultPromise;
+                    let output;
+                    try {
+                        output = JSON.parse(outputStr);
+                    } catch (e) {
+                         throw new Error(`Invalid JSON output from signer: ${outputStr}`);
+                    }
+                    
+                    // Assemble deviceAuth with the external signature
+                    // Note: This signature is a WebAuthn assertion signature, not a raw ECDSA signature over toBeSigned.
+                    // The verifier must be aware of this distinction.
+                    const signatureBytes = new Uint8Array(Buffer.from(output.signature, 'base64url'));
+
+                    deviceAuth = await assembleDeviceAuth(
+                        protectedHeaderBytes,
+                        disclosedDoc.docType,
+                        deviceNameSpacesBytes,
+                        sessionTranscript,
+                        signatureBytes
+                    );
+                }
 
                 documents.push({
                     docType: disclosedDoc.docType,
@@ -504,7 +590,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                         text: JSON.stringify({
                             vp_base64: vpBase64,
                             description: "Verifiable Presentation created successfully.",
-                            document_count: documents.length
+                            document_count: documents.length,
+                            signing_method: devicePrivateKey ? "internal_key" : "external_signer"
                         }, null, 2),
                     },
                 ],

@@ -693,4 +693,82 @@ describe("MCP Server", () => {
         expect(serviceRequest).toBeDefined();
         expect(serviceRequest.category).toBe("Administrative Request");
     }, 10000);
+
+    it("should create VP using external signer tool (via TOBARI_SIGNER_PATH)", async () => {
+        const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
+        const dummySignerPath = path.resolve(import.meta.dir, "dummy_signer.ts");
+        
+        // Ensure dummy signer is executable
+        // (chmod is handled in shell, but verifying here implicitly by running it)
+
+        const proc = spawn("bun", ["run", serverPath], {
+            stdio: ["pipe", "pipe", "inherit"],
+            env: {
+                ...process.env,
+                // Point to the dummy signer script
+                TOBARI_SIGNER_PATH: dummySignerPath
+            }
+        });
+
+        const juminhyoFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
+
+        const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+        
+        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
+        proc.stdin.write(JSON.stringify(initReq) + "\n");
+
+        // Request VP creation WITHOUT providing devicePrivateKeyPath
+        // This should trigger the external signer flow
+        const createReq = {
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: {
+                name: "create_presentation",
+                arguments: {
+                    requests: [
+                        { path: juminhyoFile, fields: ["世帯主氏名"] }
+                    ],
+                    // devicePrivateKeyPath is intentionally omitted
+                    verifierNonce: "test-external-nonce"
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(createReq) + "\n");
+
+        let outputBuffer = "";
+        proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
+
+        const waitForId = async (id: number) => {
+            for (let i = 0; i < 20; i++) {
+                if (outputBuffer.includes(`"id":${id}`)) return;
+                await new Promise(r => setTimeout(r, 200));
+            }
+        };
+
+        try {
+            await waitForId(1);
+        } finally {
+            proc.kill();
+        }
+
+        const createRespLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 1; } catch { return false; } });
+        expect(createRespLine).toBeDefined();
+        
+        const response = JSON.parse(createRespLine!);
+        if (response.error) {
+            throw new Error(`MCP Error: ${response.error.message}`);
+        }
+
+        const resultData = JSON.parse(response.result.content[0].text);
+        
+        expect(resultData.vp_base64).toBeDefined();
+        expect(resultData.signing_method).toBe("external_signer");
+
+        // Verify structure roughly
+        const vp = decode(Buffer.from(resultData.vp_base64, 'base64'));
+        expect(vp.documents[0].deviceSigned.deviceAuth).toBeDefined();
+        
+        // Note: The signature itself is dummy, so verify_presentation would likely fail 
+        // unless we mock the verification logic too or use a valid key in the dummy signer.
+        // For this test, ensuring the flow completed and returned a VP is sufficient.
+    }, 15000);
 });

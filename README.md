@@ -29,6 +29,7 @@ PDF や紙の書類が持つ「完成された様式」への信頼感と、現�
 - `packages/codec`: YAML スキーマからの CDDL 生成、署名済みバイナリ（.cose）の生成、HTML ビューアのバンドル。
 - `packages/crypto`: P-384 対応の COSE 署名・検証コア実装。
 - `packages/mcp-server`: AI エージェント連携用インターフェース (Model Context Protocol)。
+- `packages/signer`: Tauri ベースの WebAuthn/FIDO 署名コンパニオンアプリ。PCの内蔵認証器（Touch ID, Windows Hello）を利用して署名します。
 - `examples/juminhyo`: 住民票（世帯連記式）をモデルとした実装例。SD-CBORによる選択的開示のデモ。
 - `examples/ininjo`: 電子委任状をモデルとした実装例。ネストされたデータ構造の表現と、ビューアによる構造化表示のデモ。
 

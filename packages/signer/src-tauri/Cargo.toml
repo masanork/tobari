@@ -1,0 +1,25 @@
+[package]
+name = "packagessigner"
+version = "0.1.0"
+description = "Tobari WebAuthn Signer"
+authors = ["masanork"]
+edition = "2021"
+
+[lib]
+name = "packagessigner_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4.5", features = ["derive"] }
+base64 = "0.22"
+thiserror = "2.0"
+# authenticator crate for interacting with security keys / OS APIs
+authenticator = "0.5.0" 
+tokio = { version = "1", features = ["full"] }

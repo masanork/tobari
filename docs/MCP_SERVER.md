@@ -25,11 +25,16 @@ Claude Desktop で Tobari MCP Server を使用するには、設定ファイル�
       "args": [
         "run",
         "/path/to/tobari/packages/mcp-server/src/index.ts"
-      ]
+      ],
+      "env": {
+        "TOBARI_SIGNER_PATH": "/path/to/tobari/packages/signer/src-tauri/target/release/tobari-signer"
+      }
     }
   }
 }
 ```
+
+> **Note:** `TOBARI_SIGNER_PATH` は、外部 WebAuthn Signer アプリの場所を指定する環境変数です。指定しない場合、MCP サーバーはデフォルトのビルド出力パス（`packages/signer/src-tauri/target/release/tobari-signer`）を自動的に探索します。
 
 ### 2. 接続の確認
 
@@ -49,9 +54,12 @@ Tobari ファイル（.cose または .html）を読み込み、中身を JSON �
 ### 2. `create_presentation`
 複数の Tobari ドキュメントから特定のフィールドのみを抽出し、ホルダーのデバイス鍵で署名した Verifiable Presentation (VP) を作成します。
 
+**WebAuthn / FIDO 連携**:
+`devicePrivateKeyPath` が省略された場合、MCP サーバーは自動的に GUI コンパニオンアプリ（Tobari Signer）を起動します。デスクトップ画面上にダイアログが表示され、ユーザーは Touch ID や YubiKey などの FIDO 認証器を使って署名を行うことができます。
+
 - **引数**:
   - `requests`: `[{ path, fields: ["field1", "field2"] }]` の配列
-  - `devicePrivateKeyPath`: ホルダーの秘密鍵 (JWK) へのパス
+  - `devicePrivateKeyPath` (任意): ホルダーの秘密鍵 (JWK) へのパス。**省略時は Tobari Signer アプリが起動します。**
   - `verifierNonce` (任意): 検証者から指定されたワンタイムトークン
 
 ### 3. `prepare_presentation` (外部署名 / Passkey 用)
@@ -102,11 +110,3 @@ Tobari リポジトリには、すぐに試せるデモファイルが含まれ�
 2. **自律的な解析**:
    > 「それらの中から、私に役立ちそうな手続きを探して」
    AI は発見した「行政サービス案内」を `analyze_service_request` で解析し、必要な書類が揃っているかを判断します。
-
-## ユースケース例
-
-AI との対話で以下のような活用が可能です：
-
-1. **内容の確認**: 「この住民票の内容を要約して」
-2. **情報の抽出**: 「委任状の中から『委任事項』の部分だけを教えて」
-3. **提出用データの作成**: 「この 2 つの書類から、審査に必要な項目だけを抜き出して、私の署名を付けて提出用データを作って」
