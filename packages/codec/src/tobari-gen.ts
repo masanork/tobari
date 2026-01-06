@@ -28,30 +28,49 @@ export async function generateSignedTobari(
     schemaYaml: string,
     data: any,
     privateKey: CryptoKey,
-    options: { kid?: string; alg?: number } = {}
+    options: { kid?: string; alg?: number; devicePublicKey?: CryptoKey } = {}
 ): Promise<Uint8Array> {
     const schema = yaml.load(schemaYaml) as any;
     // Use the schema ID itself as the mdoc Namespace
     const namespace = schema.id;
 
-    // 0. Generate "Device Key" (simulating a Passkey/Holder Key)
-    // In a real system, the holder would provide their public key.
-    // Here we generate one and save the private key for the presentation demo.
-    console.log("Generating Holder Device Key (P-384)...");
-    const deviceKeyPair = await crypto.subtle.generateKey(
-        { name: "ECDSA", namedCurve: "P-384" },
-        true,
-        ["sign", "verify"]
-    );
+    let devicePublicKey = options.devicePublicKey;
 
-    // Save Private Key for present-cli
-    const devicePrivateJwk = await crypto.subtle.exportKey("jwk", deviceKeyPair.privateKey);
-    fs.writeFileSync("device-key.json", JSON.stringify(devicePrivateJwk, null, 2));
-    console.log("Saved Holder Private Key to device-key.json");
+    if (!devicePublicKey) {
+        const deviceKeyPath = "device-key.json";
+        if (fs.existsSync(deviceKeyPath)) {
+            console.log(`Reusing existing Holder Device Key from ${deviceKeyPath}`);
+            const jwk = JSON.parse(fs.readFileSync(deviceKeyPath, 'utf-8'));
+            // Import as private key first to ensure we handle the full JWK
+            const privateKey = await crypto.subtle.importKey(
+                "jwk", jwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["sign"]
+            );
+            // In a real WebAuthn scenario, we would only have the public key here.
+            // But for this mock-reusing logic, we need to get the public key from the pair or re-export.
+            // Simplified: Generate a temporary pair from the same JWK or just use a known-good public key import.
+            
+            // Correct way to import public part of an EC JWK:
+            const pubJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
+            devicePublicKey = await crypto.subtle.importKey(
+                "jwk", pubJwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["verify"]
+            );
+        } else {
+            console.log("Generating New Holder Device Key (P-384)...");
+            const deviceKeyPair = await crypto.subtle.generateKey(
+                { name: "ECDSA", namedCurve: "P-384" },
+                true,
+                ["sign", "verify"]
+            );
+
+            const devicePrivateJwk = await crypto.subtle.exportKey("jwk", deviceKeyPair.privateKey);
+            fs.writeFileSync(deviceKeyPath, JSON.stringify(devicePrivateJwk, null, 2));
+            console.log("Saved Holder Private Key to device-key.json");
+            devicePublicKey = deviceKeyPair.publicKey;
+        }
+    }
 
     // 1. Transform data to mdoc format (MSO + SignedItems)
-    // Pass devicePublicKey to embed it in the MSO
-    const { mso, issuerSignedItems } = await transformToMdocData(schema.id, data, schema.fields, namespace, deviceKeyPair.publicKey);
+    const { mso, issuerSignedItems } = await transformToMdocData(schema.id, data, schema.fields, namespace, devicePublicKey);
 
     // 2. Sign the MSO
     const issuerAuth = await signCoseSign1(mso, privateKey, {

@@ -99,16 +99,44 @@ export async function verifyPresentation(
                     y = deviceKeyMap[-3] || deviceKeyMap['-3'];
                 }
 
-                const jwk = {
-                    kty: "EC", crv: "P-384", x: Buffer.from(x).toString('base64url'), y: Buffer.from(y).toString('base64url')
-                };
-                const deviceKey = await crypto.subtle.importKey(
+                                                                const jwk = {
+
+                                                                    kty: "EC", crv: "P-384", x: Buffer.from(x).toString('base64url'), y: Buffer.from(y).toString('base64url')
+
+                                                                };
+
+                                                                
+
+                                                                const deviceKey = await crypto.subtle.importKey(
+
+                                                
+
+                                
+
+                
                     "jwk", jwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["verify"]
                 );
 
                 const coseArray = decode(doc.deviceSigned.deviceAuth);
                 const [protectedHeaderBytes, _, payloadBytes, signature] = coseArray;
 
+                // 4. Verify Payload Content (DeviceAuthentication)
+                const deviceAuthPayload = decode(payloadBytes);
+
+                if (!Array.isArray(deviceAuthPayload) || deviceAuthPayload[0] !== "DeviceAuthentication") {
+                    throw new Error("Invalid DeviceAuth payload: Expected 'DeviceAuthentication' array");
+                }
+
+                // Check nonce in sessionTranscript
+                const sessionTranscript = deviceAuthPayload[1];
+                if (verifierNonce) {
+                    const nonceInTranscript = Array.isArray(sessionTranscript) ? sessionTranscript[2] : null;
+                    if (nonceInTranscript !== verifierNonce) {
+                        throw new Error(`Nonce mismatch: Expected ${verifierNonce}, got ${nonceInTranscript}`);
+                    }
+                }
+
+                // Setup Sig_structure for COSE verification
                 const sigStructure = [
                     "Signature1",
                     protectedHeaderBytes,
@@ -116,6 +144,8 @@ export async function verifyPresentation(
                     payloadBytes
                 ];
                 const toBeVerified = encodeCanonical(sigStructure);
+
+                // console.error(`[VERIFY] docType=${doc.docType} sigLen=${signature.length} payloadLen=${payloadBytes.length}`);
 
                 result.deviceValid = await crypto.subtle.verify(
                     { name: "ECDSA", hash: { name: "SHA-384" } },

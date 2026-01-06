@@ -15,7 +15,9 @@ dist/
 .DS_Store
 
 # Secrets
-device-key.json
+*-key.json
+*.pem
+*.key
 
 # Generated VP files
 *-vp.cose

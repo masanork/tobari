@@ -30,6 +30,11 @@ async function main() {
         ["sign", "verify"]
     );
 
+    // Save Public Key for verification
+    const pubKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+    fs.writeFileSync(path.resolve(__dirname, 'issuer-key.json'), JSON.stringify(pubKeyJwk, null, 2));
+    console.log("Saved Issuer Public Key to issuer-key.json");
+
     const binary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
         kid: "iss-local-p384"
     });
