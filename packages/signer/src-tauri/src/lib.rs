@@ -155,8 +155,6 @@ async fn perform_sign(state: State<'_, AppState>, app: AppHandle) -> Result<(), 
     // Note: This logic runs in the Tauri thread pool (async).
     // In a real implementation, we might need to handle UI callbacks if the authenticator crate supports them.
 
-    let mut manager = authenticator::Authenticator::new();
-
     // In a real scenario, we would map the request.allow_credentials to the authenticator's expected format.
     // For now, we assume we want to use any available credential (resident key) or let the user choose.
 
