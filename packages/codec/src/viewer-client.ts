@@ -397,11 +397,24 @@ function formatValue(v: any): string {
             }
             v = (v as any)['@value'];
         }
+        if (!Array.isArray(v)) {
+            const json = JSON.stringify(v, null, 2);
+            return `<pre style="margin: 0; padding: 10px 12px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12px; line-height: 1.4; white-space: pre-wrap;">${escapeHtml(json)}</pre>`;
+        }
     }
 
     if (v === undefined || v === null) return '-';
     if (Array.isArray(v)) return v.join('、');
     return String(v);
+}
+
+function escapeHtml(text: string): string {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function render(doc: any, data: any, mso: any) {
