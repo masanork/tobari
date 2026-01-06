@@ -1,0 +1,31 @@
+title: "行政サービス案内"
+id: "io.github.masanork.tobari.service_request.v1"
+version: "1.0.0"
+
+fields:
+  - id: "service_id"
+    label: "手続きID"
+    type: "string"
+    section: "header"
+  
+  - id: "title"
+    label: "手続き名称"
+    type: "string"
+    section: "header"
+    primary: true
+
+  - id: "description"
+    label: "制度の概要"
+    type: "string"
+
+  - id: "eligibility"
+    label: "対象となる方"
+    type: "string"
+
+  - id: "presentation_definition"
+    label: "必要書類（機械可読）"
+    type: "object"
+
+  - id: "submission_uri"
+    label: "申請データの送信先"
+    type: "string"
