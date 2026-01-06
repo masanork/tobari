@@ -10,7 +10,7 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { decode, encode } from "cbor-x";
-import { verifyTobari } from "@tobari/codec/validator";
+import { verifyTobari, verifyPresentation } from "@tobari/codec/validator";
 import { createPresentation, signDeviceAuth, getDeviceAuthToBeSigned, assembleDeviceAuth } from "@tobari/codec/sd";
 
 // Define tool schemas
@@ -39,6 +39,12 @@ const PreparePresentationSchema = z.object({
 const AssemblePresentationSchema = z.object({
     preparedData: z.any().describe("The opaque state returned by prepare_presentation"),
     signatures: z.array(z.string()).describe("Base64 encoded signatures, one for each document in the original request order"),
+});
+
+const VerifyPresentationSchema = z.object({
+    vpBase64: z.string().describe("The base64-encoded DeviceResponse (VP) to verify"),
+    issuerPublicKeys: z.record(z.string()).describe("Map of docType to absolute path of issuer's public key (JWK)"),
+    verifierNonce: z.string().optional().describe("Expected nonce to prevent replay attacks"),
 });
 
 const server = new Server(
@@ -135,6 +141,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         signatures: { type: "array", items: { type: "string" }, description: "Base64 signatures" }
                     },
                     required: ["preparedData", "signatures"]
+                }
+            },
+            {
+                name: "verify_presentation",
+                description: "Verifies a Verifiable Presentation (VP), checking both Issuer and Holder (Device) signatures.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        vpBase64: { type: "string", description: "Base64-encoded DeviceResponse" },
+                        issuerPublicKeys: { 
+                            type: "object", 
+                            additionalProperties: { type: "string" },
+                            description: "Map of docType to path of issuer's public key (JWK)"
+                        },
+                        verifierNonce: { type: "string" }
+                    },
+                    required: ["vpBase64", "issuerPublicKeys"]
                 }
             }
         ],
@@ -523,6 +546,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         } catch (error: any) {
             return {
                 content: [{ type: "text", text: `Error assembling VP: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "verify_presentation") {
+        try {
+            const args = VerifyPresentationSchema.parse(request.params.arguments);
+            const vpBytes = new Uint8Array(Buffer.from(args.vpBase64, 'base64'));
+            const presentation = decode(vpBytes);
+
+            const issuerKeys: Record<string, CryptoKey> = {};
+            for (const docType of Object.keys(args.issuerPublicKeys)) {
+                const keyPath = args.issuerPublicKeys[docType];
+                const keyContent = await fs.readFile(keyPath, "utf-8");
+                const jwk = JSON.parse(keyContent);
+                issuerKeys[docType] = await crypto.subtle.importKey(
+                    "jwk", jwk, { name: "ECDSA", namedCurve: jwk.crv || "P-384" }, true, ["verify"]
+                );
+            }
+
+            const results = await verifyPresentation(presentation, issuerKeys, args.verifierNonce);
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            results,
+                            overall_valid: results.every(r => r.issuerValid && r.deviceValid)
+                        }, null, 2),
+                    },
+                ],
+            };
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error verifying VP: ${error.message}` }],
                 isError: true,
             };
         }

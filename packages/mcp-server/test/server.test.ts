@@ -438,4 +438,74 @@ describe("MCP Server", () => {
         const vp = decode(Buffer.from(finalResult.vp_base64, 'base64'));
         expect(vp.documents[0].deviceSigned.deviceAuth).toBeDefined();
     }, 15000);
+
+    it("should verify a created VP successfully", async () => {
+        const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
+        const proc = spawn("bun", ["run", serverPath], {
+            stdio: ["pipe", "pipe", "inherit"],
+        });
+
+        const ininjoFile = path.resolve(import.meta.dir, "../../../examples/ininjo/ininjo.cose");
+        const deviceKeyFile = path.resolve(import.meta.dir, "../../../examples/ininjo/device-key.json");
+        const issuerKeyFile = path.resolve(import.meta.dir, "../../../examples/ininjo/issuer-key.json");
+
+        const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+        
+        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
+        proc.stdin.write(JSON.stringify(initReq) + "\n");
+
+        // 1. Create VP
+        const createReq = {
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: {
+                name: "create_presentation",
+                arguments: {
+                    requests: [{ path: ininjoFile, fields: ["id"] }],
+                    devicePrivateKeyPath: deviceKeyFile
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(createReq) + "\n");
+
+        let outputBuffer = "";
+        proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
+
+        const waitForId = async (id: number) => {
+            for (let i = 0; i < 20; i++) {
+                if (outputBuffer.includes(`"id":${id}`)) return;
+                await new Promise(r => setTimeout(r, 200));
+            }
+        };
+
+        await waitForId(1);
+        const createResp = JSON.parse(outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 1; } catch { return false; } })!);
+        const vpBase64 = JSON.parse(createResp.result.content[0].text).vp_base64;
+
+        // 2. Verify VP
+        const verifyReq = {
+            jsonrpc: "2.0", id: 2, method: "tools/call",
+            params: {
+                name: "verify_presentation",
+                arguments: {
+                    vpBase64: vpBase64,
+                    issuerPublicKeys: {
+                        "io.github.masanork.tobari.ininjo.v1": issuerKeyFile
+                    }
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(verifyReq) + "\n");
+
+        await waitForId(2);
+        proc.kill();
+
+        const verifyRespLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 2; } catch { return false; } });
+        expect(verifyRespLine).toBeDefined();
+        const verifyResult = JSON.parse(JSON.parse(verifyRespLine!).result.content[0].text);
+
+        expect(verifyResult.overall_valid).toBe(true);
+        expect(verifyResult.results[0].issuerValid).toBe(true);
+        expect(verifyResult.results[0].deviceValid).toBe(true);
+        expect(verifyResult.results[0].data.id).toBeDefined();
+    }, 15000);
 });

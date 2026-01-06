@@ -1,7 +1,7 @@
 import { decode } from 'cbor-x';
 import { verifyFormToken } from '@tobari/crypto/cose';
 import { base64url } from '@tobari/crypto/utils';
-import { MSO } from './sd';
+import { MSO, revealMdocData } from './sd';
 
 export interface VerificationResult {
     isValid: boolean;
@@ -49,4 +49,85 @@ export async function verifyTobari(
             error: e.message || String(e)
         };
     }
+}
+
+/**
+ * Verifies a Verifiable Presentation (DeviceResponse) containing one or more documents.
+ */
+export async function verifyPresentation(
+    presentation: any, // Decoded DeviceResponse
+    issuerPublicKeys: Record<string, CryptoKey>, // Map of docType -> PublicKey
+    verifierNonce?: string
+): Promise<any[]> {
+    const { decode, encodeCanonical } = await import('@tobari/crypto/cbor');
+    const results = [];
+
+    for (const doc of presentation.documents) {
+        const result: any = {
+            docType: doc.docType,
+            issuerValid: false,
+            deviceValid: false,
+            data: {},
+            error: null
+        };
+
+        try {
+            // 1. Verify Issuer Signature
+            const issuerAuthToken = await import('@tobari/crypto/utils').then(m => m.base64url.encode(doc.issuerSigned.issuerAuth));
+            const publicKey = issuerPublicKeys[doc.docType];
+            
+            if (!publicKey) {
+                throw new Error(`No public key provided for docType: ${doc.docType}`);
+            }
+
+            const mso = await (await import('@tobari/crypto/cose')).verifyFormToken(issuerAuthToken, publicKey) as MSO;
+            result.issuerValid = true;
+
+            // 2. Extract Data
+            const revealed = await revealMdocData(mso, doc.issuerSigned.nameSpaces[doc.docType] || [], doc.docType);
+            result.data = revealed;
+
+            // 3. Verify Device Signature (Holder Binding)
+            if (doc.deviceSigned && doc.deviceSigned.deviceAuth) {
+                const deviceKeyMap = mso.deviceKeyInfo?.deviceKey;
+                let x, y;
+                if (deviceKeyMap instanceof Map) {
+                    x = deviceKeyMap.get(-2);
+                    y = deviceKeyMap.get(-3);
+                } else {
+                    x = deviceKeyMap[-2] || deviceKeyMap['-2'];
+                    y = deviceKeyMap[-3] || deviceKeyMap['-3'];
+                }
+
+                const jwk = {
+                    kty: "EC", crv: "P-384", x: Buffer.from(x).toString('base64url'), y: Buffer.from(y).toString('base64url')
+                };
+                const deviceKey = await crypto.subtle.importKey(
+                    "jwk", jwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["verify"]
+                );
+
+                const coseArray = decode(doc.deviceSigned.deviceAuth);
+                const [protectedHeaderBytes, _, payloadBytes, signature] = coseArray;
+
+                const sigStructure = [
+                    "Signature1",
+                    protectedHeaderBytes,
+                    new Uint8Array(0),
+                    payloadBytes
+                ];
+                const toBeVerified = encodeCanonical(sigStructure);
+
+                result.deviceValid = await crypto.subtle.verify(
+                    { name: "ECDSA", hash: { name: "SHA-384" } },
+                    deviceKey,
+                    signature,
+                    toBeVerified as any
+                );
+            }
+        } catch (e: any) {
+            result.error = e.message;
+        }
+        results.push(result);
+    }
+    return results;
 }
