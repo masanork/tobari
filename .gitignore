@@ -13,7 +13,7 @@ shared/fonts/ipamjm.ttf
 # Binary / Build Artifacts
 dist/
 .DS_Store
-packages/civ/
+packages/civ/target/
 
 # Secrets
 *-key.json
