@@ -13,6 +13,7 @@ import { spawn } from "child_process";
 import { decode, encode } from "cbor-x";
 import { verifyTobari, verifyPresentation } from "@tobari/codec/validator";
 import { createPresentation, signDeviceAuth, getDeviceAuthToBeSigned, assembleDeviceAuth } from "@tobari/codec/sd";
+import { WebAuthnHandler } from "./webauthn-handler.js";
 
 // Define tool schemas
 const ReadTobariFileSchema = z.object({
@@ -64,6 +65,23 @@ const AnalyzeServiceRequestSchema = z.object({
 
 const ListAvailableDocumentsSchema = z.object({
     rootPath: z.string().optional().describe("Optional path to scan. Defaults to the Tobari examples directory."),
+});
+
+const SignWithWebAuthnSchema = z.object({
+    challenge: z.string().describe("Base64URL encoded challenge to sign"),
+    rpId: z.string().optional().describe("Relying Party ID (domain) for the signature scope"),
+    allowCredentials: z.array(z.object({
+        id: z.string().describe("Credential ID (base64url)"),
+        type: z.literal("public-key").default("public-key"),
+        transports: z.array(z.string()).optional()
+    })).optional().describe("List of allowed credential IDs to restrict the sign-in choice")
+});
+
+const RegisterWebAuthnSchema = z.object({
+    challenge: z.string().describe("Base64URL encoded challenge for registration"),
+    rpId: z.string().optional().describe("Relying Party ID (default: localhost)"),
+    userName: z.string().optional().describe("User name for the new credential"),
+    userDisplayName: z.string().optional().describe("Display name for the new credential"),
 });
 
 /**
@@ -297,6 +315,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     properties: {
                         rootPath: { type: "string", description: "Root directory to scan (optional)" }
                     }
+                }
+            },
+            {
+                name: "sign_with_webauthn",
+                description: "Signs a challenge using the system's WebAuthn authenticator (Touch ID, Face ID, YubiKey) by opening a browser window. Useful for holder binding signatures.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        challenge: { type: "string", description: "Base64URL encoded challenge to sign" },
+                        rpId: { type: "string", description: "Relying Party ID (default: localhost)" },
+                        allowCredentials: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    id: { type: "string" },
+                                    type: { type: "string" }
+                                }
+                            }
+                        }
+                    },
+                    required: ["challenge"]
+                }
+            },
+            {
+                name: "register_webauthn",
+                description: "Registers a new WebAuthn credential (Passkey) on this device. Use this if the user does not have a key yet.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        challenge: { type: "string", description: "Base64URL encoded challenge" },
+                        rpId: { type: "string", description: "Relying Party ID" },
+                        userName: { type: "string" },
+                        userDisplayName: { type: "string" }
+                    },
+                    required: ["challenge"]
                 }
             }
         ],
@@ -925,6 +979,58 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         } catch (error: any) {
             return {
                 content: [{ type: "text", text: `Error listing documents: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "sign_with_webauthn") {
+        try {
+            const args = SignWithWebAuthnSchema.parse(request.params.arguments);
+            const handler = new WebAuthnHandler();
+            
+            // This will block until the user signs in the browser
+            const signature = await handler.sign({
+                challenge: args.challenge,
+                rpId: args.rpId,
+                allowCredentials: args.allowCredentials as any
+            });
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify(signature, null, 2),
+                    },
+                ],
+            };
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error signing with WebAuthn: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "register_webauthn") {
+        try {
+            const args = RegisterWebAuthnSchema.parse(request.params.arguments);
+            const handler = new WebAuthnHandler();
+            
+            const result = await handler.sign({
+                mode: 'register',
+                challenge: args.challenge,
+                rpId: args.rpId,
+                userName: args.userName,
+                userDisplayName: args.userDisplayName
+            });
+
+            return {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            };
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error registering WebAuthn: ${error.message}` }],
                 isError: true,
             };
         }

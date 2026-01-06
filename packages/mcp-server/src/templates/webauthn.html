@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tobari WebAuthn</title>
+    <style>
+        body { font-family: system-ui, sans-serif; padding: 2rem; text-align: center; color: #333; }
+        .container { max-width: 400px; margin: 0 auto; }
+        .status { margin: 2rem 0; padding: 1.5rem; border-radius: 12px; background: #f8f9fa; border: 1px solid #e9ecef; }
+        .error { background: #fff5f5; color: #e03131; border-color: #ffa8a8; }
+        .success { background: #f4fce3; color: #2f9e44; border-color: #b2f2bb; }
+        button { 
+            padding: 12px 24px; font-size: 1rem; cursor: pointer; border-radius: 8px;
+            border: none; background: #228be6; color: white; font-weight: 600;
+            transition: background 0.2s; width: 100%; margin-bottom: 0.5rem;
+        }
+        button:hover { background: #1c7ed6; }
+        button:disabled { background: #adb5bd; cursor: not-allowed; }
+        .secondary-btn { background: #e9ecef; color: #495057; }
+        .secondary-btn:hover { background: #dee2e6; }
+        .hint { font-size: 0.85rem; color: #868e96; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="title">Tobari WebAuthn</h1>
+        <p id="description">Please authenticate to continue.</p>
+        
+        <div id="status" class="status">Initializing...</div>
+        
+        <div id="actions">
+            <button id="mainBtn">Action</button>
+            <button id="switchBtn" class="secondary-btn" style="display: none;">Switch Mode</button>
+        </div>
+        
+        <div class="hint">
+            Your biometric data never leaves your device.
+        </div>
+    </div>
+
+    <script>
+        const toBase64Url = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        const fromBase64Url = (str) => {
+            const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+            const pad = base64.length % 4;
+            const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
+            return Uint8Array.from(atob(padded), c => c.charCodeAt(0));
+        };
+
+        const params = new URLSearchParams(window.location.search);
+        let mode = params.get('mode') || 'sign'; // 'sign' or 'register'
+        const challengeStr = params.get('challenge');
+        const rpId = params.get('rpId') || 'localhost';
+        const userName = params.get('userName') || 'tobari-user';
+        const userDisplayName = params.get('userDisplayName') || 'Tobari User';
+        
+        // Load allowCredentials from query param OR localStorage
+        let allowCredentials = [];
+        const allowCredsStr = params.get('allowCredentials');
+        
+        if (allowCredsStr) {
+             try {
+                const rawList = JSON.parse(atob(allowCredsStr.replace(/-/g, '+').replace(/_/g, '/')));
+                if (Array.isArray(rawList)) allowCredentials = rawList;
+            } catch (e) { console.error(e); }
+        } else if (mode === 'sign') {
+            // Try to find last used credential for this RP
+            const storedId = localStorage.getItem(`tobari_cred_${rpId}`);
+            if (storedId) {
+                console.log("Found stored credential, using it:", storedId);
+                allowCredentials = [{
+                    id: fromBase64Url(storedId),
+                    type: 'public-key'
+                }];
+            }
+        }
+
+        const statusDiv = document.getElementById('status');
+        const mainBtn = document.getElementById('mainBtn');
+        const switchBtn = document.getElementById('switchBtn');
+        const titleH1 = document.getElementById('title');
+        const descP = document.getElementById('description');
+
+        function updateUI() {
+            if (mode === 'register') {
+                titleH1.textContent = 'Register Passkey';
+                descP.textContent = 'Create a new secure key for Tobari.';
+                mainBtn.textContent = 'Create New Passkey';
+                statusDiv.textContent = 'Ready to register.';
+                switchBtn.textContent = 'Back to Sign In';
+                switchBtn.style.display = 'block';
+            } else {
+                titleH1.textContent = 'Sign with Passkey';
+                if (allowCredentials.length > 0) {
+                     descP.textContent = `Authenticate as ${userDisplayName}.`;
+                } else {
+                     descP.textContent = 'Use your existing key to authenticate.';
+                }
+                mainBtn.textContent = 'Authenticate';
+                statusDiv.textContent = 'Ready to sign.';
+                switchBtn.textContent = 'Register New Key';
+                switchBtn.style.display = 'block';
+            }
+        }
+
+        async function handleAction() {
+            try {
+                statusDiv.textContent = 'Waiting for user interaction...';
+                statusDiv.classList.remove('error', 'success');
+                mainBtn.disabled = true;
+
+                if (mode === 'register') {
+                    const publicKey = {
+                        challenge: fromBase64Url(challengeStr),
+                        rp: { name: "Tobari", id: rpId },
+                        user: {
+                            id: crypto.getRandomValues(new Uint8Array(16)),
+                            name: userName,
+                            displayName: userDisplayName
+                        },
+                        pubKeyCredParams: [
+                            { type: "public-key", alg: -7 }, // ES256
+                            { type: "public-key", alg: -257 } // RS256
+                        ],
+                        authenticatorSelection: {
+                            userVerification: "preferred",
+                            residentKey: "preferred", // Changed to preferred to allow non-resident keys too
+                            requireResidentKey: false
+                        }
+                    };
+
+                    const credential = await navigator.credentials.create({ publicKey });
+                    
+                    // Save ID for future use
+                    const credId = toBase64Url(credential.rawId);
+                    localStorage.setItem(`tobari_cred_${rpId}`, credId);
+                    
+                    const response = {
+                        mode: 'register',
+                        id: credential.id,
+                        rawId: credId,
+                        type: credential.type,
+                        response: {
+                            clientDataJSON: toBase64Url(credential.response.clientDataJSON),
+                            attestationObject: toBase64Url(credential.response.attestationObject),
+                        }
+                    };
+                    sendResult(response);
+                } else {
+                    // Sign Mode
+                    const publicKey = {
+                        challenge: fromBase64Url(challengeStr),
+                        rpId: rpId,
+                        userVerification: 'required',
+                        allowCredentials: allowCredentials.map(c => ({
+                            id: (c.id instanceof Uint8Array) ? c.id : fromBase64Url(c.id),
+                            type: c.type || 'public-key',
+                            transports: c.transports
+                        }))
+                    };
+                    
+                    try {
+                        const credential = await navigator.credentials.get({ publicKey });
+                        if (!credential) throw new Error("No credential selected");
+                        
+                        const response = {
+                            mode: 'sign',
+                            id: credential.id,
+                            rawId: toBase64Url(credential.rawId),
+                            type: credential.type,
+                            response: {
+                                authenticatorData: toBase64Url(credential.response.authenticatorData),
+                                clientDataJSON: toBase64Url(credential.response.clientDataJSON),
+                                signature: toBase64Url(credential.response.signature),
+                                userHandle: credential.response.userHandle ? toBase64Url(credential.response.userHandle) : null
+                            }
+                        };
+                        sendResult(response);
+                    } catch (e) {
+                        // If specific credential failed (e.g. not found), retry without allowCredentials?
+                        // Or let user register.
+                        if (allowCredentials.length > 0) {
+                             console.warn("Failed with allowed credentials, falling back to discovery or register suggestion.");
+                             statusDiv.textContent = 'Key not found. Please register a new key.';
+                             mode = 'register';
+                             updateUI();
+                             mainBtn.disabled = false;
+                             return;
+                        }
+                        throw e;
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                statusDiv.textContent = 'Error: ' + err.message;
+                statusDiv.classList.add('error');
+                mainBtn.disabled = false;
+            }
+        }
+
+        async function sendResult(data) {
+            statusDiv.textContent = 'Success! Sending result...';
+            statusDiv.classList.add('success');
+            await fetch('/callback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            statusDiv.textContent = 'Done. You can close this tab.';
+            mainBtn.style.display = 'none';
+            switchBtn.style.display = 'none';
+        }
+
+        mainBtn.addEventListener('click', handleAction);
+        switchBtn.addEventListener('click', () => {
+            mode = (mode === 'sign' ? 'register' : 'sign');
+            updateUI();
+        });
+
+        // Initialize
+        if (!challengeStr) {
+            statusDiv.textContent = 'Error: Missing challenge.';
+            statusDiv.classList.add('error');
+            mainBtn.disabled = true;
+        } else {
+            // Smart Initialization Logic
+            if (mode === 'sign') {
+                if (allowCredentials.length === 0) {
+                     // No specific credential requested, and none found in localStorage for this RP
+                     console.log("No credential found. Switching to Register mode.");
+                     mode = 'register';
+                }
+            }
+            
+            updateUI();
+            
+            // Auto-trigger only if we are in sign mode and have a credential to use
+            if (mode === 'sign' && allowCredentials.length > 0) {
+                setTimeout(handleAction, 500);
+            }
+        }
+    </script>
+</body>
+</html>
