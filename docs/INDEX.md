@@ -17,6 +17,9 @@ Tobari は、ISO 18013-5 (mdoc) をベースにした、人間にもプログラ
 - [MCP Server](MCP_SERVER.md): AI エージェント（Claude 等）との連携方法。
 - [CLI ツール](CLI_TOOLS.md): コマンドラインからの操作リファレンス。
 
+### 4. チュートリアル
+- [行政サービス案内 (service_request) チュートリアル](SERVICE_REQUEST_TUTORIAL.md)
+
 ---
 
 ## 🚀 はじめかた
