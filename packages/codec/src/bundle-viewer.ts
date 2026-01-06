@@ -6,9 +6,25 @@ import { subsetFont, bufferToDataUrl } from './font-engine';
 async function buildViewer() {
     console.log("Bundling High-Fidelity Tobari Viewer...");
 
-    const tobariBinaryPath = path.resolve('examples/juminhyo/juminhyo.cose');
+    const args = process.argv.slice(2);
+    let tobariBinaryPath: string;
+    let outPath: string;
+
+    if (args.length > 0) {
+        tobariBinaryPath = path.resolve(args[0]);
+        const parsed = path.parse(tobariBinaryPath);
+        // Default output is same directory, same name, .html extension
+        outPath = path.resolve(parsed.dir, parsed.name + '.html');
+        if (args.length > 1) {
+            outPath = path.resolve(args[1]);
+        }
+    } else {
+        tobariBinaryPath = path.resolve('examples/juminhyo/juminhyo.cose');
+        outPath = path.resolve('examples/juminhyo/juminhyo.html');
+    }
+
     if (!fs.existsSync(tobariBinaryPath)) {
-        console.error("Error: juminhyo.cose not found.");
+        console.error(`Error: Input file not found at ${tobariBinaryPath}`);
         process.exit(1);
     }
 
@@ -97,17 +113,29 @@ async function buildViewer() {
     });
     const bundledJs = await buildResult.outputs[0].text();
 
+    // Try to load issuer-key.json from the same directory as the input file
+    const keyPath = path.resolve(path.dirname(tobariBinaryPath), 'issuer-key.json');
+    let issuerKeyJson = "null";
+    if (fs.existsSync(keyPath)) {
+        console.log(`Embedding Issuer Key from: ${keyPath}`);
+        const keyData = fs.readFileSync(keyPath, 'utf-8');
+        issuerKeyJson = JSON.stringify(JSON.parse(keyData)); // minify
+    } else {
+        console.warn("No issuer-key.json found. Signature verification will be skipped in viewer.");
+    }
+
     const scriptBlock = `<script type="module">
 ${bundledJs}
 window.__TOBARI_DATA__ = "${dataUri}";
+window.__ISSUER_KEY__ = ${issuerKeyJson};
 if (window.initTobari) {
-    window.initTobari(window.__TOBARI_DATA__);
+    window.initTobari(window.__TOBARI_DATA__, window.__ISSUER_KEY__);
 }
 </script>`;
 
     const finalHtml = html.replace(/<script type="module">[\s\S]*?<\/script>/, () => scriptBlock);
 
-    const outPath = path.resolve('examples/juminhyo/juminhyo.html');
+    // const outPath defined above
     fs.writeFileSync(outPath, finalHtml);
     console.log(`Successfully generated verifiable viewer: ${outPath}`);
 }

@@ -28,7 +28,8 @@ PDF や紙の書類が持つ「完成された様式」への信頼感と、現�
 
 - `packages/codec`: YAML スキーマからの CDDL 生成、署名済みバイナリ（.cose）の生成、HTML ビューアのバンドル。
 - `packages/crypto`: P-384 対応の COSE 署名・検証コア実装。
-- `examples/juminhyo`: 住民票（世帯連記式）をモデルとした実装例。
+- `examples/juminhyo`: 住民票（世帯連記式）をモデルとした実装例。SD-CBORによる選択的開示のデモ。
+- `examples/ininjo`: 電子委任状をモデルとした実装例。ネストされたデータ構造の表現と、ビューアによる構造化表示のデモ。
 
 ## Quick Start (Demo Generation)
 
@@ -47,12 +48,22 @@ Tobari は高精度な日本語描画のために **IPAmj明朝** を使用し�
    ```bash
    bun run build
    ```
+   ※ `bun run build:examples` でデモデータのみをビルドすることも可能です。
 
-# 生成物の確認
-# examples/juminhyo/juminhyo.html -> 利用者向けビューア
-# (URLに ?debug=1 を付与することで、内部データ構造を確認できるデバッグモードが有効になります)
-# examples/juminhyo/juminhyo.cose -> 署名済み原本データ（COSE）
-# examples/verifier.html -> 事業者向け検証ツール
+## 生成物の確認
+
+## 住民票 (Juminhyo)
+- `examples/juminhyo/juminhyo.html` -> 利用者向けビューア（署名済み原本）
+- `examples/juminhyo/juminhyo.cose` -> 署名済み原本データ（COSEファイル）
+
+## 電子委任状 (Ininjo)
+- `examples/ininjo/ininjo.html` -> 利用者向けビューア（階層構造データ表示対応）
+  - ビューアは自己検証機能（署名およびハッシュ整合性チェック）を内包しています。
+
+(各URLに ?debug=1 を付与することで、内部データ構造を確認できるデバッグモードが有効になります)
+
+## Verification Tool
+- `examples/verifier.html` -> 事業者向け汎用検証ツール
 
 ## CLI Tools
 
