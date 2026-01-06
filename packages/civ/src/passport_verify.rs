@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use sha1::Sha1;
-use sha2::{Sha256, Sha384, Sha512, Digest};
+use rsa::sha2::{Sha256, Sha384, Sha512, Digest};
 use x509_parser::prelude::*;
 use std::collections::HashMap;
 

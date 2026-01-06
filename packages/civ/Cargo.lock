@@ -227,13 +227,13 @@ dependencies = [
  "mockall",
  "p256",
  "pcsc",
+ "rand",
  "rand_core",
  "rsa",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
  "sha1",
- "sha2",
  "signature",
  "thiserror",
  "tokio",
@@ -921,6 +921,7 @@ version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
+ "libc",
  "rand_chacha",
  "rand_core",
 ]
@@ -997,6 +998,7 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core",
+ "sha2",
  "signature",
  "spki",
  "subtle",

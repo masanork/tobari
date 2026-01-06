@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use p256::ecdh::EphemeralSecret;
 #[allow(unused_imports)]
 use p256::{PublicKey, EncodedPoint};
-use sha2::{Sha256, Digest};
+use rsa::sha2::{Sha256, Digest};
 #[allow(unused_imports)]
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 #[allow(unused_imports)]
