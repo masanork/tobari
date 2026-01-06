@@ -3,8 +3,32 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
+// Note: civ crate needs to be available. PcscReader is only available on native targets.
+#[cfg(not(target_arch = "wasm32"))]
+use civ::{JpkiController, PcscReader};
 
 // --- Data Structures ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct JpkiSignRequest {
+    pub challenge: String, // Base64Url
+    pub pin: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MyNumberCardRequest {
+    pub pin: String, // 4-digit Input Support PIN
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MyNumberCardData {
+    pub name: String,
+    pub address: String,
+    pub birth_date: String,
+    pub gender: String,
+    pub my_number: String,
+    pub face_photo: Option<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SignRequest {
@@ -199,6 +223,46 @@ async fn perform_sign(state: State<'_, AppState>, app: AppHandle) -> Result<(), 
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[tauri::command]
+async fn jpki_sign(request: JpkiSignRequest) -> Result<String, String> {
+    let reader = PcscReader::new().map_err(|e| e.to_string())?;
+    let mut controller = JpkiController::new(reader);
+
+    controller.select_jpki_ap().await.map_err(|e| e.to_string())?;
+    
+    // Select User Authentication PIN (EF 0018 for Auth, usually)
+    // Actually, for digital signature (Sign), it is usually another EF (e.g. 001B).
+    // Let's assume Auth for now as per common use case for login.
+    let pin_ef = [0x00, 0x18]; 
+    controller.verify_pin(&pin_ef, &request.pin).await.map_err(|e| e.to_string())?;
+
+    let challenge_bytes = URL_SAFE_NO_PAD.decode(&request.challenge).map_err(|e| e.to_string())?;
+    
+    let signature = controller.compute_signature(&challenge_bytes).await.map_err(|e| e.to_string())?;
+    
+    Ok(URL_SAFE_NO_PAD.encode(&signature))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tauri::command]
+async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCardData, String> {
+    let reader = PcscReader::new().map_err(|e| e.to_string())?;
+    let mut controller = JpkiController::new(reader);
+
+    let my_number = controller.read_mynumber(&request.pin).await.map_err(|e| e.to_string())?;
+    let info = controller.read_attributes(&request.pin).await.map_err(|e| e.to_string())?;
+
+    Ok(MyNumberCardData {
+        name: info.name,
+        address: info.address,
+        birth_date: info.birth_date,
+        gender: info.gender,
+        my_number,
+        face_photo: info.face_photo,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args = Cli::parse();
@@ -226,7 +290,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_pending_request,
             perform_sign,
-            reject
+            reject,
+            jpki_sign,
+            read_my_number_card
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,0 +1,46 @@
+[package]
+name = "civ"
+version = "0.1.0"
+edition = "2021"
+description = "CIV (Citizen Identity Verification) Library: JPKI, Driver License, Passport, etc."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+thiserror = "1.0"
+anyhow = "1.0"
+async-trait = "0.1"
+hex = "0.4"
+base64 = "0.21"
+sha1 = "0.10"
+des = "0.8"
+cbc = "0.1"
+cipher = "0.4"
+encoding_rs = "0.8"
+aes = "0.8"
+cmac = "0.7"
+# Crypto
+rsa = "0.9"
+p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
+signature = "2.2"
+x509-parser = "0.15"
+zeroize = "1.7"
+sha2 = "0.10"
+rand_core = { version = "0.6", features = ["std"] }
+getrandom = { version = "0.2", features = ["js"] }
+
+# WASM
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+
+[dev-dependencies]
+mockall = "0.11"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pcsc = "2.8"
+clap = { version = "4.4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
