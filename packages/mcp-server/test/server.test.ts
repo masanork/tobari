@@ -553,4 +553,50 @@ describe("MCP Server", () => {
         expect(analysis.requiredUserInputs.length).toBeGreaterThan(0);
         expect(analysis.requiredUserInputs[0].fields[0].id).toBe("bank_name");
     }, 10000);
+
+    it("should list available demo documents", async () => {
+        const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
+        const proc = spawn("bun", ["run", serverPath], {
+            stdio: ["pipe", "pipe", "inherit"],
+        });
+
+        const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+        const listReq = {
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: {
+                name: "list_available_documents",
+                arguments: {}
+            }
+        };
+
+        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
+        proc.stdin.write(JSON.stringify(initReq) + "\n");
+        proc.stdin.write(JSON.stringify(listReq) + "\n");
+
+        let outputBuffer = "";
+        proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
+
+        const waitForId = async (id: number) => {
+            for (let i = 0; i < 20; i++) {
+                if (outputBuffer.includes(`"id":${id}`)) return;
+                await new Promise(r => setTimeout(r, 200));
+            }
+        };
+
+        await waitForId(1);
+        proc.kill();
+
+        const respLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 1; } catch { return false; } });
+        expect(respLine).toBeDefined();
+        const result = JSON.parse(JSON.parse(respLine!).result.content[0].text);
+
+        expect(result.documents.length).toBeGreaterThan(0);
+        const ininjo = result.documents.find((d: any) => d.name === "ininjo.html");
+        expect(ininjo).toBeDefined();
+        expect(ininjo.category).toBe("Credential");
+
+        const serviceRequest = result.documents.find((d: any) => d.name === "service-request.html");
+        expect(serviceRequest).toBeDefined();
+        expect(serviceRequest.category).toBe("Administrative Request");
+    }, 10000);
 });
