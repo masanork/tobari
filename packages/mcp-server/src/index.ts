@@ -16,6 +16,10 @@ import { verifyTobari, verifyPresentation } from "@tobari/codec/validator";
 import { createPresentation, signDeviceAuth, getDeviceAuthToBeSigned, assembleDeviceAuth } from "@tobari/codec/sd";
 import { WebAuthnHandler } from "./webauthn-handler.js";
 
+const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
+const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/dummy-myna");
+
+
 // Define tool schemas
 const ReadTobariFileSchema = z.object({
     path: z.string().describe("Absolute path to the Tobari file (.cose or .html)"),
@@ -91,22 +95,22 @@ const SignWithJPKISchema = z.object({
     digest: z.enum(["sha1", "sha256", "sha512"]).optional().describe("Digest algorithm (default: sha256)"),
     detached: z.boolean().optional().describe("Create detached signature (default: true)"),
     format: z.enum(["pem", "der"]).optional().describe("Output format (default: der)"),
-    mynaPath: z.string().optional().describe("Path to myna binary (default: ~/go/bin/myna)"),
+    mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
 });
 
 const ReadMyNumberSchema = z.object({
     pin: z.string().describe("Card PIN code for text input assistance (4 digits)"),
-    mynaPath: z.string().optional().describe("Path to myna binary (default: ~/go/bin/myna)"),
+    mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
 });
 
 const ReadBasicInfoSchema = z.object({
     pin: z.string().describe("Card PIN code for text input assistance (4 digits)"),
-    mynaPath: z.string().optional().describe("Path to myna binary (default: ~/go/bin/myna)"),
+    mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
 });
 
 const ReadPhotoSchema = z.object({
     pin: z.string().describe("Card PIN code for visual verification (4 digits)"),
-    mynaPath: z.string().optional().describe("Path to myna binary (default: ~/go/bin/myna)"),
+    mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
 });
 
 /**
@@ -116,14 +120,14 @@ async function readTobariFileAsBuffer(filePath: string): Promise<Uint8Array> {
     const ext = path.extname(filePath).toLowerCase();
     if (ext === ".html") {
         const htmlContent = await fs.readFile(filePath, "utf-8");
-        
+
         // Faster lookup than regex matchAll for large files
         const marker = "window.__TOBARI_DATA__ = \"";
         const startIdx = htmlContent.indexOf(marker);
         if (startIdx === -1) {
             throw new Error("Could not find embedded Tobari data in HTML file.");
         }
-        
+
         const dataStart = startIdx + marker.length;
         const endIdx = htmlContent.indexOf("\"", dataStart);
         if (endIdx === -1) {
@@ -311,8 +315,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     type: "object",
                     properties: {
                         vpBase64: { type: "string", description: "Base64-encoded DeviceResponse" },
-                        issuerPublicKeys: { 
-                            type: "object", 
+                        issuerPublicKeys: {
+                            type: "object",
                             additionalProperties: { type: "string" },
                             description: "Map of docType to path of issuer's public key (JWK)"
                         },
@@ -389,7 +393,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         digest: { type: "string", description: "Digest algorithm: sha1, sha256, or sha512 (default: sha256)" },
                         detached: { type: "boolean", description: "Create detached signature (default: true)" },
                         format: { type: "string", description: "Output format: pem or der (default: der)" },
-                        mynaPath: { type: "string", description: "Path to myna binary (default: ~/go/bin/myna)" }
+                        mynaPath: { type: "string", description: `Path to myna binary (default: ${DEFAULT_MYNA_PATH})` }
                     },
                     required: ["data", "pin"]
                 }
@@ -401,7 +405,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     type: "object",
                     properties: {
                         pin: { type: "string", description: "Card PIN code for text input assistance (4 digits)" },
-                        mynaPath: { type: "string", description: "Path to myna binary (default: ~/go/bin/myna)" }
+                        mynaPath: { type: "string", description: `Path to myna binary (default: ${DEFAULT_MYNA_PATH})` }
                     },
                     required: ["pin"]
                 }
@@ -413,7 +417,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     type: "object",
                     properties: {
                         pin: { type: "string", description: "Card PIN code for text input assistance (4 digits)" },
-                        mynaPath: { type: "string", description: "Path to myna binary (default: ~/go/bin/myna)" }
+                        mynaPath: { type: "string", description: `Path to myna binary (default: ${DEFAULT_MYNA_PATH})` }
                     },
                     required: ["pin"]
                 }
@@ -425,7 +429,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     type: "object",
                     properties: {
                         pin: { type: "string", description: "Card PIN code for visual verification (4 digits)" },
-                        mynaPath: { type: "string", description: "Path to myna binary (default: ~/go/bin/myna)" }
+                        mynaPath: { type: "string", description: `Path to myna binary (default: ${DEFAULT_MYNA_PATH})` }
                     },
                     required: ["pin"]
                 }
@@ -481,7 +485,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             if (cose && typeof cose === 'object' && !Array.isArray(cose) && cose.issuerSigned) {
                 isTobariDoc = true;
                 payload.docType = cose.docType;
-                
+
                 // Extract data from nameSpaces
                 if (cose.issuerSigned.nameSpaces) {
                     for (const ns of Object.keys(cose.issuerSigned.nameSpaces)) {
@@ -601,7 +605,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                 // Device Signing
                 const deviceNameSpaces = new Map(); // Empty for now as per simple mdoc
                 const deviceNameSpacesBytes = encode(deviceNameSpaces);
-                
+
                 // Session Transcript for Online Presentation (simplified)
                 const sessionTranscript = [null, null, args.verifierNonce || null];
 
@@ -629,7 +633,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                         // Try to find relative to project root
                         // Current file is .../packages/mcp-server/src/index.ts
                         const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
-                        
+
                         // Check common build locations
                         const possiblePaths = [
                             path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer"), // Unix/Mac
@@ -643,7 +647,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                                 await fs.access(p);
                                 signerPath = p;
                                 break;
-                            } catch {}
+                            } catch { }
                         }
                     }
 
@@ -660,7 +664,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 
                     // Spawn the signer process
                     const signerProcess = spawn(signerPath, ["--request", JSON.stringify(signRequest)]);
-                    
+
                     const resultPromise = new Promise<string>((resolve, reject) => {
                         let stdout = "";
                         let stderr = "";
@@ -672,15 +676,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                         });
                         signerProcess.on("error", (err) => reject(err));
                     });
-                    
+
                     const outputStr = await resultPromise;
                     let output;
                     try {
                         output = JSON.parse(outputStr);
                     } catch (e) {
-                         throw new Error(`Invalid JSON output from signer: ${outputStr}`);
+                        throw new Error(`Invalid JSON output from signer: ${outputStr}`);
                     }
-                    
+
                     // Assemble deviceAuth with the external signature
                     // Note: This signature is a WebAuthn assertion signature, not a raw ECDSA signature over toBeSigned.
                     // The verifier must be aware of this distinction.
@@ -922,7 +926,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             // Using simple read logic instead of full verification for analysis
             const cose = decode(fileBuffer);
             let payload: any = {};
-            
+
             // Extract payload from nameSpaces (Administrative documents follow same mdoc structure)
             if (cose.issuerSigned && cose.issuerSigned.nameSpaces) {
                 for (const ns of Object.keys(cose.issuerSigned.nameSpaces)) {
@@ -1002,7 +1006,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             // Default to the project root's examples directory
             // packages/mcp-server/src/index.ts -> ../../../examples
             const baseDir = args.rootPath || path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../examples");
-            
+
             const files = [];
             const scan = async (dir: string) => {
                 const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -1013,18 +1017,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                     } else if (entry.isFile() && (entry.name.endsWith(".html") || entry.name.endsWith(".cose"))) {
                         // Skip common non-Tobari HTML files if needed, but for now we list them
                         if (entry.name === "verifier-tool.html" || entry.name === "viewer-template.html") continue;
-                        
+
                         try {
                             const buffer = await readTobariFileAsBuffer(fullPath);
                             const cose = decode(buffer);
                             let docType = cose.docType || "Unknown";
-                            
+
                             // For COSE_Sign1, docType might be in the payload
                             if (Array.isArray(cose) && cose.length >= 3) {
                                 try {
                                     const payload = decode(cose[2]);
                                     if (payload.docType) docType = payload.docType;
-                                } catch {}
+                                } catch { }
                             }
 
                             files.push({
@@ -1065,7 +1069,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         try {
             const args = SignWithWebAuthnSchema.parse(request.params.arguments);
             const handler = new WebAuthnHandler();
-            
+
             // This will block until the user signs in the browser
             const signature = await handler.sign({
                 challenge: args.challenge,
@@ -1117,8 +1121,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         try {
             const args = SignWithJPKISchema.parse(request.params.arguments);
 
-            // Resolve myna path (expand ~ to home directory)
-            const mynaPath = args.mynaPath || "~/go/bin/myna";
+            // Resolve myna path
+            const mynaPath = args.mynaPath || DEFAULT_MYNA_PATH;
             const resolvedMynaPath = mynaPath.startsWith("~")
                 ? path.join(os.homedir(), mynaPath.slice(1))
                 : mynaPath;
@@ -1190,10 +1194,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                 // Clean up temporary files
                 try {
                     await fs.unlink(inputFile);
-                } catch {}
+                } catch { }
                 try {
                     await fs.unlink(outputFile);
-                } catch {}
+                } catch { }
             }
         } catch (error: any) {
             return {
@@ -1207,7 +1211,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         try {
             const args = ReadMyNumberSchema.parse(request.params.arguments);
 
-            const mynaPath = args.mynaPath || "~/go/bin/myna";
+            const mynaPath = args.mynaPath || DEFAULT_MYNA_PATH;
             const resolvedMynaPath = mynaPath.startsWith("~")
                 ? path.join(os.homedir(), mynaPath.slice(1))
                 : mynaPath;
@@ -1255,7 +1259,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         try {
             const args = ReadBasicInfoSchema.parse(request.params.arguments);
 
-            const mynaPath = args.mynaPath || "~/go/bin/myna";
+            const mynaPath = args.mynaPath || DEFAULT_MYNA_PATH;
             const resolvedMynaPath = mynaPath.startsWith("~")
                 ? path.join(os.homedir(), mynaPath.slice(1))
                 : mynaPath;
@@ -1302,7 +1306,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         try {
             const args = ReadPhotoSchema.parse(request.params.arguments);
 
-            const mynaPath = args.mynaPath || "~/go/bin/myna";
+            const mynaPath = args.mynaPath || DEFAULT_MYNA_PATH;
             const resolvedMynaPath = mynaPath.startsWith("~")
                 ? path.join(os.homedir(), mynaPath.slice(1))
                 : mynaPath;
@@ -1349,7 +1353,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             } finally {
                 try {
                     await fs.unlink(outputFile);
-                } catch {}
+                } catch { }
             }
         } catch (error: any) {
             return {
