@@ -51,6 +51,44 @@ const AnalyzeServiceRequestSchema = z.object({
     path: z.string().describe("Path to the Service Request Tobari file (.cose or .html)"),
 });
 
+/**
+ * Helper to read a Tobari file (HTML or COSE) and return its binary buffer.
+ */
+async function readTobariFileAsBuffer(filePath: string): Promise<Uint8Array> {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".html") {
+        const htmlContent = await fs.readFile(filePath, "utf-8");
+        // Use matchAll to find the longest assignment, avoiding partial matches
+        const matches = Array.from(htmlContent.matchAll(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/g));
+        let bestMatch = "";
+        for (const m of matches) {
+            if (m[1].length > bestMatch.length) {
+                bestMatch = m[1];
+            }
+        }
+
+        if (!bestMatch) {
+            throw new Error("Could not find embedded Tobari data in HTML file.");
+        }
+        let b64 = bestMatch.replace(/\s/g, '');
+        if (b64.startsWith("data:")) {
+            const commaIdx = b64.indexOf(",");
+            if (commaIdx !== -1) {
+                b64 = b64.substring(commaIdx + 1);
+            }
+        }
+
+        const binString = atob(b64);
+        const fileBuffer = new Uint8Array(binString.length);
+        for (let i = 0; i < binString.length; i++) {
+            fileBuffer[i] = binString.charCodeAt(i);
+        }
+        return fileBuffer;
+    } else {
+        return await fs.readFile(filePath);
+    }
+}
+
 const server = new Server(
     {
         name: "tobari-mcp-server",
@@ -184,42 +222,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         try {
             const args = ReadTobariFileSchema.parse(request.params.arguments);
             const filePath = args.path;
-            const ext = path.extname(filePath).toLowerCase();
-
-            let fileBuffer: Uint8Array;
-
-            if (ext === ".html") {
-                const htmlContent = await fs.readFile(filePath, "utf-8");
-                // Use matchAll to find the longest assignment, avoiding partial matches
-                const matches = Array.from(htmlContent.matchAll(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/g));
-                let bestMatch = "";
-                for (const m of matches) {
-                    if (m[1].length > bestMatch.length) {
-                        bestMatch = m[1];
-                    }
-                }
-
-                if (!bestMatch) {
-                    throw new Error("Could not find embedded Tobari data in HTML file.");
-                }
-                let b64 = bestMatch.replace(/\s/g, '');
-                if (b64.startsWith("data:")) {
-                    const commaIdx = b64.indexOf(",");
-                    if (commaIdx !== -1) {
-                        b64 = b64.substring(commaIdx + 1);
-                    }
-                }
-
-                // Decode base64 to byte array
-                // Bun/Node atob works
-                const binString = atob(b64);
-                fileBuffer = new Uint8Array(binString.length);
-                for (let i = 0; i < binString.length; i++) {
-                    fileBuffer[i] = binString.charCodeAt(i);
-                }
-            } else {
-                fileBuffer = await fs.readFile(filePath);
-            }
+            const fileBuffer = await readTobariFileAsBuffer(filePath);
 
             let isValid: boolean | string = "Skipped (No public key provided)";
 
@@ -369,17 +372,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 
             for (const req of args.requests) {
                 const filePath = req.path;
-                let fileBuffer: Uint8Array;
-                
-                if (filePath.toLowerCase().endsWith(".html")) {
-                    const html = await fs.readFile(filePath, "utf-8");
-                    const match = html.match(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/);
-                    if (!match) throw new Error(`No data found in ${filePath}`);
-                    const bin = atob(match[1].replace(/data:.*,/, ''));
-                    fileBuffer = Uint8Array.from(bin, c => c.charCodeAt(0));
-                } else {
-                    fileBuffer = await fs.readFile(filePath);
-                }
+                const fileBuffer = await readTobariFileAsBuffer(filePath);
 
                 const fullDoc = decode(fileBuffer);
                 // Selective Disclosure
@@ -448,16 +441,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 
             for (const req of args.requests) {
                 const filePath = req.path;
-                let fileBuffer: Uint8Array;
-                if (filePath.toLowerCase().endsWith(".html")) {
-                    const html = await fs.readFile(filePath, "utf-8");
-                    const match = html.match(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/);
-                    if (!match) throw new Error(`No data found in ${filePath}`);
-                    const bin = atob(match[1].replace(/data:.*,/, ''));
-                    fileBuffer = Uint8Array.from(bin, c => c.charCodeAt(0));
-                } else {
-                    fileBuffer = await fs.readFile(filePath);
-                }
+                const fileBuffer = await readTobariFileAsBuffer(filePath);
 
                 const fullDoc = decode(fileBuffer);
                 const disclosedDoc = await createPresentation(fullDoc, req.fields);
@@ -607,21 +591,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         try {
             const args = AnalyzeServiceRequestSchema.parse(request.params.arguments);
             const filePath = args.path;
-            let fileBuffer: Uint8Array;
-
-            if (filePath.toLowerCase().endsWith(".html")) {
-                const html = await fs.readFile(filePath, "utf-8");
-                const match = html.match(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/);
-                if (!match) throw new Error("No Tobari data found in HTML");
-                const b64 = match[1].replace(/data:.*,/, '');
-                const binString = atob(b64);
-                fileBuffer = new Uint8Array(binString.length);
-                for (let i = 0; i < binString.length; i++) {
-                    fileBuffer[i] = binString.charCodeAt(i);
-                }
-            } else {
-                fileBuffer = await fs.readFile(filePath);
-            }
+            const fileBuffer = await readTobariFileAsBuffer(filePath);
 
             // Using simple read logic instead of full verification for analysis
             const cose = decode(fileBuffer);
