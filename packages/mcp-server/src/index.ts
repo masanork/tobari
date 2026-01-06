@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import * as os from "os";
 import { spawn } from "child_process";
 import { decode, encode } from "cbor-x";
 import { verifyTobari, verifyPresentation } from "@tobari/codec/validator";
@@ -82,6 +83,30 @@ const RegisterWebAuthnSchema = z.object({
     rpId: z.string().optional().describe("Relying Party ID (default: localhost)"),
     userName: z.string().optional().describe("User name for the new credential"),
     userDisplayName: z.string().optional().describe("Display name for the new credential"),
+});
+
+const SignWithJPKISchema = z.object({
+    data: z.string().describe("Base64 encoded data to sign"),
+    pin: z.string().describe("JPKI signature PIN code (6-16 digits)"),
+    digest: z.enum(["sha1", "sha256", "sha512"]).optional().describe("Digest algorithm (default: sha256)"),
+    detached: z.boolean().optional().describe("Create detached signature (default: true)"),
+    format: z.enum(["pem", "der"]).optional().describe("Output format (default: der)"),
+    mynaPath: z.string().optional().describe("Path to myna binary (default: ~/go/bin/myna)"),
+});
+
+const ReadMyNumberSchema = z.object({
+    pin: z.string().describe("Card PIN code for text input assistance (4 digits)"),
+    mynaPath: z.string().optional().describe("Path to myna binary (default: ~/go/bin/myna)"),
+});
+
+const ReadBasicInfoSchema = z.object({
+    pin: z.string().describe("Card PIN code for text input assistance (4 digits)"),
+    mynaPath: z.string().optional().describe("Path to myna binary (default: ~/go/bin/myna)"),
+});
+
+const ReadPhotoSchema = z.object({
+    pin: z.string().describe("Card PIN code for visual verification (4 digits)"),
+    mynaPath: z.string().optional().describe("Path to myna binary (default: ~/go/bin/myna)"),
 });
 
 /**
@@ -351,6 +376,58 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         userDisplayName: { type: "string" }
                     },
                     required: ["challenge"]
+                }
+            },
+            {
+                name: "sign_with_jpki",
+                description: "Signs data using JPKI (Japanese Public Key Infrastructure) with マイナンバーカード via the myna CLI tool. Requires a card reader and PIN code.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        data: { type: "string", description: "Base64 encoded data to sign" },
+                        pin: { type: "string", description: "JPKI signature PIN code (6-16 digits)" },
+                        digest: { type: "string", description: "Digest algorithm: sha1, sha256, or sha512 (default: sha256)" },
+                        detached: { type: "boolean", description: "Create detached signature (default: true)" },
+                        format: { type: "string", description: "Output format: pem or der (default: der)" },
+                        mynaPath: { type: "string", description: "Path to myna binary (default: ~/go/bin/myna)" }
+                    },
+                    required: ["data", "pin"]
+                }
+            },
+            {
+                name: "read_mynumber",
+                description: "Reads My Number (個人番号) from マイナンバーカード using the text input assistance AP. Requires a card reader and 4-digit PIN.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        pin: { type: "string", description: "Card PIN code for text input assistance (4 digits)" },
+                        mynaPath: { type: "string", description: "Path to myna binary (default: ~/go/bin/myna)" }
+                    },
+                    required: ["pin"]
+                }
+            },
+            {
+                name: "read_basic_info",
+                description: "Reads basic personal information (氏名, 生年月日, 性別, 住所) from マイナンバーカード using the text input assistance AP. Requires a card reader and 4-digit PIN.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        pin: { type: "string", description: "Card PIN code for text input assistance (4 digits)" },
+                        mynaPath: { type: "string", description: "Path to myna binary (default: ~/go/bin/myna)" }
+                    },
+                    required: ["pin"]
+                }
+            },
+            {
+                name: "read_photo",
+                description: "Reads the photo from マイナンバーカード using the visual verification AP. Returns JPEG2000 image as base64. Requires a card reader and 4-digit PIN.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        pin: { type: "string", description: "Card PIN code for visual verification (4 digits)" },
+                        mynaPath: { type: "string", description: "Path to myna binary (default: ~/go/bin/myna)" }
+                    },
+                    required: ["pin"]
                 }
             }
         ],
@@ -1016,7 +1093,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         try {
             const args = RegisterWebAuthnSchema.parse(request.params.arguments);
             const handler = new WebAuthnHandler();
-            
+
             const result = await handler.sign({
                 mode: 'register',
                 challenge: args.challenge,
@@ -1031,6 +1108,252 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         } catch (error: any) {
             return {
                 content: [{ type: "text", text: `Error registering WebAuthn: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "sign_with_jpki") {
+        try {
+            const args = SignWithJPKISchema.parse(request.params.arguments);
+
+            // Resolve myna path (expand ~ to home directory)
+            const mynaPath = args.mynaPath || "~/go/bin/myna";
+            const resolvedMynaPath = mynaPath.startsWith("~")
+                ? path.join(os.homedir(), mynaPath.slice(1))
+                : mynaPath;
+
+            // Decode base64 data
+            const dataBuffer = Buffer.from(args.data, 'base64');
+
+            // Create temporary files
+            const tmpDir = os.tmpdir();
+            const inputFile = path.join(tmpDir, `jpki-input-${Date.now()}.bin`);
+            const outputFile = path.join(tmpDir, `jpki-output-${Date.now()}.cms`);
+
+            try {
+                // Write data to temporary input file
+                await fs.writeFile(inputFile, dataBuffer);
+
+                // Build myna command arguments
+                const cmdArgs = [
+                    "jpki", "cms", "sign",
+                    "-i", inputFile,
+                    "-o", outputFile,
+                    "-p", args.pin,
+                    "-m", args.digest || "sha256",
+                    "-f", args.format || "der"
+                ];
+
+                if (args.detached !== false) {
+                    cmdArgs.push("--detached");
+                }
+
+                // Execute myna command
+                const mynaProcess = spawn(resolvedMynaPath, cmdArgs);
+
+                const resultPromise = new Promise<void>((resolve, reject) => {
+                    let stdout = "";
+                    let stderr = "";
+                    mynaProcess.stdout.on("data", (data) => stdout += data.toString());
+                    mynaProcess.stderr.on("data", (data) => stderr += data.toString());
+                    mynaProcess.on("close", (code) => {
+                        if (code === 0) {
+                            resolve();
+                        } else {
+                            reject(new Error(`myna exited with code ${code}: ${stderr || stdout}`));
+                        }
+                    });
+                    mynaProcess.on("error", (err) => reject(err));
+                });
+
+                await resultPromise;
+
+                // Read the signature from output file
+                const signatureBuffer = await fs.readFile(outputFile);
+                const signatureBase64 = signatureBuffer.toString('base64');
+
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: JSON.stringify({
+                                signature: signatureBase64,
+                                format: args.format || "der",
+                                digest: args.digest || "sha256",
+                                detached: args.detached !== false
+                            }, null, 2),
+                        },
+                    ],
+                };
+            } finally {
+                // Clean up temporary files
+                try {
+                    await fs.unlink(inputFile);
+                } catch {}
+                try {
+                    await fs.unlink(outputFile);
+                } catch {}
+            }
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error signing with JPKI: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "read_mynumber") {
+        try {
+            const args = ReadMyNumberSchema.parse(request.params.arguments);
+
+            const mynaPath = args.mynaPath || "~/go/bin/myna";
+            const resolvedMynaPath = mynaPath.startsWith("~")
+                ? path.join(os.homedir(), mynaPath.slice(1))
+                : mynaPath;
+
+            const cmdArgs = ["text", "mynumber", "-p", args.pin];
+
+            const mynaProcess = spawn(resolvedMynaPath, cmdArgs);
+
+            const resultPromise = new Promise<string>((resolve, reject) => {
+                let stdout = "";
+                let stderr = "";
+                mynaProcess.stdout.on("data", (data) => stdout += data.toString());
+                mynaProcess.stderr.on("data", (data) => stderr += data.toString());
+                mynaProcess.on("close", (code) => {
+                    if (code === 0) {
+                        resolve(stdout.trim());
+                    } else {
+                        reject(new Error(`myna exited with code ${code}: ${stderr || stdout}`));
+                    }
+                });
+                mynaProcess.on("error", (err) => reject(err));
+            });
+
+            const mynumber = await resultPromise;
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            mynumber: mynumber
+                        }, null, 2),
+                    },
+                ],
+            };
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error reading My Number: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "read_basic_info") {
+        try {
+            const args = ReadBasicInfoSchema.parse(request.params.arguments);
+
+            const mynaPath = args.mynaPath || "~/go/bin/myna";
+            const resolvedMynaPath = mynaPath.startsWith("~")
+                ? path.join(os.homedir(), mynaPath.slice(1))
+                : mynaPath;
+
+            const cmdArgs = ["text", "attr", "-p", args.pin, "-f", "json"];
+
+            const mynaProcess = spawn(resolvedMynaPath, cmdArgs);
+
+            const resultPromise = new Promise<string>((resolve, reject) => {
+                let stdout = "";
+                let stderr = "";
+                mynaProcess.stdout.on("data", (data) => stdout += data.toString());
+                mynaProcess.stderr.on("data", (data) => stderr += data.toString());
+                mynaProcess.on("close", (code) => {
+                    if (code === 0) {
+                        resolve(stdout.trim());
+                    } else {
+                        reject(new Error(`myna exited with code ${code}: ${stderr || stdout}`));
+                    }
+                });
+                mynaProcess.on("error", (err) => reject(err));
+            });
+
+            const jsonOutput = await resultPromise;
+            const basicInfo = JSON.parse(jsonOutput);
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify(basicInfo, null, 2),
+                    },
+                ],
+            };
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error reading basic info: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "read_photo") {
+        try {
+            const args = ReadPhotoSchema.parse(request.params.arguments);
+
+            const mynaPath = args.mynaPath || "~/go/bin/myna";
+            const resolvedMynaPath = mynaPath.startsWith("~")
+                ? path.join(os.homedir(), mynaPath.slice(1))
+                : mynaPath;
+
+            const tmpDir = os.tmpdir();
+            const outputFile = path.join(tmpDir, `mynumber-photo-${Date.now()}.jp2`);
+
+            try {
+                const cmdArgs = ["visual", "photo", "-p", args.pin, "-o", outputFile];
+
+                const mynaProcess = spawn(resolvedMynaPath, cmdArgs);
+
+                const resultPromise = new Promise<void>((resolve, reject) => {
+                    let stdout = "";
+                    let stderr = "";
+                    mynaProcess.stdout.on("data", (data) => stdout += data.toString());
+                    mynaProcess.stderr.on("data", (data) => stderr += data.toString());
+                    mynaProcess.on("close", (code) => {
+                        if (code === 0) {
+                            resolve();
+                        } else {
+                            reject(new Error(`myna exited with code ${code}: ${stderr || stdout}`));
+                        }
+                    });
+                    mynaProcess.on("error", (err) => reject(err));
+                });
+
+                await resultPromise;
+
+                const photoBuffer = await fs.readFile(outputFile);
+                const photoBase64 = photoBuffer.toString('base64');
+
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: JSON.stringify({
+                                photo: photoBase64,
+                                format: "jpeg2000"
+                            }, null, 2),
+                        },
+                    ],
+                };
+            } finally {
+                try {
+                    await fs.unlink(outputFile);
+                } catch {}
+            }
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error reading photo: ${error.message}` }],
                 isError: true,
             };
         }
