@@ -51,6 +51,10 @@ const AnalyzeServiceRequestSchema = z.object({
     path: z.string().describe("Path to the Service Request Tobari file (.cose or .html)"),
 });
 
+const ListAvailableDocumentsSchema = z.object({
+    rootPath: z.string().optional().describe("Optional path to scan. Defaults to the Tobari examples directory."),
+});
+
 /**
  * Helper to read a Tobari file (HTML or COSE) and return its binary buffer.
  */
@@ -211,6 +215,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         path: { type: "string", description: "Path to the service request file" }
                     },
                     required: ["path"]
+                }
+            },
+            {
+                name: "list_available_documents",
+                description: "Lists available Tobari documents and service requests found in the project's examples or specified directory. Use this to discover files without asking the user for paths.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        rootPath: { type: "string", description: "Root directory to scan (optional)" }
+                    }
                 }
             }
         ],
@@ -665,6 +679,71 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         } catch (error: any) {
             return {
                 content: [{ type: "text", text: `Error analyzing service request: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "list_available_documents") {
+        try {
+            const args = ListAvailableDocumentsSchema.parse(request.params.arguments);
+            // Default to the project root's examples directory
+            // packages/mcp-server/src/index.ts -> ../../../examples
+            const baseDir = args.rootPath || path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../examples");
+            
+            const files = [];
+            const scan = async (dir: string) => {
+                const entries = await fs.readdir(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isDirectory() && entry.name !== "node_modules") {
+                        await scan(fullPath);
+                    } else if (entry.isFile() && (entry.name.endsWith(".html") || entry.name.endsWith(".cose"))) {
+                        // Skip common non-Tobari HTML files if needed, but for now we list them
+                        if (entry.name === "verifier-tool.html" || entry.name === "viewer-template.html") continue;
+                        
+                        try {
+                            const buffer = await readTobariFileAsBuffer(fullPath);
+                            const cose = decode(buffer);
+                            let docType = cose.docType || "Unknown";
+                            
+                            // For COSE_Sign1, docType might be in the payload
+                            if (Array.isArray(cose) && cose.length >= 3) {
+                                try {
+                                    const payload = decode(cose[2]);
+                                    if (payload.docType) docType = payload.docType;
+                                } catch {}
+                            }
+
+                            files.push({
+                                name: entry.name,
+                                path: fullPath,
+                                type: docType,
+                                category: docType.includes("service_request") ? "Administrative Request" : "Credential"
+                            });
+                        } catch (e) {
+                            // Probably not a Tobari file, skip
+                        }
+                    }
+                }
+            };
+
+            await scan(baseDir);
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            baseDir,
+                            documents: files
+                        }, null, 2),
+                    },
+                ],
+            };
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error listing documents: ${error.message}` }],
                 isError: true,
             };
         }
