@@ -29,8 +29,10 @@ export async function signCoseSign1(
         protectedHeaderMap.set(4, new TextEncoder().encode(options.kid)); // 4: kid (byte string)
     }
 
-    const protectedHeaderBytes = encodeCanonical(Object.fromEntries(protectedHeaderMap));
-    const payloadBytes = encodeCanonical(payload);
+    const protectedHeaderBytes = encodeCanonical(protectedHeaderMap);
+    
+    // If payload is already a Uint8Array, don't re-encode it as a Byte String
+    const payloadBytes = (payload instanceof Uint8Array) ? payload : encodeCanonical(payload);
 
     // 2. Prepare Sig_structure for signing
     // [ "Signature1", protected, external_aad, payload ]

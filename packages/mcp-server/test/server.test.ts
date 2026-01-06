@@ -509,6 +509,94 @@ describe("MCP Server", () => {
         expect(verifyResult.results[0].data.id).toBeDefined();
     }, 15000);
 
+    it("should create and verify a multi-source VP (Juminhyo + Bank)", async () => {
+        const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
+        const proc = spawn("bun", ["run", serverPath], {
+            stdio: ["pipe", "pipe", "inherit"],
+        });
+
+        const juminhyoFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
+        const bankFile = path.resolve(import.meta.dir, "../../../examples/bank-certificate/bank-certificate.cose");
+        const deviceKeyFile = path.resolve(import.meta.dir, "../../../examples/ininjo/device-key.json");
+        
+        const juminhyoIssuerKey = path.resolve(import.meta.dir, "../../../examples/juminhyo/issuer-key.json");
+        const bankIssuerKey = path.resolve(import.meta.dir, "../../../examples/bank-certificate/issuer-key.json");
+
+        const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+        
+        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
+        proc.stdin.write(JSON.stringify(initReq) + "\n");
+
+        // 1. Create Multi-source VP
+        const createReq = {
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: {
+                name: "create_presentation",
+                arguments: {
+                    requests: [
+                        { path: juminhyoFile, fields: ["世帯主氏名", "世帯住所"] },
+                        { path: bankFile, fields: ["bank_name", "account_number"] }
+                    ],
+                    devicePrivateKeyPath: deviceKeyFile
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(createReq) + "\n");
+
+        let outputBuffer = "";
+        proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
+
+        const waitForId = async (id: number) => {
+            for (let i = 0; i < 20; i++) {
+                if (outputBuffer.includes(`"id":${id}`)) return;
+                await new Promise(r => setTimeout(r, 200));
+            }
+        };
+
+        await waitForId(1);
+        const createRespLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 1; } catch { return false; } });
+        const vpBase64 = JSON.parse(JSON.parse(createRespLine!).result.content[0].text).vp_base64;
+
+        // 2. Verify Multi-source VP
+        const verifyReq = {
+            jsonrpc: "2.0", id: 2, method: "tools/call",
+            params: {
+                name: "verify_presentation",
+                arguments: {
+                    vpBase64: vpBase64,
+                    issuerPublicKeys: {
+                        "io.github.masanork.tobari.juminhyo.v1": juminhyoIssuerKey,
+                        "io.github.masanork.tobari.bank_certificate.v1": bankIssuerKey
+                    }
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(verifyReq) + "\n");
+
+        await waitForId(2);
+        proc.kill();
+
+        const verifyRespLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 2; } catch { return false; } });
+        const verifyResult = JSON.parse(JSON.parse(verifyRespLine!).result.content[0].text);
+
+        if (!verifyResult.overall_valid) {
+            console.error("Multi-source Verification Details (Retry):", JSON.stringify(verifyResult, null, 2));
+        }
+
+        expect(verifyResult.overall_valid).toBe(true);
+        expect(verifyResult.results.length).toBe(2);
+        
+        // Juminhyo check
+        const juminhyoResult = verifyResult.results.find((r: any) => r.docType === "io.github.masanork.tobari.juminhyo.v1");
+        expect(juminhyoResult.issuerValid).toBe(true);
+        expect(juminhyoResult.data.世帯主氏名).toBeDefined();
+
+        // Bank check
+        const bankResult = verifyResult.results.find((r: any) => r.docType === "io.github.masanork.tobari.bank_certificate.v1");
+        expect(bankResult.issuerValid).toBe(true);
+        expect(bankResult.data.bank_name).toBeDefined();
+    }, 20000);
+
     it("should analyze a service request document correctly", async () => {
         const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
         const proc = spawn("bun", ["run", serverPath], {
