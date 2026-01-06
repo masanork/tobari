@@ -174,9 +174,6 @@ export async function createPresentation(
 ): Promise<any> {
     const { decode } = await import('@tobari/crypto/cbor');
 
-    // Deep clone the doc structure to avoid mutating original
-    // JSON.stringify corrupts Uint8Array, use structuredClone or manual copy.
-    // Since we only modify nameSpaces, we can shallow copy the upper layers.
     const vp = {
         ...fullDoc,
         issuerSigned: {
@@ -185,23 +182,13 @@ export async function createPresentation(
         }
     };
 
-    // In mdoc, valueDigests are in the MSO (which is signed and immutable).
-    // We only filter the items in the IssuerSigned structure.
-
-    const msoBytes = fullDoc.issuerSigned.issuerAuth; // COSE_Sign1
-    // We decode MSO just to find the docType/Namespace if needed, 
-    // but here we can just iterate over all namespaces found in the doc.
-
     for (const ns of Object.keys(vp.issuerSigned.nameSpaces)) {
         const originalItems = fullDoc.issuerSigned.nameSpaces[ns];
         const filteredItems: Uint8Array[] = [];
 
         for (const itemBytes of originalItems) {
-            // We must decode to check the key (elementIdentifier)
-            // item is [digestID, random, elementIdentifier, elementValue]
-            // Note: This relies on the item structure being standard.
             const item = decode(new Uint8Array(itemBytes));
-            const key = item[2]; // elementIdentifier
+            const key = item[2]; 
 
             if (disclosedKeys.includes(key)) {
                 filteredItems.push(itemBytes);
@@ -212,6 +199,116 @@ export async function createPresentation(
     }
 
     return vp;
+}
+
+/**
+ * ISO 18013-5 DeviceResponse structure
+ */
+export interface DeviceResponse {
+    version: "1.0";
+    documents: any[];
+    status: 0;
+}
+
+/**
+ * Generates the "To Be Signed" bytes for DeviceAuth (Sig_structure).
+ * This is used for external signing (e.g. Passkeys).
+ */
+export async function getDeviceAuthToBeSigned(
+    docType: string,
+    deviceNamespacesBytes: Uint8Array,
+    sessionTranscript: any[],
+    alg: number = -35 // ES384
+): Promise<{ toBeSigned: Uint8Array, protectedHeaderBytes: Uint8Array }> {
+    const { encodeCanonical } = await import('@tobari/crypto/cbor');
+
+    const deviceAuthentication = [
+        "DeviceAuthentication",
+        sessionTranscript,
+        docType,
+        deviceNamespacesBytes
+    ];
+    const payloadBytes = encodeCanonical(deviceAuthentication);
+
+    // Prepare COSE_Sign1 protected header
+    const protectedHeaderMap = new Map<any, any>();
+    protectedHeaderMap.set(1, alg); 
+    const protectedHeaderBytes = encodeCanonical(Object.fromEntries(protectedHeaderMap));
+
+    // Sig_structure = ["Signature1", protectedHeaderBytes, external_aad, payloadBytes]
+    const sigStructure = [
+        "Signature1",
+        protectedHeaderBytes,
+        new Uint8Array(0), // external_aad
+        payloadBytes
+    ];
+
+    return {
+        toBeSigned: encodeCanonical(sigStructure),
+        protectedHeaderBytes
+    };
+}
+
+/**
+ * Assembles a COSE_Sign1 structure from a pre-computed signature.
+ */
+export async function assembleDeviceAuth(
+    protectedHeaderBytes: Uint8Array,
+    docType: string,
+    deviceNamespacesBytes: Uint8Array,
+    sessionTranscript: any[],
+    signature: Uint8Array
+): Promise<Uint8Array> {
+    const { encodeCanonical } = await import('@tobari/crypto/cbor');
+
+    const deviceAuthentication = [
+        "DeviceAuthentication",
+        sessionTranscript,
+        docType,
+        deviceNamespacesBytes
+    ];
+    const payloadBytes = encodeCanonical(deviceAuthentication);
+
+    const coseSign1 = [
+        protectedHeaderBytes,
+        {}, // unprotected
+        payloadBytes,
+        signature
+    ];
+
+    return encodeCanonical(coseSign1);
+}
+
+/**
+ * Creates a DeviceAuth signature (COSE_Sign1) over the DeviceAuthentication structure.
+ */
+export async function signDeviceAuth(
+    docType: string,
+    deviceNamespacesBytes: Uint8Array, // CBOR encoded deviceNameSpaces (usually empty)
+    sessionTranscript: any[], // [DeviceEngagementBytes, ER_KeyBytes, Handover]
+    devicePrivateKey: CryptoKey,
+    alg: number = -35 // ES384
+): Promise<Uint8Array> {
+    const { encodeCanonical } = await import('@tobari/crypto/cbor');
+    const { signCoseSign1 } = await import('@tobari/crypto/cose');
+
+    // DeviceAuthentication = [
+    //   "DeviceAuthentication",
+    //   sessionTranscript,
+    //   docType,
+    //   deviceNamespacesBytes
+    // ]
+    const deviceAuthentication = [
+        "DeviceAuthentication",
+        sessionTranscript,
+        docType,
+        deviceNamespacesBytes
+    ];
+    const deviceAuthenticationBytes = encodeCanonical(deviceAuthentication);
+
+    // In mdoc, the DeviceAuth is a COSE_Sign1 where the payload is NULL (detached)
+    // or the DeviceAuthenticationBytes itself. For simplicity here, we use it as payload.
+    return await signCoseSign1(deviceAuthenticationBytes, devicePrivateKey, { alg });
 }
 
 function compareUint8Arrays(a: Uint8Array, b: Uint8Array): boolean {
