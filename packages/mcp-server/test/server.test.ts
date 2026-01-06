@@ -548,10 +548,16 @@ describe("MCP Server", () => {
         const analysis = JSON.parse(JSON.parse(respLine!).result.content[0].text);
 
         expect(analysis.title).toContain("子育て世帯");
-        expect(analysis.requiredCredentials.length).toBeGreaterThan(0);
-        expect(analysis.requiredCredentials[0].requiredFields[0].docType).toBe("io.github.masanork.tobari.juminhyo.v1");
+        expect(analysis.requiredCredentials.length).toBeGreaterThan(1);
+        
+        const juminhyoReq = analysis.requiredCredentials.find((c: any) => c.requiredFields[0].docType === "io.github.masanork.tobari.juminhyo.v1");
+        expect(juminhyoReq).toBeDefined();
+
+        const bankReq = analysis.requiredCredentials.find((c: any) => c.requiredFields[0].docType === "io.github.masanork.tobari.bank_certificate.v1");
+        expect(bankReq).toBeDefined();
+
         expect(analysis.requiredUserInputs.length).toBeGreaterThan(0);
-        expect(analysis.requiredUserInputs[0].fields[0].id).toBe("bank_name");
+        expect(analysis.requiredUserInputs[0].fields[0].id).toBe("contact_phone");
     }, 10000);
 
     it("should list available demo documents", async () => {
