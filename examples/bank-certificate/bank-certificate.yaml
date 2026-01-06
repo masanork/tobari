@@ -1,0 +1,35 @@
+title: "銀行口座保有証明書"
+id: "io.github.masanork.tobari.bank_certificate.v1"
+version: "1.0.0"
+
+fields:
+  - id: "bank_name"
+    label: "金融機関名"
+    type: "string"
+    section: "header"
+    primary: true
+  
+  - id: "branch_name"
+    label: "支店名"
+    type: "string"
+    section: "header"
+
+  - id: "account_type"
+    label: "口座種別"
+    type: "string"
+    section: "header"
+
+  - id: "account_number"
+    label: "口座番号"
+    type: "string"
+    section: "header"
+    primary: true
+
+  - id: "account_holder"
+    label: "口座名義"
+    type: "string"
+    primary: true
+
+  - id: "issue_date"
+    label: "証明日"
+    type: "string"
