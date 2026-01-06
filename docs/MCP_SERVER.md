@@ -60,6 +60,12 @@ Tobari ファイル（.cose または .html）を読み込み、中身を JSON �
   - `vpBase64`: Base64 エンコードされた VP データ
   - `issuerPublicKeys`: `{"docType": "/path/to/pubkey.json"}` 形式のマップ
 
+### 6. `analyze_service_request`
+行政サービス案内ドキュメント（Administrative Request）を解析し、申請に必要な証明書やユーザー入力をリストアップします。これにより、AI はユーザーに対して「何が足りないか」を具体的に提示できるようになります。
+
+- **引数**:
+  - `path`: サービス案内ドキュメント（.cose または .html）への絶対パス
+
 ## ユースケース例
 
 AI との対話で以下のような活用が可能です：
