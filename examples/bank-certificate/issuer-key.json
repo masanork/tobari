@@ -1,0 +1,10 @@
+{
+  "crv": "P-384",
+  "ext": true,
+  "key_ops": [
+    "verify"
+  ],
+  "kty": "EC",
+  "x": "qus8MD9BoLCtNiMgaf8qZUMNKStPFlPikTi5go7fQsNcrQJvhE6cCDdpfgGJc_3y",
+  "y": "QgosUxBKnAX2995GPOneApHczsiv46zQPlDX4mlYuYzjP8sR1WDP-qVfYlIrsplB"
+}
