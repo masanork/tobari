@@ -13,11 +13,13 @@ shared/fonts/ipamjm.ttf
 # Binary / Build Artifacts
 dist/
 .DS_Store
+packages/civ/
 
 # Secrets
 *-key.json
 *.pem
 *.key
+.tobari-credentials.json
 
 # Generated VP files
 *-vp.cose
