@@ -103,13 +103,13 @@ export async function verifyFormToken(
 
     // Decode protected header to get alg
     const protectedHeader = decode(protectedHeaderBytes);
-    // Note: cbor-x might decode map keys as strings if not configured carefully with maps, 
-    // but our decoder uses standard behavior. 
-    // Keys like 1 (alg) might come out as "1" or 1 depending on config.
-    // In `cbor.ts` we returned Objects.
-
-    // Let's assume standard object access.
-    const alg = protectedHeader[1] || protectedHeader['1'];
+    // Note: cbor-x might decode map keys as strings or Map depending on config.
+    let alg: any;
+    if (protectedHeader instanceof Map) {
+        alg = protectedHeader.get(1) ?? protectedHeader.get('1');
+    } else {
+        alg = protectedHeader[1] || protectedHeader['1'];
+    }
 
     // Reconstruct Sig_structure
     const sigStructure = [

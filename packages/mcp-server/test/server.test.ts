@@ -255,7 +255,7 @@ describe("MCP Server", () => {
 
         const ininjoFile = path.resolve(import.meta.dir, "../../../examples/ininjo/ininjo.cose");
         const juminhyoFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
-        const deviceKeyFile = path.resolve(import.meta.dir, "../../../examples/ininjo/device-key.json");
+        const deviceKeyFile = path.resolve(import.meta.dir, "../../../device-key.json");
 
         const initReq = {
             jsonrpc: "2.0",
@@ -338,7 +338,7 @@ describe("MCP Server", () => {
         });
 
         const ininjoFile = path.resolve(import.meta.dir, "../../../examples/ininjo/ininjo.cose");
-        const deviceKeyFile = path.resolve(import.meta.dir, "../../../examples/ininjo/device-key.json");
+        const deviceKeyFile = path.resolve(import.meta.dir, "../../../device-key.json");
 
         const initReq = {
             jsonrpc: "2.0",
@@ -446,7 +446,7 @@ describe("MCP Server", () => {
         });
 
         const ininjoFile = path.resolve(import.meta.dir, "../../../examples/ininjo/ininjo.cose");
-        const deviceKeyFile = path.resolve(import.meta.dir, "../../../examples/ininjo/device-key.json");
+        const deviceKeyFile = path.resolve(import.meta.dir, "../../../device-key.json");
         const issuerKeyFile = path.resolve(import.meta.dir, "../../../examples/ininjo/issuer-key.json");
 
         const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
@@ -517,7 +517,7 @@ describe("MCP Server", () => {
 
         const juminhyoFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
         const bankFile = path.resolve(import.meta.dir, "../../../examples/bank-certificate/bank-certificate.cose");
-        const deviceKeyFile = path.resolve(import.meta.dir, "../../../examples/ininjo/device-key.json");
+        const deviceKeyFile = path.resolve(import.meta.dir, "../../../device-key.json");
         
         const juminhyoIssuerKey = path.resolve(import.meta.dir, "../../../examples/juminhyo/issuer-key.json");
         const bankIssuerKey = path.resolve(import.meta.dir, "../../../examples/bank-certificate/issuer-key.json");
