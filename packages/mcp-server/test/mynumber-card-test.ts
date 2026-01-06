@@ -3,6 +3,10 @@ import * as path from "path";
 import * as os from "os";
 import { spawn } from "child_process";
 
+const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
+const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/dummy-myna");
+
+
 /**
  * Test for マイナンバーカード reading functionality
  *
@@ -17,14 +21,14 @@ import { spawn } from "child_process";
  *
  * Requirements:
  *   - マイナンバーカード and card reader
- *   - myna binary at ~/go/bin/myna
+ *   - myna binary at ~/go/bin/myna (or dummy-myna in packages/civ/target/debug)
  *   - Valid 4-digit PIN for券面事項入力補助用
  */
 
 async function readMyNumber(pin: string, mynaPath?: string): Promise<string> {
     const resolvedMynaPath = mynaPath?.startsWith("~")
         ? path.join(os.homedir(), mynaPath.slice(1))
-        : mynaPath || path.join(os.homedir(), "go/bin/myna");
+        : mynaPath || DEFAULT_MYNA_PATH;
 
     const cmdArgs = ["text", "mynumber", "-p", pin];
     const mynaProcess = spawn(resolvedMynaPath, cmdArgs);
@@ -48,7 +52,7 @@ async function readMyNumber(pin: string, mynaPath?: string): Promise<string> {
 async function readBasicInfo(pin: string, mynaPath?: string): Promise<any> {
     const resolvedMynaPath = mynaPath?.startsWith("~")
         ? path.join(os.homedir(), mynaPath.slice(1))
-        : mynaPath || path.join(os.homedir(), "go/bin/myna");
+        : mynaPath || DEFAULT_MYNA_PATH;
 
     const cmdArgs = ["text", "attr", "-p", pin, "-f", "json"];
     const mynaProcess = spawn(resolvedMynaPath, cmdArgs);
@@ -77,7 +81,7 @@ async function readBasicInfo(pin: string, mynaPath?: string): Promise<any> {
 async function readPhoto(pin: string, mynaPath?: string): Promise<string> {
     const resolvedMynaPath = mynaPath?.startsWith("~")
         ? path.join(os.homedir(), mynaPath.slice(1))
-        : mynaPath || path.join(os.homedir(), "go/bin/myna");
+        : mynaPath || DEFAULT_MYNA_PATH;
 
     const tmpDir = os.tmpdir();
     const outputFile = path.join(tmpDir, `mynumber-photo-${Date.now()}.jp2`);
@@ -106,7 +110,7 @@ async function readPhoto(pin: string, mynaPath?: string): Promise<string> {
     } finally {
         try {
             await fs.unlink(outputFile);
-        } catch {}
+        } catch { }
     }
 }
 

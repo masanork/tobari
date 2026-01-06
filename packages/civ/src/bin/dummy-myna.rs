@@ -69,12 +69,12 @@ fn main() {
                     if format == "json" {
                         let info = json!({
                             "header": {
-                                "date": "20250101",
-                                "expires": "20300101"
+                                "date": "20260115",
+                                "expires": "20310115"
                             },
-                            "name": "公的 太郎",
-                            "address": "東京都千代田区千代田1-1",
-                            "birth": "19900101",
+                            "name": "斎藤 太朗", // Simplifed from 䶒藤󠄃 太朗󠄅 (IVS/Surrogate pairs removed for MyNA compat)
+                            "address": "東京都港区虎ノ門2-2-1", // Similar to Juminhyo demo
+                            "birth": "19890101",
                             "sex": "男",
                             "name_image": "", // Base64 encoded image if needed
                             "address_image": ""
@@ -82,9 +82,9 @@ fn main() {
                         println!("{}", info.to_string());
                     } else {
                         // Text format fallback
-                        println!("氏名: 公的 太郎");
-                        println!("住所: 東京都千代田区千代田1-1");
-                        println!("生年月日: 19900101");
+                        println!("氏名: 斎藤 太朗");
+                        println!("住所: 東京都港区虎ノ門2-2-1");
+                        println!("生年月日: 19890101");
                         println!("性別: 男");
                     }
                 }
