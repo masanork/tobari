@@ -417,6 +417,100 @@ function escapeHtml(text: string): string {
         .replace(/'/g, '&#39;');
 }
 
+function renderBankCertificate(data: any, mso: any): string {
+    const getValue = (key: string) => {
+        const val = data[key];
+        if (val && typeof val === 'object' && val.hasOwnProperty('@disclosed')) {
+            return val['@disclosed'] ? val['@value'] : '******';
+        }
+        return val || '-';
+    };
+
+    const logoSvg = `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="40" height="40" rx="8" fill="#0052CC"/>
+<path d="M20 8L10 24H30L20 8Z" fill="white"/>
+<rect x="12" y="26" width="16" height="4" fill="white"/>
+</svg>`;
+
+    return `
+        <div style="font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif; color: #333; max-width: 800px; margin: 0 auto; position: relative; padding: 40px; background: #fff; border: 1px solid #ddd; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
+            
+            <!-- Watermark -->
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 80px; color: rgba(0,0,0,0.03); font-weight: bold; pointer-events: none; white-space: nowrap; z-index: 0;">
+                DIGITAL BANK
+            </div>
+
+            <div style="position: relative; z-index: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #0052CC; padding-bottom: 20px; margin-bottom: 40px;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        ${logoSvg}
+                        <div>
+                            <div style="font-size: 24px; font-weight: bold; color: #0052CC; letter-spacing: 0.05em;">${getValue('bank_name')}</div>
+                            <div style="font-size: 11px; color: #666;">Digital Bank, Ltd.</div>
+                        </div>
+                    </div>
+                    <div style="text-align: right; font-size: 12px; color: #666;">
+                        <div>発行日: ${getValue('issue_date')}</div>
+                        <div>管理番号: ${mso.docType.split('.').pop()}-${new Date(mso.validityInfo.signed).getTime().toString().slice(-6)}</div>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-bottom: 50px;">
+                    <h1 style="font-size: 32px; font-weight: 500; letter-spacing: 0.2em; border-bottom: 1px solid #333; display: inline-block; padding-bottom: 5px; margin-bottom: 10px;">残高証明書</h1>
+                    <div style="font-size: 12px; color: #666;">CERTIFICATE OF BALANCE</div>
+                </div>
+
+                <div style="margin-bottom: 40px;">
+                    <div style="font-size: 14px; margin-bottom: 10px;">　下記口座の残高は、証明日現在において次のとおりであることを証明します。</div>
+                    <div style="font-size: 18px; font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 20px;">
+                        ${getValue('account_holder')} 様
+                    </div>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 40px;">
+                    <thead>
+                        <tr style="background: #f5f7fa; color: #444; font-size: 12px;">
+                            <th style="padding: 12px; border: 1px solid #ccc; font-weight: normal;">支店名</th>
+                            <th style="padding: 12px; border: 1px solid #ccc; font-weight: normal;">預金種目</th>
+                            <th style="padding: 12px; border: 1px solid #ccc; font-weight: normal;">口座番号</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="text-align: center; font-size: 16px;">
+                            <td style="padding: 15px; border: 1px solid #ccc;">${getValue('branch_name')}</td>
+                            <td style="padding: 15px; border: 1px solid #ccc;">${getValue('account_type')}</td>
+                            <td style="padding: 15px; border: 1px solid #ccc;">${getValue('account_number')}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="background: #f9fbfd; padding: 25px; border: 2px solid #e1e7f0; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 60px;">
+                    <div style="font-size: 14px; font-weight: bold; color: #4a5568;">証明日現在残高</div>
+                    <div style="font-size: 36px; font-weight: bold; color: #1a202c; letter-spacing: 0.05em; font-family: 'Helvetica Neue', Arial, sans-serif;">
+                        ${getValue('balance')}
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; margin-top: 60px; position: relative;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 18px; font-weight: bold; margin-bottom: 5px;">${getValue('bank_name')}</div>
+                        <div style="font-size: 14px;">${getValue('branch_name')}</div>
+                        <div style="position: absolute; top: -15px; right: 10px; width: 60px; height: 60px; border: 2px solid #c53030; border-radius: 50%; color: #c53030; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; transform: rotate(-10deg); opacity: 0.8; border-style: double;">
+                            <div style="border: 1px solid #c53030; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;">
+                                済
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <footer style="margin-top: 60px; border-top: 1px dotted #ccc; padding-top: 20px; font-size: 10px; color: #999; text-align: center;">
+                   This document is digitally signed and verifiable. Powered by Tobari (ISO 18013-5 mdoc).
+                </footer>
+            </div>
+        </div>
+    `;
+}
+
 function render(doc: any, data: any, mso: any) {
     const container = document.getElementById('viewer-root');
     if (!container) return;
@@ -426,8 +520,12 @@ function render(doc: any, data: any, mso: any) {
         document.title = `${titleVal} - Tobari Verified`;
     }
 
-    // Always use auto-renderer for now with new mdoc structure
-    container.innerHTML = `<div class="official-document">${autoRender(data, doc.fields || [], mso)}</div>`;
+    if (mso.docType === 'io.github.masanork.tobari.bank_certificate.v1') {
+        container.innerHTML = `<div class="">${renderBankCertificate(data, mso)}</div>`;
+    } else {
+        // Always use auto-renderer for now with new mdoc structure
+        container.innerHTML = `<div class="official-document">${autoRender(data, doc.fields || [], mso)}</div>`;
+    }
 }
 
 // Expose globally

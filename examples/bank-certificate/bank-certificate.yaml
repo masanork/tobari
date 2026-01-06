@@ -1,4 +1,4 @@
-title: "銀行口座保有証明書"
+title: "残高証明書"
 id: "io.github.masanork.tobari.bank_certificate.v1"
 version: "1.0.0"
 
@@ -23,6 +23,11 @@ fields:
     label: "口座番号"
     type: "string"
     section: "header"
+    primary: true
+
+  - id: "balance"
+    label: "残高"
+    type: "string"
     primary: true
 
   - id: "account_holder"

@@ -4,7 +4,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 
 async function main() {
-    console.log("Generating Bank Account Ownership Certificate...");
+    console.log("Generating Bank Balance Certificate...");
 
     const schemaStr = await fs.readFile(path.join(__dirname, 'bank-certificate.yaml'), 'utf-8');
     const dataStr = await fs.readFile(path.join(__dirname, 'bank-data.yaml'), 'utf-8');
@@ -24,7 +24,7 @@ async function main() {
     const coseBytes = await generateSignedTobari(schemaStr, data, keyPair.privateKey, {
         kid: "iss-bank-p384"
     });
-    
+
     const outputCose = path.join(__dirname, 'bank-certificate.cose');
     await fs.writeFile(outputCose, coseBytes);
     console.log(`Generated COSE: ${outputCose}`);

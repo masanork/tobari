@@ -34,11 +34,21 @@ const PreparePresentationSchema = z.object({
         fields: z.array(z.string()).describe("List of field IDs to disclose from this document"),
     })),
     verifierNonce: z.string().optional().describe("Nonce provided by the verifier"),
+    webauthn: z.object({
+        rpId: z.string().optional().describe("Relying Party ID for WebAuthn"),
+        userVerification: z.enum(["required", "preferred", "discouraged"]).optional().describe("WebAuthn userVerification setting"),
+        allowCredentials: z.array(z.object({
+            idBase64Url: z.string().describe("Credential ID (base64url)"),
+            type: z.literal("public-key").describe("Credential type"),
+        })).optional().describe("Allow-list of WebAuthn credential IDs"),
+    }).optional().describe("Optional WebAuthn metadata for browser clients"),
 });
 
 const AssemblePresentationSchema = z.object({
     preparedData: z.any().describe("The opaque state returned by prepare_presentation"),
     signatures: z.array(z.string()).describe("Base64 encoded signatures, one for each document in the original request order"),
+    signatureFormat: z.enum(["der", "raw-ecdsa"]).optional().describe("Signature format: DER (default) or raw ECDSA (r||s)"),
+    signatureEncoding: z.enum(["base64", "base64url"]).optional().describe("Encoding of signatures array (default: base64)"),
 });
 
 const VerifyPresentationSchema = z.object({
@@ -89,6 +99,48 @@ async function readTobariFileAsBuffer(filePath: string): Promise<Uint8Array> {
     } else {
         return await fs.readFile(filePath);
     }
+}
+
+function decodeSignatureInput(signature: string, encoding: "base64" | "base64url"): Uint8Array {
+    return new Uint8Array(Buffer.from(signature, encoding));
+}
+
+function rawEcdsaToDer(rawSignature: Uint8Array): Uint8Array {
+    if (rawSignature.length % 2 !== 0) {
+        throw new Error("Invalid raw ECDSA signature length");
+    }
+    const partLen = rawSignature.length / 2;
+    const r = rawSignature.slice(0, partLen);
+    const s = rawSignature.slice(partLen);
+
+    const toInteger = (bytes: Uint8Array) => {
+        let start = 0;
+        while (start < bytes.length - 1 && bytes[start] === 0) start++;
+        let trimmed = bytes.slice(start);
+        if (trimmed[0] & 0x80) {
+            const prefixed = new Uint8Array(trimmed.length + 1);
+            prefixed[0] = 0x00;
+            prefixed.set(trimmed, 1);
+            trimmed = prefixed;
+        }
+        return trimmed;
+    };
+
+    const rInt = toInteger(r);
+    const sInt = toInteger(s);
+    const totalLen = 2 + rInt.length + 2 + sInt.length;
+    const der = new Uint8Array(2 + totalLen);
+    let offset = 0;
+    der[offset++] = 0x30;
+    der[offset++] = totalLen;
+    der[offset++] = 0x02;
+    der[offset++] = rInt.length;
+    der.set(rInt, offset);
+    offset += rInt.length;
+    der[offset++] = 0x02;
+    der[offset++] = sInt.length;
+    der.set(sInt, offset);
+    return der;
 }
 
 const server = new Server(
@@ -170,7 +222,26 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                                 required: ["path", "fields"]
                             }
                         },
-                        verifierNonce: { type: "string" }
+                        verifierNonce: { type: "string" },
+                        webauthn: {
+                            type: "object",
+                            description: "Optional WebAuthn metadata for browser clients",
+                            properties: {
+                                rpId: { type: "string", description: "Relying Party ID" },
+                                userVerification: { type: "string", description: "required | preferred | discouraged" },
+                                allowCredentials: {
+                                    type: "array",
+                                    items: {
+                                        type: "object",
+                                        properties: {
+                                            idBase64Url: { type: "string", description: "Credential ID (base64url)" },
+                                            type: { type: "string", description: "Credential type (public-key)" }
+                                        },
+                                        required: ["idBase64Url", "type"]
+                                    }
+                                }
+                            }
+                        }
                     },
                     required: ["requests"]
                 }
@@ -182,7 +253,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     type: "object",
                     properties: {
                         preparedData: { type: "object", description: "Opaque state from prepare_presentation" },
-                        signatures: { type: "array", items: { type: "string" }, description: "Base64 signatures" }
+                        signatures: { type: "array", items: { type: "string" }, description: "Base64 signatures" },
+                        signatureFormat: { type: "string", description: "der (default) or raw-ecdsa" },
+                        signatureEncoding: { type: "string", description: "base64 (default) or base64url" }
                     },
                     required: ["preparedData", "signatures"]
                 }
@@ -468,10 +541,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
                     sessionTranscript
                 );
 
+                const { encodeCanonical } = await import('@tobari/crypto/cbor');
+                const deviceAuthPayload = [
+                    "DeviceAuthentication",
+                    sessionTranscript,
+                    disclosedDoc.docType,
+                    deviceNameSpacesBytes
+                ];
+                const deviceAuthPayloadBytes = encodeCanonical(deviceAuthPayload);
+
                 itemsToSign.push({
                     docType: disclosedDoc.docType,
                     toBeSignedHex: Buffer.from(toBeSigned).toString('hex'),
-                    toBeSignedBase64: Buffer.from(toBeSigned).toString('base64')
+                    toBeSignedBase64: Buffer.from(toBeSigned).toString('base64'),
+                    toBeSignedBase64Url: Buffer.from(toBeSigned).toString('base64url'),
+                    deviceAuthPayloadBase64: Buffer.from(deviceAuthPayloadBytes).toString('base64'),
+                    deviceAuthPayloadBase64Url: Buffer.from(deviceAuthPayloadBytes).toString('base64url'),
+                    webauthn: {
+                        challengeBase64Url: Buffer.from(toBeSigned).toString('base64url'),
+                        rpId: args.webauthn?.rpId || null,
+                        userVerification: args.webauthn?.userVerification || "preferred",
+                        allowCredentials: args.webauthn?.allowCredentials || []
+                    }
                 });
 
                 preparedDocs.push({
@@ -507,6 +598,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             const args = AssemblePresentationSchema.parse(request.params.arguments);
             const documents = [];
             const preparedDocs = args.preparedData as any[];
+            const signatureFormat = args.signatureFormat || "der";
+            const signatureEncoding = args.signatureEncoding || "base64";
 
             if (preparedDocs.length !== args.signatures.length) {
                 throw new Error("Number of signatures does not match number of documents");
@@ -514,7 +607,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 
             for (let i = 0; i < preparedDocs.length; i++) {
                 const p = preparedDocs[i];
-                const signature = new Uint8Array(Buffer.from(args.signatures[i], 'base64'));
+                const inputSignature = decodeSignatureInput(args.signatures[i], signatureEncoding);
+                const signature = signatureFormat === "raw-ecdsa"
+                    ? rawEcdsaToDer(inputSignature)
+                    : inputSignature;
 
                 const deviceAuth = await assembleDeviceAuth(
                     new Uint8Array(Buffer.from(p.protectedHeaderBytes, 'base64')),
