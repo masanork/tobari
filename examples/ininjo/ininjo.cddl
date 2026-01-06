@@ -1,0 +1,39 @@
+; JPKI/e-Gov style Electronic Power of Attorney (PoC)
+; Ported conceptually from typical XML Schemas for Delegation
+
+ininjo = {
+  "docType": "io.github.masanork.tobari.ininjo",
+  "version": "1.0",
+  "issuer": tstr,             ; e.g. "Self-Issued"
+  "issuanceDate": tdate,
+
+  ; 委任状本体 (Main Body)
+  "id": tstr,                 ; 委任状ID
+  "creation_date": tdate,     ; 作成日
+
+  ; 委任者 (Principal / Mandator)
+  "principal": {
+    "name": tstr,             ; 氏名 / 名称
+    "address": tstr,          ; 住所 / 所在地
+    ? "corporate_number": tstr, ; 法人番号
+    ? "representative_title": tstr ; 代表者肩書
+  },
+
+  ; 受任者 (Agent / Mandatary)
+  "agent": {
+    "name": tstr,
+    "address": tstr,
+    ? "department": tstr,     ; 所属部課
+    ? "title": tstr,          ; 職名
+    "relationship": tstr      ; 続柄
+  },
+
+  ; 委任事項 (Mandate / Authority)
+  "scope": [* tstr],          ; 委任事項
+
+  ; 有効期間 (Period)
+  "validity": {
+    "not_before": tdate,
+    "not_after": tdate
+  }
+}

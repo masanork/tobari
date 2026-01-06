@@ -9,25 +9,71 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
     try {
         const binary = Uint8Array.from(atob(base64Data.split(',')[1] || base64Data), c => c.charCodeAt(0));
 
-        // In a real scenario, the public key would be bundled or fetched.
-        // For the PoC, we might just decode or use a provided test key.
         const doc = decode(binary);
-
-        // For the POC viewer, we skip cryptographic verification if no key is provided,
-        // but we still decode the MSO to show the data.
         const issuerAuthToken = doc.issuerSigned.issuerAuth;
         const coseArray = decode(issuerAuthToken);
         const mso = decode(coseArray[2]);
+
+        // Cryptographic Verification
+        let isSignatureValid = false;
+        let verificationError = null;
+
+        if (issuerPublicKeyJwk) {
+            try {
+                // Import the provided JWK
+                const issuerKey = await crypto.subtle.importKey(
+                    "jwk",
+                    issuerPublicKeyJwk,
+                    { name: "ECDSA", namedCurve: "P-384" },
+                    true,
+                    ["verify"]
+                );
+                // Verify the COSE signature
+                const result = await verifyTobari(binary, issuerKey);
+                isSignatureValid = result.isValid;
+                if (!result.isValid) {
+                    console.error("Signature verification details:", result.error);
+                }
+            } catch (e) {
+                console.error("Signature verification failed with error:", e);
+                verificationError = e;
+            }
+        } else {
+            console.warn("No Issuer Public Key provided. Skipping signature verification.");
+        }
 
         // Use the DocType/Schema ID as the namespace
         const namespace = mso.docType;
         const items = doc.issuerSigned.nameSpaces[namespace] || [];
         const disclosedData = await revealMdocData(mso, items, namespace);
 
-        currentDebugData = { doc, mso, revealed: disclosedData };
+        currentDebugData = { doc, mso, revealed: disclosedData, isSignatureValid };
 
         // Render using the embedded template (if any) or auto-renderer
         render(doc, disclosedData, mso);
+
+        // Show Signature Warning if needed
+        if (issuerPublicKeyJwk && !isSignatureValid) {
+            const warning = document.createElement('div');
+            Object.assign(warning.style, {
+                position: 'fixed',
+                top: '0',
+                left: '0',
+                width: '100%',
+                background: '#e53e3e',
+                color: 'white',
+                padding: '12px',
+                textAlign: 'center',
+                fontWeight: 'bold',
+                zIndex: '9999',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
+            });
+            warning.textContent = `⚠️ SIGNATURE VALIDATION FAILED: This document may be forged or corrupted.`;
+            document.body.prepend(warning);
+        } else if (issuerPublicKeyJwk && isSignatureValid) {
+            console.log("✅ Signature Verified Successfully.");
+        }
+
         setupDebugUI();
     } catch (e) {
         document.body.innerHTML = `<div class="error">Failed to decode Tobari file: ${e}</div>`;
@@ -191,6 +237,35 @@ function autoRender(data: any, fieldsMeta: any[], mso: MSO): string {
         </div>
     `;
 
+    const renderGroup = (groupData: any, subFields: any[]): string => {
+        if (!groupData) return '<div style="color: #cbd5e0;">(No Data)</div>';
+        return `
+            <div style="background: #f7fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
+                ${subFields.map(f => {
+            const val = groupData[f.id];
+            let displayVal = val;
+            if (val && typeof val === 'object' && val.hasOwnProperty('@disclosed')) {
+                displayVal = val['@disclosed'] ? val['@value'] : null;
+            }
+            if (displayVal === null && val && val.hasOwnProperty('@disclosed')) {
+                // Hidden case
+                return renderKeyValue(f.label || f.id, val);
+            }
+            if (f.type === 'group' && f.fields) {
+                // Recursive group
+                return `
+                            <div style="margin-top: 12px; margin-bottom: 12px;">
+                                <div style="font-size: 14px; color: #718096; margin-bottom: 8px;">${f.label || f.id}</div>
+                                ${renderGroup(displayVal, f.fields)}
+                            </div>
+                         `;
+            }
+            return renderKeyValue(f.label || f.id, val);
+        }).join('')}
+            </div>
+        `;
+    };
+
     const renderCard = (items: any[], subFields: any[]) => {
         const primaryField = subFields?.find((f: any) => f.primary);
 
@@ -203,7 +278,7 @@ function autoRender(data: any, fieldsMeta: any[], mso: MSO): string {
                 <div style="background: #f7fafc; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                     ${primaryValue ? `
                         <div style="margin-bottom: 20px; border-bottom: 2px solid #3182ce; padding-bottom: 12px;">
-                            <div style="font-size: 11px; color: #3182ce; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${primaryField.id}</div>
+                            <div style="font-size: 11px; color: #3182ce; font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">${primaryField.label || primaryField.id}</div>
                             <div style="font-size: 24px; font-weight: 800; color: #1a202c;">${formatValue(primaryValue)}</div>
                         </div>
                     ` : `<div style="font-weight: bold; margin-bottom: 15px; color: #a0aec0;">#${i + 1}</div>`}
@@ -214,7 +289,7 @@ function autoRender(data: any, fieldsMeta: any[], mso: MSO): string {
                 if (val === undefined) return '';
                 return `
                                     <div>
-                                        <div style="font-size: 11px; color: #a0aec0; text-transform: uppercase; margin-bottom: 2px;">${f.id}</div>
+                                        <div style="font-size: 11px; color: #a0aec0; text-transform: uppercase; margin-bottom: 2px;">${f.label || f.id}</div>
                                         <div style="font-size: 14px; color: #2d3748;">${formatValue(val)}</div>
                                     </div>
                                 `;
@@ -247,17 +322,31 @@ function autoRender(data: any, fieldsMeta: any[], mso: MSO): string {
 
     fieldsMeta.filter((f: any) => !f.section || f.section === 'subject').forEach((field: any) => {
         const val = data[field.id];
-        if (val === undefined || field.id === "証明書名称") return;
+        // Skip if undefined, unless it's a group which might be partially disclosed or structured
+        if (val === undefined && field.type !== 'group') {
+            if (field.id === "証明書名称") return;
+            // return; // Don't return, let it render as empty or check logic
+        }
 
         let actualValue = val;
         if (val && typeof val === 'object' && val.hasOwnProperty('@disclosed')) {
             actualValue = (val as any)['@disclosed'] ? (val as any)['@value'] : null;
         }
 
-        if (Array.isArray(actualValue)) {
-            html += renderSection(field.id, renderCard(actualValue, field.items?.fields || []));
+        if (field.type === 'group' && field.fields) {
+            html += renderSection(field.id, renderGroup(actualValue, field.fields));
+        } else if (Array.isArray(actualValue)) {
+            if (field.items?.fields) {
+                // Array of Objects (Cards)
+                html += renderSection(field.id, renderCard(actualValue, field.items.fields));
+            } else {
+                // Simple Array of Strings/Numbers
+                html += renderKeyValue(field.id, val);
+            }
         } else {
-            html += renderKeyValue(field.id, val);
+            if (val !== undefined) {
+                html += renderKeyValue(field.id, val);
+            }
         }
     });
 
@@ -294,13 +383,20 @@ function autoRender(data: any, fieldsMeta: any[], mso: MSO): string {
 }
 
 function formatValue(v: any): string {
-    if (v && typeof v === 'object' && v.hasOwnProperty('@disclosed')) {
-        if (!(v as any)['@disclosed']) {
-            return `<span style="display: inline-flex; align-items: center; background: #fff5f5; color: #c53030; font-size: 12px; padding: 2px 8px; border-radius: 4px; border: 1px solid #feb2b2;">
-                <span style="margin-right: 4px;">○</span> 非開示 (Hidden)
+    if (v && typeof v === 'object') {
+        if (v.hasOwnProperty('@error')) {
+            return `<span style="display: inline-flex; align-items: center; background: #fff5f5; color: #c53030; font-size: 14px; padding: 4px 8px; border-radius: 4px; border: 1px solid #feb2b2; font-weight: bold;">
+                <span style="margin-right: 4px;">⚠️</span> ${v['@error']} (Tampered)
             </span>`;
         }
-        v = (v as any)['@value'];
+        if (v.hasOwnProperty('@disclosed')) {
+            if (!(v as any)['@disclosed']) {
+                return `<span style="display: inline-flex; align-items: center; background: #edf2f7; color: #718096; font-size: 12px; padding: 2px 8px; border-radius: 4px; border: 1px solid #e2e8f0;">
+                    <span style="margin-right: 4px;">🔒</span> 非開示 (Hidden)
+                </span>`;
+            }
+            v = (v as any)['@value'];
+        }
     }
 
     if (v === undefined || v === null) return '-';

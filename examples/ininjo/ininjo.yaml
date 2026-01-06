@@ -1,0 +1,78 @@
+title: "電子委任状"
+id: "io.github.masanork.tobari.ininjo.v1"
+version: "1.0.0"
+
+fields:
+  - id: "id"
+    label: "委任状ID"
+    type: "string"
+    section: "header"
+  
+  - id: "creation_date"
+    label: "作成日"
+    type: "string"
+    section: "header"
+
+  - id: "principal"
+    label: "委任者"
+    type: "group" 
+    fields:
+      - id: "name"
+        label: "氏名又は名称"
+        type: "string"
+        selective: true
+      - id: "address"
+        label: "住所又は本店所在地"
+        type: "string"
+        selective: true
+      - id: "corporate_number"
+        label: "法人番号"
+        type: "string"
+        selective: true
+      - id: "representative_title"
+        label: "代表者肩書"
+        type: "string"
+        selective: true
+
+  - id: "agent"
+    label: "受任者"
+    type: "group"
+    fields:
+      - id: "name"
+        label: "氏名又は名称"
+        type: "string"
+        selective: true
+      - id: "address"
+        label: "住所又は本店所在地"
+        type: "string"
+        selective: true
+      - id: "department"
+        label: "所属部課"
+        type: "string"
+        selective: true
+      - id: "title"
+        label: "職名"
+        type: "string"
+        selective: true
+      - id: "relationship"
+        label: "続柄・関係"
+        type: "string"
+        selective: true
+
+  - id: "scope"
+    label: "委任事項"
+    type: "array"
+    selective: true
+    items:
+      type: "string"
+
+  - id: "validity"
+    label: "有効期間"
+    type: "group"
+    fields:
+      - id: "not_before"
+        label: "開始日"
+        type: "string"
+      - id: "not_after"
+        label: "終了日"
+        type: "string"
