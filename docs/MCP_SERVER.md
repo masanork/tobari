@@ -13,13 +13,15 @@ Claude Desktop で Tobari MCP Server を使用するには、設定ファイル�
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-ファイルを開き（存在しない場合は作成し）、以下の設定を追加します。**注意: `/path/to/tobari` は、あなたの環境の実際の絶対パスに置き換えてください。**
+ファイルを開き（存在しない場合は作成し）、以下の設定を追加します。**注意: `bun` のパスおよび `/path/to/tobari` は、あなたの環境の実際の絶対パスに置き換えてください。**
+
+`bun` の絶対パスはターミナルで `which bun` を実行することで確認できます。
 
 ```json
 {
   "mcpServers": {
     "tobari": {
-      "command": "bun",
+      "command": "/Users/YOUR_USERNAME/.bun/bin/bun",
       "args": [
         "run",
         "/path/to/tobari/packages/mcp-server/src/index.ts"
