@@ -47,6 +47,10 @@ const VerifyPresentationSchema = z.object({
     verifierNonce: z.string().optional().describe("Expected nonce to prevent replay attacks"),
 });
 
+const AnalyzeServiceRequestSchema = z.object({
+    path: z.string().describe("Path to the Service Request Tobari file (.cose or .html)"),
+});
+
 const server = new Server(
     {
         name: "tobari-mcp-server",
@@ -158,6 +162,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         verifierNonce: { type: "string" }
                     },
                     required: ["vpBase64", "issuerPublicKeys"]
+                }
+            },
+            {
+                name: "analyze_service_request",
+                description: "Analyzes an administrative service request document to identify required credentials and user inputs.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        path: { type: "string", description: "Path to the service request file" }
+                    },
+                    required: ["path"]
                 }
             }
         ],
@@ -583,6 +598,103 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         } catch (error: any) {
             return {
                 content: [{ type: "text", text: `Error verifying VP: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+
+    if (request.params.name === "analyze_service_request") {
+        try {
+            const args = AnalyzeServiceRequestSchema.parse(request.params.arguments);
+            const filePath = args.path;
+            let fileBuffer: Uint8Array;
+
+            if (filePath.toLowerCase().endsWith(".html")) {
+                const html = await fs.readFile(filePath, "utf-8");
+                const match = html.match(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/);
+                if (!match) throw new Error("No Tobari data found in HTML");
+                const b64 = match[1].replace(/data:.*,/, '');
+                const binString = atob(b64);
+                fileBuffer = new Uint8Array(binString.length);
+                for (let i = 0; i < binString.length; i++) {
+                    fileBuffer[i] = binString.charCodeAt(i);
+                }
+            } else {
+                fileBuffer = await fs.readFile(filePath);
+            }
+
+            // Using simple read logic instead of full verification for analysis
+            const cose = decode(fileBuffer);
+            let payload: any = {};
+            
+            // Extract payload from nameSpaces (Administrative documents follow same mdoc structure)
+            if (cose.issuerSigned && cose.issuerSigned.nameSpaces) {
+                for (const ns of Object.keys(cose.issuerSigned.nameSpaces)) {
+                    for (const itemBytes of cose.issuerSigned.nameSpaces[ns]) {
+                        const [_, __, key, value] = decode(itemBytes);
+                        payload[key] = value;
+                    }
+                }
+            }
+
+            const pd = payload.presentation_definition;
+            if (!pd) throw new Error("Document does not contain a presentation_definition");
+
+            const requiredCredentials = [];
+            const requiredUserInputs = [];
+
+            if (pd.input_descriptors) {
+                for (const desc of pd.input_descriptors) {
+                    const fields = desc.constraints?.fields || [];
+                    const isMdoc = desc.format?.mso_mdoc !== undefined;
+
+                    if (isMdoc) {
+                        const requiredFields = fields.map((f: any) => {
+                            const path = f.path[0];
+                            const match = path.match(/\$\[\'(.+)\'\]\[\'(.+)\'\]/);
+                            return match ? { docType: match[1], field: match[2] } : { rawPath: path };
+                        });
+                        requiredCredentials.push({
+                            id: desc.id,
+                            name: desc.name,
+                            purpose: desc.purpose,
+                            requiredFields
+                        });
+                    } else {
+                        // Assume user input if not mdoc
+                        const fieldsToAsk = fields.map((f: any) => ({
+                            id: f.path[0].match(/\$\[\'(.+)\'\]/)?.[1] || f.path[0],
+                            label: f.label || f.id
+                        }));
+                        requiredUserInputs.push({
+                            id: desc.id,
+                            name: desc.name,
+                            purpose: desc.purpose,
+                            fields: fieldsToAsk
+                        });
+                    }
+                }
+            }
+
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            title: payload.title,
+                            description: payload.description,
+                            eligibility: payload.eligibility,
+                            submission_uri: payload.submission_uri,
+                            requiredCredentials,
+                            requiredUserInputs
+                        }, null, 2),
+                    },
+                ],
+            };
+
+        } catch (error: any) {
+            return {
+                content: [{ type: "text", text: `Error analyzing service request: ${error.message}` }],
                 isError: true,
             };
         }

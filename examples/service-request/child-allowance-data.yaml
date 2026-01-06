@@ -1,0 +1,38 @@
+service_id: "GOV-CHILD-2026-001"
+title: "子育て世帯臨時特例給付金のご案内"
+description: |
+  物価高騰に直面する子育て世帯を支援するため、お子様お一人につき5万円を支給します。
+  本手続きでは、世帯構成の確認のために「住民票」の提出と、振込先情報の入力が必要です。
+
+eligibility: "令和8年1月1日時点で市内に住民登録があり、18歳以下の子を養育している世帯主の方。"
+
+submission_uri: "https://api.example.gov.jp/v1/submissions/child-allowance"
+
+presentation_definition:
+  input_descriptors:
+    - id: "residence_info"
+      name: "世帯構成情報"
+      purpose: "給付対象の確認および世帯員の把握のため"
+      format:
+        mso_mdoc:
+          alg: ["ES384"]
+      constraints:
+        fields:
+          - path: ["$['io.github.masanork.tobari.juminhyo.v1']['世帯主氏名']"]
+            intent_to_retain: true
+          - path: ["$['io.github.masanork.tobari.juminhyo.v1']['世帯住所']"]
+            intent_to_retain: true
+          - path: ["$['io.github.masanork.tobari.juminhyo.v1']['世帯員']"]
+            intent_to_retain: true
+
+    - id: "user_input_info"
+      name: "振込先および連絡先"
+      purpose: "給付金の振込および不備の際の連絡のため"
+      constraints:
+        fields:
+          - path: ["$['bank_name']"]
+            label: "金融機関名"
+          - path: ["$['account_number']"]
+            label: "口座番号"
+          - path: ["$['contact_phone']"]
+            label: "日中の連絡先電話番号"
