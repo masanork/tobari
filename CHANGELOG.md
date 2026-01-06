@@ -2,7 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.0] - MCP Server & Service Requests
+
+## [0.3.1] - 2026-01-07
+
+### Features
+- **JPKI Simulation**:
+  - Enhanced `dummy-myna` CLI to generate valid RSA-2048 signatures (SHA-256) for realistic JPKI testing.
+  - Updated dummy identity data to conform to JIS X 0208 character set restrictions.
+
+### Refactor
+- **MCP Server**:
+  - Modularized codebase by splitting monolithic `index.ts` into `tools/`, `schemas.ts`, and `utils.ts`.
+  - Improved path resolution robustness in document discovery tools.
+
 
 This release introduces the **Model Context Protocol (MCP) Server**, enabling AI agents to autonomously discover, read, verify, and present Tobari credentials. It also adds the **Service Request** concept, allowing procedures to define machine-readable requirements.
 
