@@ -8,7 +8,7 @@ Hardware access is powered by PC/SC (Native) or WebUSB (Web).
     - ✅ **Working**: Basic 4 Info (Name, Addr, DOB, Gender) and My Number retrieval.
     - ✅ **Working**: User Authentication and Digital Signature generation.
     - ✅ **Working**: PIN Retry count monitoring for all PIN types.
-    - ❌ **In Progress**: **Face Photo** retrieval. Encountering authentication hurdles in "Visual AP". Password A (12-digit) and Password B (14-digit) flows are implemented but pending real-world success.
+    - ✅ **Working**: **Face Photo** retrieval via Surface-AP.
 - **Hardware**: Confirmed working with ACS ACR39U and similar PC/SC Type-B readers on macOS.
 
 ---
@@ -22,9 +22,9 @@ Hardware access is powered by PC/SC (Native) or WebUSB (Web).
 cargo run -- jpki retries
 ```
 
-**Read Card Attributes**
+**Read Card Attributes (including Face Photo)**
 ```bash
-cargo run -- jpki attr
+cargo run -- jpki attr --photo my_photo.jp2
 ```
 
 **Read Individual Number (My Number)**
@@ -45,9 +45,9 @@ cargo run -- jpki sign --type sign --data "document_hash"
 
 ## 📚 Technical Documentation
 
-- [mynacard.md](docs/mynacard.md): Compact technical specification (AIDs, FIDs, APDUs).
-- [implementation_insights.md](docs/implementation_insights.md): Lessons learned regarding security models and the "Password A/B" structure.
-- [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md): Detailed progress report by card type.
+- [docs/mynacard.md](docs/mynacard.md): Compact technical specification (AIDs, FIDs, APDUs).
+- [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md): Detailed progress report by card type.
+- [docs/ROADMAP.md](docs/ROADMAP.md): Future plans for the CIV library.
 
 ## License
 MIT / Apache-2.0

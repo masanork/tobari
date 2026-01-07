@@ -112,8 +112,7 @@ async fn main() -> anyhow::Result<()> {
                     let _ = controller.get_auth_pin_retries().await.map(|c| println!("Auth PIN: {}", c));
                     let _ = controller.get_sign_pin_retries().await.map(|c| println!("Sign PIN: {}", c));
                     let _ = controller.get_input_support_pin_retries().await.map(|c| println!("Input Support: {}", c));
-                    let _ = controller.get_password_a_retries().await.map(|c| println!("Visual AP (Password A): {}", c));
-                    let _ = controller.get_password_b_retries().await.map(|c| println!("Visual AP (Password B): {}", c));
+                    let _ = controller.get_surface_pin_retries().await.map(|c| println!("Surface PIN (12-digit): {}", c));
                 }
                 JpkiCommands::Cert { type_, output } => {
                     let data = if type_ == "sign" { controller.read_sign_cert().await? } else { controller.read_auth_cert().await? };
@@ -129,44 +128,40 @@ async fn main() -> anyhow::Result<()> {
                     let p = get_pin(pin, "PIN: ")?;
                     println!("MyNumber: {}", controller.read_mynumber(&p).await?);
                 }
-                JpkiCommands::Card { pin, photo, exp, sc } => {
+                JpkiCommands::Card { pin, photo, exp: _, sc: _ } => {
                     let p = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
-                    let my_number = controller.read_mynumber(&p).await.ok();
+                    let my_number = match controller.read_mynumber(&p).await {
+                        Ok(num) => Some(num),
+                        Err(e) => {
+                            if photo.is_some() { println!("Warning: Failed to retrieve My Number (needed for photo): {}", e); }
+                            None
+                        }
+                    };
                     let mut info = controller.read_attributes(&p).await?;
                     
                     if photo.is_some() {
                         let mut photo_data = None;
-                        // Attempt 1: Password A
                         if let Some(ref num) = my_number {
-                            if let Ok(retries) = controller.get_password_a_retries().await {
-                                if retries > 3 || retries == 255 {
-                                    println!("Attempting via Password A (My Number)...");
-                                    photo_data = controller.read_face_photo(num).await.ok();
+                            match controller.get_surface_pin_retries().await {
+                                Ok(retries) => {
+                                    if retries > 3 || retries == 255 {
+                                        println!("Attempting photo extraction via Surface PIN (My Number)...");
+                                        match controller.read_face_photo(num).await {
+                                            Ok(data) => photo_data = Some(data),
+                                            Err(e) => println!("Error: Photo extraction failed: {}", e),
+                                        }
+                                    } else {
+                                        println!("Warning: Surface PIN has only {} retries left. Skipping photo extraction for safety.", retries);
+                                    }
                                 }
+                                Err(e) => println!("Error: Failed to check Surface PIN status: {}", e),
                             }
+                        } else {
+                            println!("Skipping photo extraction: My Number not available.");
                         }
-                        // Attempt 2: Password B
-                        if photo_data.is_none() {
-                            println!("\n--- Password B Fallback ---");
-                            let ev = if let Some(v) = exp { v } else { get_pin(None, "Expiration (YYYYMMDD): ")? };
-                            let sv = if let Some(v) = sc { v } else { get_pin(None, "Security Code (4 digits): ")? };
-                            
-                            if let Ok(retries) = controller.get_password_b_retries().await {
-                                if retries > 3 || retries == 255 {
-                                    // Password B (14 digits): DOB(YYMMDD) + ExpYear(YYYY) + SC(4)
-                                    let dob_yymmdd = &info.birth_date[2..8];
-                                    let exp_yyyy = &ev[0..4];
-                                    let b_num = format!("{}{}{}", dob_yymmdd, exp_yyyy, sv);
-                                    
-                                    println!("Attempting via 14-digit Password B...");
-                                    photo_data = controller.read_face_photo(&b_num).await.ok();
-                                } else {
-                                    println!("Warning: Password B only has {} retries left. skipping.", retries);
-                                }
-                            }
-                        }
+                        
                         if let Some(data) = photo_data {
-                            println!("Photo retrieved!");
+                            println!("Photo retrieved successfully!");
                             info.face_photo = Some(base64::engine::general_purpose::STANDARD.encode(data));
                         }
                     }
