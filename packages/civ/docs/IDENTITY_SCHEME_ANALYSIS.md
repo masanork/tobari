@@ -84,13 +84,15 @@ There is a concern that Japan is "10 years behind." The data suggests a **5-8 ye
 - **Factor 1: Conservative Lifecycle:** JPKI adheres strictly to ISO 7816 with RSA 2048, favoring stability over agility.
 - **Factor 2: Mobile Integration:** While Estonia and the US moved to ECC to support mobile/contactless performance, Japan's "Smartphone JPKI" (2023) currently emulates the existing RSA 2048 card structure.
 
-**Official Roadmap: The 2030 Critical Sunset**
-According to the **Digital Priority Plan 2024** (released June 2024), Japan is officially aligning its cryptographic migration with the lifecycle of cards issued during the 2020 mass-issuance campaign:
-- **2026:** Introduction of the **Next-Gen My Number Card** (supporting ECC P-256/384).
-- **2029-2030:** **Mass Expiration Era.** Millions of cards issued in 2020 reach their 10-year limit. The government aims to replace these directly with Next-Gen ECC cards rather than renewing RSA certificates.
-- **Jan 1, 2031:** **The Hard Deadline.** Current RSA 2048 algorithms are scheduled to be disallowed for JPKI usage.
+**Official Roadmap vs. Operational Reality**
+According to the **Digital Priority Plan 2024**, the government targets the Next-Gen Card introduction in 2026 and aims for a cryptographic transition aligned with the 2030 mass expiration. However, the physical reality of card issuance suggests a longer migration tail.
 
-**Conclusion:** Japan is executing a "Just-in-Time" migration. While the 5-8 year lag behind Europe is now a matter of public record, the strategy is to leverage the 2030 mass-expiration event to force a nationwide jump to ECC. The margin for error is extremely thin; any logistical delay in the 2026 launch will directly impact national security readiness as the 2031 sunset approaches.
+- **The Government Goal:** RSA 2048 disallowed by Jan 1, 2031.
+- **The Operational Reality:**
+  - **Chip Constraint:** Existing RSA-based cards cannot generate ECC keys. When a user renews their certificate (every 5 years) on an old card, the new certificate must still be RSA.
+  - **The "Hybrid Era" (2030-2040):** Even if ECC cards become standard in 2030, previously issued RSA cards will remain valid for up to 10 years (or 5 years for certificates). Unless a mandatory recall is enforced, **RSA support will be required in the field until at least 2035 (certificate expiry) or 2040 (card expiry).**
+
+**Conclusion:** Japan faces a decade-long "Hybrid Era." The `civ` library must support **both RSA and ECC simultaneously** for a very long time. We cannot simply "switch off" RSA support in 2031; robust dual-stack support is the critical architectural requirement for the next 15 years.
 
 ## 6. Regional Deep Dive & Recommendations for Civ
 
