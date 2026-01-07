@@ -136,5 +136,9 @@ Stored in `EF 00 02` of `Surface-AP`.
    - `6D 00`: INS invalid (Check CLA `00` vs `80`)
 
 ## 8. Reference
-- Source: `docs/mynacard.ja.md`
-- J-LIS Guidelines / OpenSC / TRETJapanNFCReader
+
+- [myna - マイナンバーカード・ユーティリティ](https://github.com/jpki/myna)
+- [OSSTech Corp / libjeid-android-app](https://github.com/OSSTech-jp/libjeid-android-app)
+- [treastrain/TRETJapanNFCReader: NFC (FeliCa) Reader for iOS 13 later Core NFC / Japanese e-Money prepaid or identification cards](https://github.com/treastrain/TRETJapanNFCReader)
+- [マイナンバーカードから顔写真データを読み込む \#APDU \- Qiita](https://qiita.com/ribig/items/3814cf7f095854ce0e61)
+- [J-LIS JPKI利用者クライアントソフトに係る技術仕様について](https://www.j-lis.go.jp/jpki/procedure/procedure1_2_3.html)
