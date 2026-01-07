@@ -1,42 +1,38 @@
-# CIV (Citizen Identity Verification) Implementation Status Report
+# Implementation & Specification Status
 
-**Date:** 2026-01-07
-**Status:** Beta-Alpha (Real-world JPKI testing in progress)
+This document summarizes the current status of research and implementation for various digital identity schemes within the `civ` package.
 
-## 1. Overview
-This library (`civ`) provides a unified interface for accessing identification cards.
-Status focus: **JPKI (My Number Card)** real-world hardware verification.
+## 1. Supported / Documented Schemes
 
-## 2. Implementation Status by Component
+| Region | Scheme | Spec Document | Implementation Status | Notes |
+|---|---|---|---|---|
+| **International** | **ICAO 9303** | `docs/icao9303.md` | **Partial** | ePassport, UNLP, EU eID. Support for BAC/PACE. |
+| **USA** | **PIV** | `docs/piv.md` | **Partial** | NIST SP 800-73-5. Support for Auth/Sign/Certs. |
+| **Japan** | **JPKI** | `docs/jpki.md` | **Implemented** | My Number Card (Auth/Sign). |
+| **Japan** | **JPDL** | `docs/jpdl.md` | **Implemented** | Driving License (PIN1/PIN2). |
+| **Japan** | **JPRC** | `docs/jprc.md` | **Implemented** | Residence Card. |
+| **Estonia** | **EstEID** | `docs/esteid.md` | Documented | Unique AID, file-based records, PIN1/PIN2. |
+| **Germany** | **PQC PoC** | `docs/german_pqc_poc.md`| Documented | Hybrid PQC (Kyber/Dilithium) extensions. |
+| **Thailand** | **Thai ID** | `docs/thai.md` | Documented | Proprietary AID, fixed-offset reading. |
+| **Malaysia** | **MyKad** | `docs/mykad.md` | Documented | Proprietary AID (JPN), length-based reading. |
 
-### 2.1. JPKI (My Number Card)
-*   ✅ **Basic Info (Attributes)**: **Working**. Successfully retrieved Name (with Gaiji), Address, DOB, and Gender using 4-digit PIN.
-*   ✅ **My Number**: **Working**. Successfully retrieved 12-digit Individual Number.
-*   ✅ **Certificates**: **Working**. Implemented full DER reading for both Auth and Sign certificates.
-*   ✅ **Digital Signature**: **Working**. Implemented high-level API for User Auth (4-digit) and Digital Signature (6-16 alphanum).
-*   ✅ **Face Photo**: **Working**. 
-    *   Successfully retrieved via **Surface-AP** (AID ending in `02`).
-    *   Authentication: Uses 12-digit My Number as PIN via EF `00 13`.
-    *   Data Extraction: Parsed from EF `00 02` using BER-TLV Tag `DF 27`.
-*   ✅ **Retry Counters**: **Working**. Implemented status check for all PIN types (Auth, Sign, Input Support, Surface/MyNumber).
+## 2. Research Findings for Other Schemes
 
-### 2.2. Driver's License (DL)
-... (omitted) ...
+### 2.1 International Organizations
+- **UN Laissez-Passer (UNLP):** Fully compliant with **ICAO 9303**. Covered by `PassportController`.
+- **NATO:** Likely based on PIV (FIPS 201) or similar ISO 7816 smart cards. No public proprietary spec found; PIV driver may work.
 
----
+### 2.2 East Asia
+- **China (Resident Identity Card):** Uses ISO 14443 Type B but is **NOT ICAO 9303 compliant**. Requires a proprietary Secure Access Module (SAM) for data decryption. Public implementation is not feasible.
+- **Hong Kong (Smart ID):** Newest generation (2018+) supports RFID. While the ePassport app is ICAO compliant, the HKID-specific applet remains proprietary with limited public documentation.
+- **South Korea:** IC-based ID cards exist, but detailed APDU specifications are not widely published in English/International standards.
 
-## 3. Findings from Hardware Testing (2026-01-07)
+### 2.3 Others
+- **Indonesia (e-KTP):** Biometric-focused, APDU specifications are restricted and not publicly documented.
+- **India (Aadhaar):** Smart cards were based on SCOSTA specs, but the ecosystem has shifted heavily towards QR/Online-API (UIDAI) rather than offline chip reading.
 
-### 3.1. Implementation Verified
-Live testing confirmed the specification in `docs/mynacard.md`:
-- **Card-AP** (`...04 08`): Access to My Number (EF `00 01`) and 4-Info (EF `00 02`) using 4-digit PIN.
-- **Surface-AP** (`...04 02`): Access to Face Photo (EF `00 02`) using 12-digit My Number as PIN.
-
-### 3.2. Data Formats
-- My Number EF can be either plain text or wrapped in TLV (implemented robust parser).
-- Face Photo is typically JPEG2000 (`FF 4F ...`) encapsulated in a TLV structure with tag `DF 27`.
-
-## 4. Next Steps
-1.  **Resolve Face Photo Auth**: Debug the `6981` / `6986` errors in Visual AP using the new "Direct Authentication" logic.
-2.  **Gaiji Handling**: Improve the `decode_shift_jis_lossy_gaiji` helper for rare characters in addresses.
-3.  **Error Refinement**: Map `63Cx` status words to meaningful retry-limit warnings in the UI.
+## 3. Future Expansion Plan
+- [ ] Implement `ThaiController` based on `docs/thai.md`.
+- [ ] Implement `MyKadController` based on `docs/mykad.md`.
+- [ ] Enhance `PassportController` to support EAC (Extended Access Control) for sensitive DGs.
+- [ ] Add PACE (ECDH) support for EU eIDs and newer Passports.
