@@ -139,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
                     controller.verify_pin(&ef_pin, &pin).await?;
                     println!("PIN Verified.");
         
-                    let signature = controller.compute_signature(data.as_bytes()).await?;
+                    let signature = controller.sign_data(data.as_bytes()).await?;
                     println!("Signature: {}", hex::encode(signature));
                 }
                 JpkiCommands::Mynumber { pin } => {

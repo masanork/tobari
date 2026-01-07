@@ -218,7 +218,7 @@ export class WebAuthnHandler {
             setTimeout(() => {
                 if (this.server) {
                     this.close();
-                    reject(new Error('WebAuthn interaction timed out'));
+                    reject(new Error('WebAuthn interaction timed out. Please check if the browser window opened, or try manually visiting the URL visible in the logs. If using a Passkey for the first time, you may need to register one first.'));
                 }
             }, 120000);
         });

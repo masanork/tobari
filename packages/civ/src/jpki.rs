@@ -121,8 +121,34 @@ impl<R: CardReader> JpkiController<R> {
         ))
     }
 
-    /// Compute Digital Signature
-    /// data: The digest/data to sign.
+    /// Sign data using the authentication key.
+    /// Uses SHA-256 and wraps the hash in a DigestInfo structure as required by JPKI.
+    pub async fn sign_data(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        use sha2::Digest;
+        // 1. Calculate SHA-256 Hash
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(data);
+        let hash = hasher.finalize();
+
+        // 2. Construct DigestInfo for SHA-256
+        // Sequence( Sequence( OID(sha256), NULL ), OctetString(hash) )
+        // Prefix: 30 31 30 0D 06 09 60 86 48 01 65 03 04 02 01 05 00 04 20
+        // Note: 0x0D length for inner sequence includes NULL (05 00)
+        let mut digest_info = vec![
+            0x30, 0x31, 
+            0x30, 0x0D, 
+            0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 
+            0x05, 0x00, 
+            0x04, 0x20
+        ];
+        digest_info.extend_from_slice(&hash);
+
+        // 3. Send APDU
+        self.compute_signature(&digest_info).await
+    }
+
+    /// Compute Digital Signature (Low Level)
+    /// data: The digest/data to sign (usually DigestInfo).
     pub async fn compute_signature(&mut self, data: &[u8]) -> Result<Vec<u8>> {
         // JPKI Compute Signature:
         // CLA=80 (Secure Messaging) or 00, INS=2A 

@@ -12,8 +12,10 @@ export const CreatePresentationSchema = z.object({
         path: z.string().describe("Path to the source Tobari file"),
         fields: z.array(z.string()).describe("List of field IDs to disclose from this document"),
     })),
-    devicePrivateKeyPath: z.string().optional().describe("Path to the holder's device private key (JWK). If omitted, attempts to launch Tobari Signer UI."),
-    verifierNonce: z.string().optional().describe("Nonce provided by the verifier to prevent replay attacks"),
+    devicePrivateKeyPath: z.string().optional().describe("Path to the holder's device private key (JWK)."),
+    devicePrivateKeyJson: z.union([z.string(), z.record(z.any())]).optional().describe("Device private key as a JSON string or object. Use this if the key file is not accessible by the server."),
+    ephemeralKey: z.boolean().optional().describe("If true, generates a temporary key for testing. Ignored if devicePrivateKeyPath or devicePrivateKeyJson is provided."),
+    verifierNonce: z.string().optional().describe("Optional nonce for replay protection"),
 });
 
 export const PreparePresentationSchema = z.object({
@@ -33,7 +35,8 @@ export const PreparePresentationSchema = z.object({
 });
 
 export const AssemblePresentationSchema = z.object({
-    preparedData: z.any().describe("The opaque state returned by prepare_presentation"),
+    preparedData: z.any().optional().describe("The opaque state returned by prepare_presentation (deprecated, use preparationId)"),
+    preparationId: z.string().optional().describe("ID of the prepared presentation session returned by prepare_presentation"),
     signatures: z.array(z.string()).describe("Base64 encoded signatures, one for each document in the original request order"),
     signatureFormat: z.enum(["der", "raw-ecdsa"]).optional().describe("Signature format: DER (default) or raw ECDSA (r||s)"),
     signatureEncoding: z.enum(["base64", "base64url"]).optional().describe("Encoding of signatures array (default: base64)"),

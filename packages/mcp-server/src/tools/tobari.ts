@@ -142,15 +142,41 @@ export async function handleReadTobariFile(toolArgs: any) {
     }
 }
 
+// Basic in-memory store for prepared presentations
+const preparationStore = new Map<string, any>();
+
 export async function handleCreatePresentation(toolArgs: any) {
     try {
         const args = CreatePresentationSchema.parse(toolArgs);
         const documents = [];
 
         let devicePrivateKey: CryptoKey | undefined;
+
         if (args.devicePrivateKeyPath) {
-            const keyContent = await fs.readFile(args.devicePrivateKeyPath, "utf-8");
-            const jwk = JSON.parse(keyContent);
+            try {
+                const keyContent = await fs.readFile(args.devicePrivateKeyPath, "utf-8");
+                const jwk = JSON.parse(keyContent);
+                devicePrivateKey = await crypto.subtle.importKey(
+                    "jwk",
+                    jwk,
+                    { name: "ECDSA", namedCurve: jwk.crv || "P-384" },
+                    true,
+                    ["sign"]
+                );
+            } catch (e: any) {
+                // If path fails, we can't do much unless ephemeralKey is set
+                if (!args.ephemeralKey && !args.devicePrivateKeyJson) {
+                    throw new Error(`Failed to read key from ${args.devicePrivateKeyPath}: ${e.message}`);
+                }
+                console.warn(`Failed to read key from path, trying fallback methods: ${e.message}`);
+            }
+        }
+
+        if (!devicePrivateKey && args.devicePrivateKeyJson) {
+            const jwk = typeof args.devicePrivateKeyJson === 'string'
+                ? JSON.parse(args.devicePrivateKeyJson)
+                : args.devicePrivateKeyJson;
+
             devicePrivateKey = await crypto.subtle.importKey(
                 "jwk",
                 jwk,
@@ -158,6 +184,16 @@ export async function handleCreatePresentation(toolArgs: any) {
                 true,
                 ["sign"]
             );
+        }
+
+        if (!devicePrivateKey && args.ephemeralKey) {
+            console.log("Generating ephemeral key for presentation...");
+            const keyPair = await crypto.subtle.generateKey(
+                { name: "ECDSA", namedCurve: "P-384" },
+                true,
+                ["sign"]
+            );
+            devicePrivateKey = keyPair.privateKey;
         }
 
         for (const req of args.requests) {
@@ -276,7 +312,8 @@ export async function handleCreatePresentation(toolArgs: any) {
                         vp_base64: vpBase64,
                         description: "Verifiable Presentation created successfully.",
                         document_count: documents.length,
-                        signing_method: devicePrivateKey ? "internal_key" : "external_signer"
+                        signing_method: devicePrivateKey ? "internal_key" : "external_signer",
+                        is_ephemeral: !!args.ephemeralKey
                     }, null, 2),
                 },
             ],
@@ -347,12 +384,24 @@ export async function handlePreparePresentation(toolArgs: any) {
             });
         }
 
+        // Store session
+        const preparationId = crypto.randomUUID();
+        preparationStore.set(preparationId, preparedDocs);
+
+        // Cleanup old sessions (basic)
+        if (preparationStore.size > 100) {
+            const keys = preparationStore.keys();
+            preparationStore.delete(keys.next().value);
+        }
+
         return {
             content: [
                 {
                     type: "text",
                     text: JSON.stringify({
+                        preparationId,
                         itemsToSign,
+                        // Still returning preparedData for backward compatibility if client prefers stateless
                         preparedData: preparedDocs
                     }, null, 2),
                 },
@@ -370,7 +419,20 @@ export async function handleAssemblePresentation(toolArgs: any) {
     try {
         const args = AssemblePresentationSchema.parse(toolArgs);
         const documents = [];
-        const preparedDocs = args.preparedData as any[];
+
+        let preparedDocs = args.preparedData as any[];
+
+        if (!preparedDocs && args.preparationId) {
+            preparedDocs = preparationStore.get(args.preparationId!);
+            if (!preparedDocs) {
+                throw new Error(`Preparation ID ${args.preparationId} not found or expired.`);
+            }
+        }
+
+        if (!preparedDocs) {
+            throw new Error("Neither preparedData nor preparationId provided.");
+        }
+
         const signatureFormat = args.signatureFormat || "der";
         const signatureEncoding = args.signatureEncoding || "base64";
 
