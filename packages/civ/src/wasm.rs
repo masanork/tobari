@@ -19,7 +19,7 @@ impl WasmJpkiController {
     /// Read Basic 4 Information (Name, Address, DOB, Gender)
     /// Requires the 4-digit Input Support PIN.
     pub async fn read_attributes(&mut self, pin: String) -> Result<JsValue, JsValue> {
-        let info = self.inner.read_attributes(&pin).await
+        let info = self.inner.read_attributes(&pin, None, None).await
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
             
         serde_wasm_bindgen::to_value(&info)

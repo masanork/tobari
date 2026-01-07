@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 // Note: civ crate needs to be available. PcscReader is only available on native targets.
@@ -170,50 +171,37 @@ async fn perform_sign(state: State<'_, AppState>, app: AppHandle) -> Result<(), 
 
     println!("Starting WebAuthn signing for RP ID: {}", request.rp_id);
 
-    // Convert Challenge
-    let challenge_bytes = URL_SAFE_NO_PAD
-        .decode(&request.challenge)
-        .map_err(|e| format!("Invalid base64url challenge: {}", e))?;
+    // 1. Construct clientDataJSON
+    // https://www.w3.org/TR/webauthn-2/#client-data
+    let origin = format!("https://{}", request.rp_id); // Assuming RP ID is the domain
+    let client_data = serde_json::json!({
+        "type": "webauthn.get",
+        "challenge": request.challenge, // This is the base64url encoded challenge
+        "origin": origin,
+        "crossOrigin": false
+    });
+    let client_data_json = client_data.to_string();
+    let client_data_bytes = client_data_json.as_bytes();
 
-    // Setup Authenticator
-    // Note: This logic runs in the Tauri thread pool (async).
-    // In a real implementation, we might need to handle UI callbacks if the authenticator crate supports them.
+    // 2. Calculate clientDataHash
+    let client_data_hash = Sha256::digest(client_data_bytes).to_vec();
 
-    // In a real scenario, we would map the request.allow_credentials to the authenticator's expected format.
-    // For now, we assume we want to use any available credential (resident key) or let the user choose.
-
-    // Since `authenticator` crate 0.5.0 usage can be complex regarding transports,
-    // we will attempt a "default" interaction which usually includes platform authenticators.
-
-    // NOTE: The `authenticator` crate API varies.
-    // We are simulating the core logic here. If `authenticator` fails to compile, we will fix it.
-
-    // Prepare SHA-256 hash of clientDataJSON?
-    // WebAuthn signers usually take the challenge and sign over the clientDataHash.
-    // However, lower level CTAP2 signers take the challenge directly.
-    // We assume the MCP server expects a standard WebAuthn assertion response.
-
-    // Simplified: Just calling the authenticator (Blocking call in async context is okayish here or use tokio::task::spawn_blocking)
+    // 3. Call Authenticator
     let rp_id = request.rp_id.clone();
-
+    
+    // Pass the HASH as the challenge to the authenticator crate (CTAP2 behavior)
     let result =
-        tokio::task::spawn_blocking(move || get_assertion(request, rp_id, challenge_bytes))
+        tokio::task::spawn_blocking(move || get_assertion(request, rp_id, client_data_hash))
             .await
             .map_err(|e| e.to_string())??;
 
-    // Output result to STDOUT
+    // 4. Output result
     let output = serde_json::json!({
         "credential_id": URL_SAFE_NO_PAD.encode(&result.credential_id),
         "authenticator_data": URL_SAFE_NO_PAD.encode(&result.authenticator_data),
         "signature": URL_SAFE_NO_PAD.encode(&result.signature),
         "user_handle": result.user_handle.map(|h| URL_SAFE_NO_PAD.encode(h)),
-        // In raw CTAP2, clientDataJSON is constructed by the caller (browser).
-        // Here, since we are acting as the client, we might need to construct it or
-        // if the authenticator just signed the challenge (CTAP1/U2F style) or clientDataHash (CTAP2).
-        // The `authenticator` crate usually handles CTAP2.
-        // We might need to provide the clientDataJSON that was implicitly used, or the caller constructs it.
-        // Note: For CTAP2, the authenticator signs the hash of clientDataJSON.
-        // We need to return what was signed.
+        "client_data_json": URL_SAFE_NO_PAD.encode(client_data_bytes), // Return the raw JSON we constructed
     });
 
     println!("{}", output.to_string());
@@ -251,7 +239,7 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
     let mut controller = JpkiController::new(reader);
 
     let my_number = controller.read_mynumber(&request.pin).await.map_err(|e| e.to_string())?;
-    let info = controller.read_attributes(&request.pin).await.map_err(|e| e.to_string())?;
+    let info = controller.read_attributes(&request.pin, None, None).await.map_err(|e| e.to_string())?;
 
     Ok(MyNumberCardData {
         name: info.name,
