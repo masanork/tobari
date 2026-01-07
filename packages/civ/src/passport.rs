@@ -48,6 +48,8 @@ pub mod file_ids {
     pub const EF_DG11: [u8; 2] = [0x01, 0x0B];
     /// EF.DG12 (Additional Document Details)
     pub const EF_DG12: [u8; 2] = [0x01, 0x0C];
+    /// EF.DG15 (Active Authentication Public Key Info)
+    pub const EF_DG15: [u8; 2] = [0x01, 0x0F];
     /// EF.SOD (Security Object Document - Signed hashes of all DGs)
     pub const EF_SOD: [u8; 2] = [0x01, 0x1D];
 }
@@ -177,11 +179,13 @@ impl<R: CardReader> PassportController<R> {
         self.read_file(&file_ids::EF_DG12).await
     }
 
-    /// Read EF.SOD (Security Object Document - Signed hashes of all DGs)
-    /// Contains signed hashes of all data groups for authenticity verification
-    pub async fn read_sod(&mut self) -> Result<Vec<u8>> {
-        self.read_file(&file_ids::EF_SOD).await
+    /// Read EF.DG15 (Active Authentication Public Key Info)
+    pub async fn read_dg15(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG15).await
     }
+
+    /// Read EF.SOD (Security Object Document)
+
 
     // Helper to Select EF and Read Binary
     pub(crate) async fn read_file(&mut self, file_id: &[u8]) -> Result<Vec<u8>> {
@@ -363,6 +367,36 @@ mod tests {
         assert_eq!(apdus.len(), 3); // Select + Read1 + Read2
         // Check offset in Read2 (P1 P2)
         assert_eq!(apdus[2][2], 0x01); // 256 >> 8 = 1
-        assert_eq!(apdus[2][3], 0x00); // 256 & FF = 0
-    }
-}
+                assert_eq!(apdus[2][3], 0x00); // 256 & FF = 0
+            }
+        
+                #[tokio::test]
+                async fn test_perform_pace_flow() {
+                    use crate::mock_passport::MockPassport;
+                    use std::sync::{Arc, Mutex};
+            
+                    let reader = TestReader::new();
+                    
+                    let password = "123456";
+                    let mock = Arc::new(Mutex::new(MockPassport::new(password)));
+                    
+                    let mock_clone = mock.clone();
+                    reader.set_handler(move |apdu| {
+                        mock_clone.lock().unwrap().handle_apdu(apdu)
+                    });
+            
+                    let mut controller = PassportController::new(reader.clone());
+            
+                    // Execute PACE
+                    let res = controller.perform_pace(password).await;
+                    
+                    assert!(res.is_ok(), "PACE failed: {:?}", res.err());
+                    
+                    let apdus = reader.sent_apdus.lock().unwrap();
+                    // Expected: MSE, GEN AUTH (Nonce), GEN AUTH (Map), GEN AUTH (Token)
+                    assert!(apdus.len() >= 4);
+                    assert_eq!(apdus[0][1], 0x22); // MSE
+                    assert_eq!(apdus[1][1], 0x86); // GEN AUTH
+                }
+            }
+            

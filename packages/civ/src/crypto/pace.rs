@@ -171,15 +171,15 @@ impl PaceP256 {
         Ok(t_pcd)
     }
     
-    pub fn finalize_session(self) -> Result<PaceSession> {
+    pub fn finalize_session(&self) -> Result<PaceSession> {
         if self.state != PaceState::Authenticated {
             return Err(anyhow!("Session not authenticated"));
         }
-        let (k_enc, k_mac) = self.session_keys.unwrap();
+        let (k_enc, k_mac) = self.session_keys.as_ref().unwrap();
         
         Ok(PaceSession {
-            k_enc,
-            k_mac,
+            k_enc: k_enc.clone(),
+            k_mac: k_mac.clone(),
             ssc: 0,
         })
     }
@@ -187,7 +187,7 @@ impl PaceP256 {
 
 // Helpers
 
-fn derive_password_key(password: &str) -> [u8; 16] {
+pub(crate) fn derive_password_key(password: &str) -> [u8; 16] {
     let mut hasher = Sha256::new();
     hasher.update(password.as_bytes());
     hasher.update(&[0, 0, 0, 1]); // Counter

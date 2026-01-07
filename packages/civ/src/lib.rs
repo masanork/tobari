@@ -20,6 +20,8 @@ pub mod utils;
 
 #[cfg(test)]
 pub mod test_utils;
+#[cfg(test)]
+pub mod mock_passport;
 
 pub use apdu::ApduCommand;
 pub use reader::CardReader;

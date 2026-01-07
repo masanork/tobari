@@ -4,10 +4,13 @@ use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
+pub type ApduHandler = Box<dyn FnMut(&[u8]) -> Vec<u8> + Send>;
+
 #[derive(Clone, Default)]
 pub struct TestReader {
     pub sent_apdus: Arc<Mutex<Vec<Vec<u8>>>>,
     pub responses: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    pub handler: Arc<Mutex<Option<ApduHandler>>>,
 }
 
 impl TestReader {
@@ -18,6 +21,13 @@ impl TestReader {
     pub fn push_response(&self, res: &[u8]) {
         self.responses.lock().unwrap().push_back(res.to_vec());
     }
+
+    pub fn set_handler<F>(&self, handler: F)
+    where
+        F: FnMut(&[u8]) -> Vec<u8> + Send + 'static,
+    {
+        *self.handler.lock().unwrap() = Some(Box::new(handler));
+    }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
@@ -25,6 +35,16 @@ impl TestReader {
 impl CardReader for TestReader {
     async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>> {
         self.sent_apdus.lock().unwrap().push(apdu.to_vec());
+        
+        // Try handler first
+        {
+            let mut guard = self.handler.lock().unwrap();
+            if let Some(handler) = guard.as_mut() {
+                return Ok(handler(apdu));
+            }
+        }
+
+        // Fallback to queue
         if let Some(res) = self.responses.lock().unwrap().pop_front() {
             Ok(res)
         } else {
