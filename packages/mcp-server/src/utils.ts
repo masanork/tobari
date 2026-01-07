@@ -2,7 +2,7 @@ import * as path from "path";
 import * as fs from "fs/promises";
 
 export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
-export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/dummy-myna");
+export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/civ");
 
 /**
  * Helper to read a Tobari file (HTML or COSE) and return its binary buffer.

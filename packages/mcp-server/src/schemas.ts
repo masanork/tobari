@@ -80,21 +80,25 @@ export const SignWithJPKISchema = z.object({
     detached: z.boolean().optional().describe("Create detached signature (default: true)"),
     format: z.enum(["pem", "der"]).optional().describe("Output format (default: der)"),
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
+    demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
 
 export const ReadMyNumberSchema = z.object({
     pin: z.string().describe("Card PIN code for text input assistance (4 digits)"),
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
+    demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
 
 export const ReadBasicInfoSchema = z.object({
     pin: z.string().describe("Card PIN code for text input assistance (4 digits)"),
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
+    demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
 
 export const ReadPhotoSchema = z.object({
     pin: z.string().describe("Card PIN code for visual verification (4 digits)"),
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
+    demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
 
 export const StartDemoServerSchema = z.object({});
