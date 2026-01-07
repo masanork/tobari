@@ -1,11 +1,36 @@
-use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY};
+use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_GET_CHALLENGE, INS_EXTERNAL_AUTHENTICATE};
 use crate::reader::CardReader;
-use anyhow::{Result, Context};
+use crate::crypto::bac::BacSession;
+use crate::crypto::sm::{AesSecureMessaging, SecureMessagingSession};
+use crate::crypto::pace::{PaceP256, PaceMappingType};
+use anyhow::{Result, Context, anyhow};
+
+/// Secure Session Wrapper (BAC or PACE)
+pub enum SecureSession {
+    Bac(BacSession),
+    Pace(AesSecureMessaging),
+}
+
+impl SecureSession {
+    pub fn wrap_command(&mut self, apdu: &ApduCommand) -> Result<Vec<u8>> {
+        match self {
+            SecureSession::Bac(s) => s.wrap_command(apdu),
+            SecureSession::Pace(s) => s.wrap_command(apdu),
+        }
+    }
+
+    pub fn unwrap_response(&mut self, data: &[u8]) -> Result<(Vec<u8>, u8, u8)> {
+        match self {
+            SecureSession::Bac(s) => s.unwrap_response(data),
+            SecureSession::Pace(s) => s.unwrap_response(data),
+        }
+    }
+}
 
 /// Passport (ePassport/ICAO 9303) Application Controller
 pub struct PassportController<R: CardReader> {
     reader: R,
-    secure_session: Option<crate::crypto::bac::BacSession>,
+    secure_session: Option<SecureSession>,
 }
 
 pub mod file_ids {
@@ -47,9 +72,6 @@ impl<R: CardReader> PassportController<R> {
         use crate::crypto::bac;
 
         // 1. Derive Keys from MRZ
-        // Note: The caller must provide the correct string concatenation of MRZ fields.
-        // For PoC CLI, we assume 'mrz' passed is already cleaned/formatted or we simple-hash it directly.
-        // In product, parsing logic is needed.
         let k_seed = bac::derive_key_seed(mrz);
         let (k_enc, k_mac) = bac::derive_session_keys(&k_seed);
 
@@ -57,11 +79,9 @@ impl<R: CardReader> PassportController<R> {
         println!("[BAC] Derived K_mac: {}", hex::encode(k_mac));
         
         // 2. Request Challenge (GET CHALLENGE)
-        use crate::apdu::{CLA_ISO, INS_GET_CHALLENGE};
         let get_challenge = ApduCommand::new(CLA_ISO, INS_GET_CHALLENGE, 0x00, 0x00)
-            .with_le(0x08); // 8 bytes random
+            .with_le(0x08); 
         
-        // Note: Without a real card, this might fail or return mock data.
         let rnd_ic_response = self.reader.transmit(&get_challenge.to_bytes()).await
             .context("GET CHALLENGE failed")?;
         if rnd_ic_response.len() < 10 {
@@ -74,14 +94,61 @@ impl<R: CardReader> PassportController<R> {
         let rnd_ic: [u8; 8] = rnd_ic.try_into()
             .map_err(|_| anyhow::anyhow!("Invalid RND.ICC"))?;
         let (auth_data, ssc) = bac::build_mutual_auth_data(&k_enc, &k_mac, &rnd_ic)?;
-        use crate::apdu::INS_EXTERNAL_AUTHENTICATE;
         let external_auth = ApduCommand::new(CLA_ISO, INS_EXTERNAL_AUTHENTICATE, 0x00, 0x00)
             .with_data(&auth_data);
         let response = self.reader.transmit(&external_auth.to_bytes()).await?;
         Self::check_sw(&response).context("Mutual authentication failed")?;
 
-        self.secure_session = Some(bac::BacSession::new(k_enc, k_mac, ssc));
+        self.secure_session = Some(SecureSession::Bac(bac::BacSession::new(k_enc, k_mac, ssc)));
         println!("[BAC] Secure Messaging session established.");
+        Ok(())
+    }
+
+    /// Perform PACE (Password Authenticated Connection Establishment)
+    /// mrz_or_can: MRZ (Legacy) or CAN (Card Access Number)
+    pub async fn perform_pace(&mut self, mrz_or_can: &str) -> Result<()> {
+        println!("[PACE] Starting PACE with password: {}", mrz_or_can);
+
+        // 1. MSE: SET (Manage Security Environment)
+        // Select PACE-ECDH-GM-AES-CBC-CMAC-128
+        // OID: 0.4.0.127.0.7.2.2.4.2.2 (bsi-de-protocol-pace-gm-aes-cbc-cmac-128)
+        let oid_pace_gm_aes = vec![
+            0x06, 0x0A, 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04, 0x02, 0x02
+        ];
+        
+        // MSE Data: 80 [OID] 83 [Ref]
+        // 83: 01 (MRZ)
+        let password_ref = 0x01; 
+        
+        let mut mse_val = Vec::new();
+        mse_val.push(0x80);
+        mse_val.push(oid_pace_gm_aes.len() as u8);
+        mse_val.extend_from_slice(&oid_pace_gm_aes);
+        
+        mse_val.push(0x83);
+        mse_val.push(0x01);
+        mse_val.push(password_ref);
+
+        let mse_set = ApduCommand::new(0x00, 0x22, 0xC1, 0xA4)
+            .with_data(&mse_val);
+            
+        let res = self.transmit(&mse_set).await?;
+        Self::check_sw(&res).context("MSE: SET failed (PACE not supported?)")?;
+        
+        // Initialize PACE State Machine
+        // key_len: 16 for AES-128. If OID selects AES-256, this should be 32.
+        // For prototype we fix to AES-128 OID above.
+        let mut pace = PaceP256::new(mrz_or_can, PaceMappingType::GenericMapping, 16);
+
+        // ... (lines omitted) ...
+
+        // 6. Establish Secure Messaging
+        let session = pace.finalize_session()?;
+        self.secure_session = Some(SecureSession::Pace(AesSecureMessaging::new(
+            &session.k_enc, &session.k_mac, session.ssc
+        )?));
+        
+        println!("[PACE] Secure Messaging (AES-128) established.");
         Ok(())
     }
 
@@ -100,7 +167,7 @@ impl<R: CardReader> PassportController<R> {
         self.read_file(&file_ids::EF_DG2).await
     }
 
-    /// Read EF.DG11 (Additional Personal Details)
+    /// Read EF.DG11 (Additional Personal Details - Address, etc.)
     pub async fn read_dg11(&mut self) -> Result<Vec<u8>> {
         self.read_file(&file_ids::EF_DG11).await
     }
@@ -110,7 +177,7 @@ impl<R: CardReader> PassportController<R> {
         self.read_file(&file_ids::EF_DG12).await
     }
 
-    /// Read EF.SOD (Security Object Document)
+    /// Read EF.SOD (Security Object Document - Signed hashes of all DGs)
     /// Contains signed hashes of all data groups for authenticity verification
     pub async fn read_sod(&mut self) -> Result<Vec<u8>> {
         self.read_file(&file_ids::EF_SOD).await
@@ -196,6 +263,57 @@ impl<R: CardReader> PassportController<R> {
         } else {
             self.reader.transmit(&apdu.to_bytes()).await
         }
+    }
+}
+
+// Helper functions for PACE Parsing
+fn parse_pace_response(res: &[u8], target_tag: u8) -> Result<Vec<u8>> {
+    // Structure: 7C L [ Tag L Value ... ] 90 00
+    if res.len() < 4 || res[0] != 0x7C {
+        return Err(anyhow!("Invalid PACE response format"));
+    }
+    // Skip 7C L
+    let mut offset = 1;
+    let (_len, l_len) = parse_asn1_len(res, offset)?;
+    offset += l_len;
+    
+    // Search for target tag in DOs
+    while offset < res.len() - 2 {
+        let tag = res[offset];
+        offset += 1;
+        let (len, l_len) = parse_asn1_len(res, offset)?;
+        offset += l_len;
+        
+        if tag == target_tag {
+            return Ok(res[offset..offset+len].to_vec());
+        }
+        offset += len;
+    }
+    Err(anyhow!("Tag {:02X} not found in PACE response", target_tag))
+}
+
+fn parse_asn1_len(data: &[u8], offset: usize) -> Result<(usize, usize)> {
+    if offset >= data.len() { return Err(anyhow!("Out of bounds")); }
+    let b = data[offset];
+    if b & 0x80 == 0 {
+        Ok((b as usize, 1))
+    } else {
+        let count = (b & 0x7F) as usize;
+        let mut len = 0;
+        for i in 0..count {
+            len = (len << 8) | data[offset + 1 + i] as usize;
+        }
+        Ok((len, 1 + count))
+    }
+}
+
+fn encode_len(len: usize) -> Vec<u8> {
+    if len <= 0x7F {
+        vec![len as u8]
+    } else if len <= 0xFF {
+        vec![0x81, len as u8]
+    } else {
+        vec![0x82, ((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8]
     }
 }
 
