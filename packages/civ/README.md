@@ -1,66 +1,86 @@
 # CIV (Citizen Identity Verification) Library
 
 A unified Rust library for accessing and verifying various Citizen Identity Cards.
-Originally focused on Japanese JPKI (My Number Card), it has expanded to support:
+Hardware access is powered by PC/SC (Native) or WebUSB (Web).
 
-> [!NOTE]
-> **Status Update**:
-> *   **Working**: JPKI Card Info Input Support AP (Reading My Number, Basic 4 Attributes).
-> *   **Working**: JPKI Signing (Both User Authentication and Digital Signature) is now functional.
-> *   **Hardware**: Confirmed working with standard PC/SC readers on macOS.
+## [Status Update] 2026-01-07
+- **JPKI (My Number Card)**: 
+    - Full support for **Face Photo** retrieval (direct access via Input Assistance AP).
+    - Strict **BER-TLV** parsing for Basic 4 Info and My Number.
+    - Safe PIN input (interactive prompt without echo).
+    - PIN retry count check implemented.
+    - High-level signing API for Auth and Digital Signature.
+- **Hardware**: Confirmed working with standard PC/SC Type-B readers on macOS and Linux.
 
-*   **JPKI (Japan My Number Card)**
-    *   Auth/Sign Certificates
-    *   Auth with PIN (4 digits) / Sign with PIN (6-16 alphanum)
-    *   My Number / 4 Attributes (Name, Address, DOB, Gender)
-    *   My Number / 4 Attributes (Name, Address, DOB, Gender)
-*   **Driver's License (Japan)**
-    *   Common Data (PIN1) with Shift-JIS (Gaiji) parser
-    *   Sensitive Data (PIN2)
-*   **Residence Card (Japan)**
-    *   Card Number validation
-    *   Common Info parsing
-*   **ePassport (ICAO 9303)**
-    *   BAC (Basic Access Control) Key Derivation
-    *   MRZ / Common Data Access
-*   **US PIV (Personal Identity Verification)**
-    *   CHUID (Card Holder Unique ID)
-    *   Authentication Certificate
+---
 
-## Usage
+## 🛠 CLI Usage
 
-This library is primarily designed to be used via the `civ` CLI tool or as a dependency in the `folio-core` application.
+The `civ` command-line tool provides a direct way to interact with cards.
 
-### CLI
+### 🇯🇵 JPKI (My Number Card)
 
+**⚠️ Safety First: Check PIN Retries**
+Before entering PINs, check how many attempts are left to avoid locking the card.
 ```bash
-# JPKI
-civ jpki info
-civ jpki cert --type auth
-# Sign with Auth key (4-digit PIN)
-civ jpki sign --type auth --pin 1234 --data "Hello"
-# Sign with Signature key (6-16 alphanum PIN)
-civ jpki sign --type sign --pin MYPASS123 --data "ImportantContract"
-
-# Driver's License
-civ dl --command common --pin1 1234
-
-# Passport
-civ ep --mrz "P<JPN..."
-
-# Residence Card
-civ rc --number "AB123456CD"
-
-# US PIV
-civ piv
+cargo run -- jpki retries
 ```
 
-## Architecture
+**Read Card Attributes (Basic 4 Info & Photo)**
+If you omit `--pin`, it will prompt you interactively.
+```bash
+# Read name, address, DOB, gender
+cargo run -- jpki attr
+
+# Read attributes and save face photo to a file
+cargo run -- jpki attr --photo face.jp2
+```
+
+**Read Individual Number (My Number)**
+```bash
+cargo run -- jpki num
+```
+
+**Digital Signature**
+- `auth`: User Authentication (4-digit PIN)
+- `sign`: Digital Signature (6-16 alphanumeric password)
+```bash
+# Authenticate (Challenge-Response)
+cargo run -- jpki sign --type auth --data "challenge_string"
+
+# Sign Document
+cargo run -- jpki sign --type sign --data "document_hash_or_string"
+```
+
+**Read Certificates**
+```bash
+cargo run -- jpki cert --type auth
+cargo run -- jpki cert --type sign --output sign_cert.der
+```
+
+---
+
+### 🪪 Other Cards
+
+- **Driver's License**: `cargo run -- dl --command common`
+- **Passport**: `cargo run -- ep --mrz "P<JPN..."`
+- **Residence Card**: `cargo run -- rc --number "AB123456CD"`
+- **US PIV**: `cargo run -- piv`
+
+---
+
+## 📚 Technical Documentation
+
+For deep dives into implementation details:
+- [mynacard.md](docs/mynacard.md): Compact technical specification of the My Number Card (AIDs, FIDs, APDUs).
+- [implementation_insights.md](docs/implementation_insights.md): Key lessons learned regarding security models and reverse engineering.
+
+## 🏗 Architecture
 
 *   **`civ::apdu`**: Low-level APDU command builders.
-*   **`civ::controller`**: High-level logic for each card type (JpkiController, PivController, etc.).
-*   **`civ::reader`**: Abstraction for PC/SC (Native) and WebUSB (Browser) readers.
+*   **`civ::jpki`, `civ::piv`, etc.**: High-level controllers for specific card types.
+*   **`civ::reader`**: Abstraction layer for PC/SC (Native) and WebUSB (Browser) readers.
+*   **`civ::utils`**: Common utilities including a robust BER-TLV parser.
 
 ## License
-
 MIT / Apache-2.0
