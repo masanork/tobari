@@ -15,8 +15,6 @@
 | **Expansion** | `D3 92 10 00 31 00 01 01 01 00` | Empty/Custom Area |
 | **PinStatus** | `D3 92 10 00 31 00 01 01 04 01` | PIN Status Check |
 
-*> Note: `mynacard.ja.md` incorrectly states Card-AP contains Photo (0002). In standard implementations, Photo is in Surface-AP (AID ending in `02`) and requires the 12-digit My Number as PIN.*
-
 ## 3. APDU Command Reference
 **CLA**: `00` (ISO) or `80` (Proprietary/JPKI).
 
@@ -70,8 +68,6 @@
 | `00 11` | **PIN IEF** | - | 4-digit Auth PIN (Same as JPKI Auth PIN) |
 | `00 01` | My Number | **PIN** | 12-digit ID (Plain text or TLV Tag 01) |
 | `00 02` | Basic 4 Info | **PIN** | ASN.1: Name, Addr, DOB, Sex |
-
-*> Note: My Number (EF 00 01) format varies by card version. It may be raw 12-digit ASCII or a TLV structure with Tag 01. Implementations should handle both.*
 
 ### 5.2 Flows
 1. `SELECT DF`: Card-AP (`...04 08`)
