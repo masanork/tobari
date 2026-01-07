@@ -85,13 +85,13 @@ export class WebAuthnHandler {
                     id: c.id,
                     type: "public-key"
                 }));
-                console.log(`[WebAuthn] Loaded ${stored.length} credentials from local file.`);
+                console.error(`[WebAuthn] Loaded ${stored.length} credentials from local file.`);
             }
         }
 
         return new Promise((resolve, reject) => {
             const templatePath = path.join(__dirname, 'templates', 'webauthn.html');
-            
+
             // Create server
             this.server = http.createServer((req, res) => {
                 const url = new URL(req.url || '/', `http://${req.headers.host}`);
@@ -119,7 +119,7 @@ export class WebAuthnHandler {
                             const response = JSON.parse(body) as WebAuthnSignResponse;
                             res.writeHead(200, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify({ status: 'ok' }));
-                            
+
                             // Save if it was a registration
                             if (response.mode === 'register') {
                                 this.saveCredential({
@@ -153,11 +153,16 @@ export class WebAuthnHandler {
                 if (typeof address === 'object' && address) {
                     const port = address.port;
                     const challenge = encodeURIComponent(request.challenge);
-                    const rpId = encodeURIComponent(request.rpId || 'localhost');
+                    // Force RP ID to localhost because we are running a local server.
+                    // WebAuthn requires the RP ID to match the effective domain (localhost).
+                    // We cannot masquerade as an external domain.
+                    const rpId = encodeURIComponent('localhost');
+                    console.error(`[WebAuthn] Overriding RP ID to 'localhost' for local signature execution. Requested was: ${request.rpId}`);
+
                     const mode = request.mode || 'sign';
-                    
+
                     let targetUrl = `http://localhost:${port}/?mode=${mode}&challenge=${challenge}&rpId=${rpId}`;
-                    
+
                     if (request.userName) targetUrl += `&userName=${encodeURIComponent(request.userName)}`;
                     if (request.userDisplayName) targetUrl += `&userDisplayName=${encodeURIComponent(request.userDisplayName)}`;
 
@@ -169,12 +174,12 @@ export class WebAuthnHandler {
                     }
 
                     console.error(`[WebAuthn] Opening browser at ${targetUrl}`);
-                    
+
                     // Open browser
-                    const openCmd = process.platform === 'darwin' ? `open "${targetUrl}"` 
-                                  : process.platform === 'win32' ? `start "${targetUrl}"`
-                                  : `xdg-open "${targetUrl}"`;
-                    
+                    const openCmd = process.platform === 'darwin' ? `open "${targetUrl}"`
+                        : process.platform === 'win32' ? `start "${targetUrl}"`
+                            : `xdg-open "${targetUrl}"`;
+
                     exec(openCmd, (err) => {
                         if (err) {
                             console.error('Failed to open browser:', err);
