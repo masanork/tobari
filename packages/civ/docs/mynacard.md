@@ -10,11 +10,12 @@
 | Application | AID (Hex) | Description |
 |---|---|---|
 | **JPKI-AP** | `D3 92 F0 00 26 01 00 00 00 01` | Public Certification (Auth/Sign) |
-| **Card-AP** | `D3 92 10 00 31 00 01 01 04 08` | Input Assistance (4-Info, Photo*) |
+| **Card-AP** | `D3 92 10 00 31 00 01 01 04 08` | Input Assistance (4-Info, MyNumber) |
+| **Surface-AP**| `D3 92 10 00 31 00 01 01 04 02` | Surface (Visual) AP (Photo, 4-Info) |
 | **Expansion** | `D3 92 10 00 31 00 01 01 01 00` | Empty/Custom Area |
 | **PinStatus** | `D3 92 10 00 31 00 01 01 04 01` | PIN Status Check |
 
-*> Note: `mynacard.ja.md` states Card-AP contains Basic4Info (0001), Photo (0002), MyNumber (0003). Real-world implementations often find Photo in Visual AP (similar AID ending in `02` or different FID structure). This doc follows `mynacard.ja.md`.*
+*> Note: `mynacard.ja.md` incorrectly states Card-AP contains Photo (0002). In standard implementations, Photo is in Surface-AP (AID ending in `02`) and requires the 12-digit My Number as PIN.*
 
 ## 3. APDU Command Reference
 **CLA**: `00` (ISO) or `80` (Proprietary/JPKI).
@@ -67,20 +68,38 @@
 | FID | Name | Access | Desc |
 |---|---|---|---|
 | `00 11` | **PIN IEF** | - | 4-digit Auth PIN (Same as JPKI Auth PIN) |
-| `00 01` | My Number | **PIN+** | 12-digit ID (Strict Access) |
+| `00 01` | My Number | **PIN** | 12-digit ID (Plain text or TLV Tag 01) |
 | `00 02` | Basic 4 Info | **PIN** | ASN.1: Name, Addr, DOB, Sex |
-| `00 03` | Face Photo | **PIN** | ASN.1 wrapped JPEG/JP2 |
+
+*> Note: My Number (EF 00 01) format varies by card version. It may be raw 12-digit ASCII or a TLV structure with Tag 01. Implementations should handle both.*
 
 ### 5.2 Flows
-1. `SELECT DF`: Card-AP
+1. `SELECT DF`: Card-AP (`...04 08`)
 2. `SELECT EF`: `00 11` (PIN IEF)
 3. `VERIFY`: `00 20 00 80 04 <PIN>` (4 digits)
-4. `SELECT EF`: `00 01` (Attributes) or `00 02` (Photo)
-5. `READ BIN`: `00 B0 <P1> <P2> 00` (Loop for full data)
+4. `SELECT EF`: `00 01` (My Number) or `00 02` (4-Info)
+5. `READ BIN`: `00 B0 <P1> <P2> <Len>`
 
-## 6. Data Structures
+## 6. Surface (Visual) App (`Surface-AP`)
+**AID:** `D3 92 10 00 31 00 01 01 04 02`
 
-### 6.1 DigestInfo (for `COMPUTE SIGNATURE`)
+### 6.1 Files (EFs)
+| FID | Name | Access | Desc |
+|---|---|---|---|
+| `00 13` | **PIN IEF** | - | Surface PIN (Uses 12-digit My Number) |
+| `00 01` | Basic 4 Info | **PIN** | Same as Card-AP EF 00 02 |
+| `00 02` | Face Photo | **PIN** | Photo data (Tag DF27) |
+
+### 6.2 Flows
+1. `SELECT DF`: Surface-AP (`...04 02`)
+2. `SELECT EF`: `00 13` (PIN IEF)
+3. `VERIFY`: `00 20 00 80 0C <MyNumber>` (12 digits, ASCII)
+4. `SELECT EF`: `00 02` (Photo)
+5. `READ BIN`: `00 B0 <P1> <P2> <Len>` (Loop for full data)
+
+## 7. Data Structures
+
+### 7.1 DigestInfo (for `COMPUTE SIGNATURE`)
 SHA-256 DigestInfo (DER encoded):
 ```hex
 30 31 30 0D 06 09 60 86 48 01 65 03 04 02 01 05 00 04 20 [32-byte-Hash]
@@ -100,13 +119,13 @@ Sequence {
 ```
 *Note: Tags vary. Parse TLV structure dynamically.*
 
-### 6.3 Face Photo
-Stored in `EF 00 02`.
-- **Wrapper:** ASN.1 Octet String (Tag `04` or similar).
-- **Content:** JPEG (`FF D8 ...`) or JPEG2000 (`00 00 00 0C 6A 50 ...` / `FF 4F ...`).
-- **Action:** Strip ASN.1 header to find image magic bytes.
+### 7.3 Face Photo
+Stored in `EF 00 02` of `Surface-AP`.
+- **Structure:** TLV (Tag `DF 27` for image data).
+- **Content:** JPEG2000 (`00 00 00 0C 6A 50 ...` / `FF 4F ...`) or JPEG (`FF D8 ...`).
+- **Action:** Parse TLV to find tag `DF 27` and extract its value.
 
-## 7. Implementation Notes
+## 8. Implementation Notes
 1. **Type B Stability:** Shallow modulation (10% ASK). Requires precise antenna/polling (WTX handling mandatory for RSA ops).
 2. **Transaction:** Always `SELECT` correct AP before operations.
 3. **Response Chaining:** If data > 256 bytes and no Ext-APDU, use loop with `P1/P2` offsets.

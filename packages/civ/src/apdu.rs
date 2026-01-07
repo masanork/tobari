@@ -70,9 +70,9 @@ pub mod file_ids {
         0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x08
     ];
 
-    /// Face Recognition Application AID (券面事項確認AP)
-    /// D3 92 10 00 31 00 01 01 04 01
-    pub const DF_FACE_RECOGNITION: [u8; 10] = [
+    /// Surface (Visual) Application AID (券面事項確認AP)
+    /// D3 92 10 00 31 00 01 01 04 02
+    pub const DF_SURFACE: [u8; 10] = [
         0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x02
     ];
 
@@ -85,11 +85,8 @@ pub mod file_ids {
     /// Card Surface Input Support PIN EF
     pub const EF_INPUT_SUPPORT_PIN: [u8; 2] = [0x00, 0x11];
 
-    /// Face Recognition PIN EF (B-Number)
-    pub const EF_FACE_RECOGNITION_PIN: [u8; 2] = [0x00, 0x11];
-
-    /// Face Recognition PIN EF (B-Number / Password B)
-    pub const EF_VISUAL_PIN: [u8; 2] = [0x00, 0x11];
+    /// Surface (Visual) PIN EF (uses 12-digit My Number)
+    pub const EF_SURFACE_PIN: [u8; 2] = [0x00, 0x13];
 
     /// My Number EF (under Input Support AP)
     pub const EF_MYNUMBER: [u8; 2] = [0x00, 0x01];
@@ -97,8 +94,8 @@ pub mod file_ids {
     /// Attributes EF (Basic 4 Info) (under Input Support AP)
     pub const EF_ATTRIBUTES: [u8; 2] = [0x00, 0x02];
 
-    /// Face Photo EF (under Input Support AP) - Usually 00 04
-    pub const EF_FACE_PHOTO: [u8; 2] = [0x00, 0x04];
+    /// Face Photo EF (under Surface AP)
+    pub const EF_FACE_PHOTO: [u8; 2] = [0x00, 0x02];
 
     /// Signature Image EF (under Input Support AP) - Usually 00 03
     pub const EF_SIGNATURE_IMAGE: [u8; 2] = [0x00, 0x03];

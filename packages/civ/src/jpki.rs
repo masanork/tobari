@@ -1,7 +1,7 @@
 use crate::apdu::{ApduCommand, file_ids, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_VERIFY, INS_COMPUTE_DIGITAL_SIGNATURE};
 use crate::reader::CardReader;
 use crate::utils::parse_ber_tlv;
-use anyhow::{Result, Context};
+use anyhow::Result;
 
 /// High-level JPKI Controller
 pub struct JpkiController<R: CardReader> {
@@ -43,9 +43,8 @@ impl<R: CardReader> JpkiController<R> {
         Self::check_sw(&self.reader.transmit(&apdu.to_bytes()).await?)
     }
 
-    pub async fn select_visual_ap(&mut self) -> Result<()> {
-        let face_aid = [0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x01];
-        let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C).with_data(&face_aid);
+    pub async fn select_surface_ap(&mut self) -> Result<()> {
+        let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C).with_data(&file_ids::DF_SURFACE);
         Self::check_sw(&self.reader.transmit(&apdu.to_bytes()).await?)
     }
 
@@ -71,21 +70,14 @@ impl<R: CardReader> JpkiController<R> {
         self.get_pin_retry_count(&file_ids::EF_INPUT_SUPPORT_PIN).await
     }
 
-    pub async fn get_password_a_retries(&mut self) -> Result<u8> {
-        self.select_visual_ap().await?;
-        // Use P2=81 directly for Password A status
-        self.get_status_at_p2(0x81).await
-    }
-
-    pub async fn get_password_b_retries(&mut self) -> Result<u8> {
-        self.select_visual_ap().await?;
-        // Use P2=82 directly for Password B status
-        self.get_status_at_p2(0x82).await
+    pub async fn get_surface_pin_retries(&mut self) -> Result<u8> {
+        self.select_surface_ap().await?;
+        self.get_pin_retry_count(&file_ids::EF_SURFACE_PIN).await
     }
 
     async fn get_pin_retry_count(&mut self, pin_ef: &[u8]) -> Result<u8> {
         let select_pin = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x02, 0x0C).with_data(pin_ef);
-        self.reader.transmit(&select_pin.to_bytes()).await?;
+        Self::check_sw(&self.reader.transmit(&select_pin.to_bytes()).await?)?;
         self.get_status_at_p2(0x80).await
     }
 
@@ -99,8 +91,8 @@ impl<R: CardReader> JpkiController<R> {
         if res.len() < 2 { return Err(anyhow::anyhow!("Response too short")); }
         let sw1 = res[res.len()-2];
         let sw2 = res[res.len()-1];
-        if sw1 == 0x63 && (sw2 & 0xF0) == 0xC0 { return Ok(sw2 & 0x0F); }
         if sw1 == 0x90 && sw2 == 0x00 { return Ok(255); } // Already verified
+        if sw1 == 0x63 && (sw2 & 0xF0) == 0xC0 { return Ok(sw2 & 0x0F); }
         if sw1 == 0x69 && sw2 == 0x83 { return Ok(0); } // Locked
         // Some cards return 69 86 or 69 81 if no PIN is currently selected/available
         if sw1 == 0x69 && (sw2 == 0x86 || sw2 == 0x81) {
@@ -151,6 +143,8 @@ impl<R: CardReader> JpkiController<R> {
         self.select_input_support_ap().await?;
         self.verify_pin(&file_ids::EF_INPUT_SUPPORT_PIN, pin).await?;
         let data = self.read_ef_full(&file_ids::EF_MYNUMBER).await?;
+        
+        // Try TLV parsing first
         let tlvs = parse_ber_tlv(&data);
         fn find_mynumber_recursive(tlvs: &[crate::utils::BerTlv]) -> Option<String> {
             for tlv in tlvs {
@@ -161,7 +155,21 @@ impl<R: CardReader> JpkiController<R> {
             }
             None
         }
-        find_mynumber_recursive(&tlvs).ok_or_else(|| anyhow::anyhow!("MyNumber not found"))
+        
+        if let Some(num) = find_mynumber_recursive(&tlvs) {
+            return Ok(num);
+        }
+
+        // Fallback: If not TLV, check if the raw data is 12 digits
+        if data.len() >= 12 {
+            let s = String::from_utf8_lossy(&data).to_string();
+            let digits: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
+            if digits.len() == 12 {
+                return Ok(digits);
+            }
+        }
+        
+        Err(anyhow::anyhow!("MyNumber not found in EF 00 01 (Data len: {})", data.len()))
     }
 
     pub async fn read_attributes(&mut self, pin: &str) -> Result<BasicInfo> {
@@ -171,24 +179,36 @@ impl<R: CardReader> JpkiController<R> {
         Self::parse_basic_info(&attr_data)
     }
 
-    pub async fn read_face_photo(&mut self, pin: &str) -> Result<Vec<u8>> {
-        let p2 = match pin.len() {
-            12 => 0x81,
-            14 => 0x82,
-            _ => return Err(anyhow::anyhow!("Invalid PIN length: {}. Expected 12 or 14.", pin.len())),
-        };
-        self.select_visual_ap().await?;
-        
-        // Use P2=81 or 82 directly for authentication
-        let res = self.reader.transmit(&ApduCommand::new(CLA_ISO, INS_VERIFY, 0x00, p2).with_data(pin.as_bytes()).to_bytes()).await?;
-        Self::check_sw(&res).context("Visual AP Auth Failed")?;
-
-        for fid in [[0x00, 0x01], [0x00, 0x02]] {
-            if let Ok(data) = self.read_ef_full(&fid).await {
-                if data.len() > 2000 { return Ok(data); }
-            }
+    pub async fn read_face_photo(&mut self, my_number: &str) -> Result<Vec<u8>> {
+        if my_number.len() != 12 {
+            return Err(anyhow::anyhow!("Invalid PIN length: {}. Expected 12 digits (My Number).", my_number.len()));
         }
-        Err(anyhow::anyhow!("Photo not found in Visual AP"))
+        self.select_surface_ap().await?;
+        self.verify_pin(&file_ids::EF_SURFACE_PIN, my_number).await?;
+        
+        let data = self.read_ef_full(&file_ids::EF_FACE_PHOTO).await?;
+        let tlvs = parse_ber_tlv(&data);
+        
+        fn find_photo_recursive(tlvs: &[crate::utils::BerTlv]) -> Option<Vec<u8>> {
+            for tlv in tlvs {
+                if tlv.tag == 0xDF27 {
+                    return Some(tlv.value.to_vec());
+                }
+                if let Some(found) = find_photo_recursive(&tlv.children) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+
+        if let Some(photo) = find_photo_recursive(&tlvs) {
+            Ok(photo)
+        } else if data.len() > 1000 {
+            // Fallback: If no DF27 tag but data looks like an image
+            Ok(data)
+        } else {
+            Err(anyhow::anyhow!("Face photo (tag DF27) not found in EF data (len: {})", data.len()))
+        }
     }
 
     fn parse_basic_info(data: &[u8]) -> Result<BasicInfo> {
