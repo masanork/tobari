@@ -71,9 +71,9 @@ pub mod file_ids {
     ];
 
     /// Face Recognition Application AID (券面事項確認AP)
-    /// D3 92 10 00 31 00 01 01 01 03
+    /// D3 92 10 00 31 00 01 01 04 01
     pub const DF_FACE_RECOGNITION: [u8; 10] = [
-        0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x01, 0x03
+        0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x02
     ];
 
     /// Authentication PIN EF

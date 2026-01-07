@@ -1,8 +1,13 @@
+#[cfg(not(target_arch = "wasm32"))]
 use clap::{Parser, Subcommand};
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
 use serde_json::json;
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Parser)]
 #[command(name = "myna")]
 #[command(about = "Dummy myna command for testing")]
@@ -11,6 +16,7 @@ struct Cli {
     command: Commands,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Subcommand)]
 enum Commands {
     /// Text command
@@ -48,17 +54,26 @@ enum Commands {
     },
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(clap::ValueEnum, Clone)]
 enum DataType {
     Mynumber,
     Attr,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(clap::ValueEnum, Clone)]
 enum VisualType {
     Photo,
 }
 
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    panic!("Not supported on WASM");
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let cli = Cli::parse();
 
@@ -157,6 +172,7 @@ fn main() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Subcommand)]
 enum JpkiCommands {
     /// CMS commands
@@ -166,8 +182,10 @@ enum JpkiCommands {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Subcommand)]
 enum CmsCommands {
+
     /// Sign data
     Sign {
         /// Input file

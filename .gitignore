@@ -13,7 +13,11 @@ shared/fonts/ipamjm.ttf
 # Binary / Build Artifacts
 dist/
 .DS_Store
-packages/civ/target/
+# Rust / WASM
+target/
+**/target/
+pkg/
+**/pkg/
 
 # Secrets
 *-key.json

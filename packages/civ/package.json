@@ -1,0 +1,17 @@
+{
+    "name": "@tobari/civ",
+    "version": "0.1.0",
+    "type": "module",
+    "files": [
+        "pkg"
+    ],
+    "main": "./pkg/civ.js",
+    "types": "./pkg/civ.d.ts",
+    "scripts": {
+        "build": "wasm-pack build --target web --out-name civ",
+        "test": "cargo test"
+    },
+    "peerDependencies": {
+        "typescript": "^5.0.0"
+    }
+}
