@@ -88,20 +88,25 @@ pub mod file_ids {
     /// Face Recognition PIN EF (B-Number)
     pub const EF_FACE_RECOGNITION_PIN: [u8; 2] = [0x00, 0x11];
 
+    /// Face Recognition PIN EF (B-Number / Password B)
+    pub const EF_VISUAL_PIN: [u8; 2] = [0x00, 0x11];
+
     /// My Number EF (under Input Support AP)
     pub const EF_MYNUMBER: [u8; 2] = [0x00, 0x01];
 
     /// Attributes EF (Basic 4 Info) (under Input Support AP)
     pub const EF_ATTRIBUTES: [u8; 2] = [0x00, 0x02];
 
+    /// Face Photo EF (under Input Support AP) - Usually 00 04
+    pub const EF_FACE_PHOTO: [u8; 2] = [0x00, 0x04];
+
+    /// Signature Image EF (under Input Support AP) - Usually 00 03
+    pub const EF_SIGNATURE_IMAGE: [u8; 2] = [0x00, 0x03];
+
     /// Card Surface Information EF (contains Expiration Date, Security Code)
-    /// (under Input Support AP)
     pub const EF_SURFACE_INFO: [u8; 2] = [0x00, 0x05];
     /// Fallback Surface Info (sometimes 0006)
     pub const EF_SURFACE_INFO_B: [u8; 2] = [0x00, 0x06];
-
-    /// Face Photo EF (under Face Recognition AP)
-    pub const EF_FACE_PHOTO: [u8; 2] = [0x00, 0x02];
 
     /// Face Recognition Text EF (under Face Recognition AP)
     pub const EF_FACE_TEXT: [u8; 2] = [0x00, 0x01];

@@ -3,6 +3,7 @@ name = "civ"
 version = "0.1.0"
 edition = "2021"
 description = "CIV (Citizen Identity Verification) Library: JPKI, Driver License, Passport, etc."
+default-run = "civ"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
