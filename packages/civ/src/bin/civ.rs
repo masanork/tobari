@@ -1,7 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use clap::{Parser, Subcommand};
 #[cfg(not(target_arch = "wasm32"))]
-use civ::{JpkiController, DriversLicenseController, PassportController, ResidenceCardController, PivController, PcscReader};
+use civ::{JpkiController, PcscReader};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
@@ -27,36 +27,6 @@ enum Commands {
         #[command(subcommand)]
         command: JpkiCommands,
     },
-    /// Driver's License Operations
-    #[command(name = "dl")]
-    DriverLicense {
-        /// Type: info, common
-        #[arg(short, long, default_value = "info")]
-        command: String,
-        /// PIN1 (4 digits)
-        #[arg(short, long, env = "DL_PIN1")]
-        pin1: Option<String>,
-    },
-    /// Passport Operations
-    #[command(name = "ep")]
-    Passport {
-        /// MRZ String (OCR result)
-        #[arg(short, long, env = "EP_MRZ")]
-        mrz: String,
-    },
-    /// Residence Card Operations
-    #[command(name = "rc")]
-    ResidenceCard {
-        /// Card Number or MRZ (OCR result)
-        #[arg(short, long, env = "RC_NUMBER")]
-        number: String,
-        /// Optional PIN (if not using Number-based access)
-        #[arg(short, long)]
-        pin: Option<String>,
-    },
-    /// US PIV (Personal Identity Verification)
-    #[command(name = "piv")]
-    Piv,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -75,35 +45,41 @@ enum JpkiCommands {
         #[arg(short, long)]
         output: Option<String>,
     },
-    /// Sign data (using Auth or Sign key)
+    /// Sign data
     #[command(name = "sign")]
     Sign {
-        /// Data to sign (string)
+        /// Data to sign
         #[arg(short, long)]
         data: String,
-        /// Type: auth (4 digits) or sign (6-16 alphanum)
+        /// Type: auth or sign
         #[arg(short, long, default_value = "auth")]
         type_: String,
-        /// PIN (Optional, will prompt if missing)
+        /// PIN
         #[arg(short, long, env = "JPKI_PIN")]
         pin: Option<String>,
     },
-    /// Read My Number (Individual Number)
+    /// Read My Number
     #[command(name = "num")]
     Mynumber {
-        /// PIN (4 digits for Card Surface Input Support)
+        /// PIN (4 digits)
         #[arg(short, long, env = "JPKI_PIN")]
         pin: Option<String>,
     },
-    /// Read Card Attributes (Basic 4 Info + Photo)
+    /// Read Attributes and Photo
     #[command(name = "attr")]
     Card {
-        /// PIN (4 digits for Card Surface Input Support)
+        /// PIN (4 digits)
         #[arg(short, long, env = "JPKI_PIN")]
         pin: Option<String>,
-        /// Save photo to this file (if available)
-        #[arg(short, long)]
+        /// Save photo
+        #[arg(long)]
         photo: Option<String>,
+        /// Expiration Date (YYYYMMDD)
+        #[arg(long)]
+        exp: Option<String>,
+        /// Security Code (4 digits)
+        #[arg(long)]
+        sc: Option<String>,
     },
 }
 
@@ -124,119 +100,86 @@ fn get_pin(provided: Option<String>, prompt: &str) -> anyhow::Result<String> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-
     let mut reader = PcscReader::new()?;
-    let reader_name = reader.connect()?;
-    println!("Connected to reader: {}", reader_name);
+    let _ = reader.connect()?;
 
     match cli.command {
         Commands::Jpki { command } => {
             let mut controller = JpkiController::new(reader);
             match command {
                 JpkiCommands::Retries => {
-                    println!("--- JPKI PIN Retry Counts ---");
-                    match controller.get_auth_pin_retries().await {
-                        Ok(c) => println!("Auth PIN (4-digit): {}", if c == 255 { "Verified/Unlimited".into() } else { format!("{}", c) }),
-                        Err(e) => println!("Auth PIN: Error ({})", e),
-                    }
-                    match controller.get_sign_pin_retries().await {
-                        Ok(c) => println!("Sign PIN (6-16 alphanum): {}", if c == 255 { "Verified/Unlimited".into() } else { format!("{}", c) }),
-                        Err(e) => println!("Sign PIN: Error ({})", e),
-                    }
-                    match controller.get_input_support_pin_retries().await {
-                        Ok(c) => println!("Input Support PIN (4-digit): {}", if c == 255 { "Verified/Unlimited".into() } else { format!("{}", c) }),
-                        Err(e) => println!("Input Support PIN: Error ({})", e),
-                    }
+                    println!("--- PIN Retry Counts ---");
+                    let _ = controller.get_auth_pin_retries().await.map(|c| println!("Auth PIN: {}", c));
+                    let _ = controller.get_sign_pin_retries().await.map(|c| println!("Sign PIN: {}", c));
+                    let _ = controller.get_input_support_pin_retries().await.map(|c| println!("Input Support: {}", c));
+                    let _ = controller.get_password_a_retries().await.map(|c| println!("Visual AP (Password A): {}", c));
+                    let _ = controller.get_password_b_retries().await.map(|c| println!("Visual AP (Password B): {}", c));
                 }
                 JpkiCommands::Cert { type_, output } => {
-                    let cert_data = if type_ == "sign" {
-                        println!("Reading Signature certificate...");
-                        controller.read_sign_cert().await?
-                    } else {
-                        println!("Reading Auth certificate...");
-                        controller.read_auth_cert().await?
-                    };
-                    
-                    if let Some(path) = output {
-                        fs::write(&path, &cert_data)?;
-                        println!("Certificate saved to {}", path);
-                    } else {
-                        println!("Certificate (Hex): {}", hex::encode(&cert_data));
-                    }
+                    let data = if type_ == "sign" { controller.read_sign_cert().await? } else { controller.read_auth_cert().await? };
+                    if let Some(p) = output { fs::write(p, &data)?; } else { println!("Hex: {}", hex::encode(data)); }
                 }
                 JpkiCommands::Sign { data, type_, pin } => {
-                    let prompt = if type_ == "sign" { "Enter Sign Password (6-16 chars): " } else { "Enter Auth PIN (4 digits): " };
-                    let pin = get_pin(pin, prompt)?;
-                    
-                    let sig = if type_ == "sign" {
-                        println!("Computing Digital Signature...");
-                        controller.compute_digital_signature(&pin, data.as_bytes()).await?
-                    } else {
-                        println!("Computing Auth Signature...");
-                        controller.compute_auth_signature(&pin, data.as_bytes()).await?
-                    };
-                    println!("Signature (Hex): {}", hex::encode(sig));
+                    let prompt = if type_ == "sign" { "Sign Pass: " } else { "Auth PIN: " };
+                    let p = get_pin(pin, prompt)?;
+                    let sig = if type_ == "sign" { controller.compute_digital_signature(&p, data.as_bytes()).await? } else { controller.compute_auth_signature(&p, data.as_bytes()).await? };
+                    println!("Signature: {}", hex::encode(sig));
                 }
                 JpkiCommands::Mynumber { pin } => {
-                    let pin = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
-                    let my_number = controller.read_mynumber(&pin).await?;
-                    println!("Individual Number (My Number): {}", my_number);
+                    let p = get_pin(pin, "PIN: ")?;
+                    println!("MyNumber: {}", controller.read_mynumber(&p).await?);
                 }
-                JpkiCommands::Card { pin, photo } => {
-                    let pin = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
-                    println!("Reading attributes...");
-                    let info = controller.read_attributes(&pin, None, None).await?;
-                    println!("{}", info);
+                JpkiCommands::Card { pin, photo, exp, sc } => {
+                    let p = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
+                    let my_number = controller.read_mynumber(&p).await.ok();
+                    let mut info = controller.read_attributes(&p).await?;
                     
-                    if let Some(photo_path) = photo {
-                        if let Some(b64) = info.face_photo {
-                            let bytes = base64::engine::general_purpose::STANDARD.decode(b64)?;
-                            fs::write(&photo_path, bytes)?;
-                            println!("Photo saved to {}", photo_path);
-                        } else {
-                            println!("Photo data not found or access denied.");
+                    if photo.is_some() {
+                        let mut photo_data = None;
+                        // Attempt 1: Password A
+                        if let Some(ref num) = my_number {
+                            if let Ok(retries) = controller.get_password_a_retries().await {
+                                if retries > 3 || retries == 255 {
+                                    println!("Attempting via Password A (My Number)...");
+                                    photo_data = controller.read_face_photo(num).await.ok();
+                                }
+                            }
                         }
+                        // Attempt 2: Password B
+                        if photo_data.is_none() {
+                            println!("\n--- Password B Fallback ---");
+                            let ev = if let Some(v) = exp { v } else { get_pin(None, "Expiration (YYYYMMDD): ")? };
+                            let sv = if let Some(v) = sc { v } else { get_pin(None, "Security Code (4 digits): ")? };
+                            
+                            if let Ok(retries) = controller.get_password_b_retries().await {
+                                if retries > 3 || retries == 255 {
+                                    // Password B (14 digits): DOB(YYMMDD) + ExpYear(YYYY) + SC(4)
+                                    let dob_yymmdd = &info.birth_date[2..8];
+                                    let exp_yyyy = &ev[0..4];
+                                    let b_num = format!("{}{}{}", dob_yymmdd, exp_yyyy, sv);
+                                    
+                                    println!("Attempting via 14-digit Password B...");
+                                    photo_data = controller.read_face_photo(&b_num).await.ok();
+                                } else {
+                                    println!("Warning: Password B only has {} retries left. skipping.", retries);
+                                }
+                            }
+                        }
+                        if let Some(data) = photo_data {
+                            println!("Photo retrieved!");
+                            info.face_photo = Some(base64::engine::general_purpose::STANDARD.encode(data));
+                        }
+                    }
+                    println!("\n{}", info);
+                    if let (Some(path), Some(b64)) = (photo, info.face_photo) {
+                        fs::write(path, base64::engine::general_purpose::STANDARD.decode(b64)?)?;
                     }
                 }
             }
         }
-        Commands::DriverLicense { command, pin1 } => {
-            let mut controller = DriversLicenseController::new(reader);
-            controller.select_dl_ap().await?;
-            if command == "common" {
-                let p = get_pin(pin1, "Enter DL PIN1 (4 digits): ")?;
-                controller.verify_pin1(&p).await?;
-                let info = controller.read_common_data().await?;
-                println!("{}", info);
-            } 
-        }
-        Commands::Passport { mrz } => {
-            let mut controller = PassportController::new(reader);
-            controller.select_ep_ap().await?;
-            controller.perform_bac(&mrz).await?;
-            println!("DG1 (MRZ): {}", hex::encode(controller.read_dg1().await?));
-        }
-        Commands::ResidenceCard { number, pin } => {
-            let mut controller = ResidenceCardController::new(reader);
-            controller.select_rc_ap().await?;
-            if let Some(p) = pin {
-                 println!("PIN verification not implemented for RC in this CLI yet.");
-            } else {
-                 controller.verify_card_number(&number).await?;
-                 println!("{}", controller.read_info().await?);
-            }
-        }
-        Commands::Piv => {
-            let mut controller = PivController::new(reader);
-            controller.select_piv_ap().await?;
-            println!("CHUID: {}", hex::encode(controller.read_chuid().await?));
-        }
     }
-
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
-fn main() {
-    panic!("This CLI is not supported on WASM targets");
-}
+fn main() {}

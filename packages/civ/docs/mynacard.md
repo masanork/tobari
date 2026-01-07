@@ -67,9 +67,9 @@
 | FID | Name | Access | Desc |
 |---|---|---|---|
 | `00 11` | **PIN IEF** | - | 4-digit Auth PIN (Same as JPKI Auth PIN) |
-| `00 01` | Basic 4 Info | **PIN** | ASN.1: Name, Addr, DOB, Sex |
-| `00 02` | Face Photo | **PIN** | ASN.1 wrapped JPEG/JP2 |
-| `00 03` | My Number | **PIN+** | 12-digit ID (Strict Access) |
+| `00 01` | My Number | **PIN+** | 12-digit ID (Strict Access) |
+| `00 02` | Basic 4 Info | **PIN** | ASN.1: Name, Addr, DOB, Sex |
+| `00 03` | Face Photo | **PIN** | ASN.1 wrapped JPEG/JP2 |
 
 ### 5.2 Flows
 1. `SELECT DF`: Card-AP
