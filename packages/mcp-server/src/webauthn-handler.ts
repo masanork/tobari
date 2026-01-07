@@ -147,47 +147,72 @@ export class WebAuthnHandler {
                 res.end('Not Found');
             });
 
-            // Start server on a random port
-            this.server.listen(0, '127.0.0.1', () => {
-                const address = this.server?.address();
-                if (typeof address === 'object' && address) {
-                    const port = address.port;
-                    const challenge = encodeURIComponent(request.challenge);
-                    // Force RP ID to localhost because we are running a local server.
-                    // WebAuthn requires the RP ID to match the effective domain (localhost).
-                    // We cannot masquerade as an external domain.
-                    const rpId = encodeURIComponent('localhost');
-                    console.error(`[WebAuthn] Overriding RP ID to 'localhost' for local signature execution. Requested was: ${request.rpId}`);
+            // Start server on a fixed port to maintain origin for localStorage/WebAuthn
+            const BASE_PORT = 22022;
+            const MAX_RETRIES = 10;
 
-                    const mode = request.mode || 'sign';
+            const tryListen = (attempt: number) => {
+                const port = BASE_PORT + attempt;
+                this.server?.listen(port, '127.0.0.1');
 
-                    let targetUrl = `http://localhost:${port}/?mode=${mode}&challenge=${challenge}&rpId=${rpId}`;
-
-                    if (request.userName) targetUrl += `&userName=${encodeURIComponent(request.userName)}`;
-                    if (request.userDisplayName) targetUrl += `&userDisplayName=${encodeURIComponent(request.userDisplayName)}`;
-
-                    if (request.allowCredentials && request.allowCredentials.length > 0) {
-                        const json = JSON.stringify(request.allowCredentials);
-                        // Base64URL encode the JSON to avoid URL encoding mess
-                        const b64 = Buffer.from(json).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                        targetUrl += `&allowCredentials=${b64}`;
-                    }
-
-                    console.error(`[WebAuthn] Opening browser at ${targetUrl}`);
-
-                    // Open browser
-                    const openCmd = process.platform === 'darwin' ? `open "${targetUrl}"`
-                        : process.platform === 'win32' ? `start "${targetUrl}"`
-                            : `xdg-open "${targetUrl}"`;
-
-                    exec(openCmd, (err) => {
-                        if (err) {
-                            console.error('Failed to open browser:', err);
-                            // Don't reject yet, user might open manually if we output the URL
+                this.server?.on('error', (e: any) => {
+                    if (e.code === 'EADDRINUSE') {
+                        console.log(`Port ${port} is in use, trying next...`);
+                        if (attempt < MAX_RETRIES) {
+                            this.server?.close();
+                            this.server = http.createServer(this.server?.listeners('request')[0] as any);
+                            tryListen(attempt + 1);
+                        } else {
+                            reject(new Error(`Could not find a free port after ${MAX_RETRIES} attempts`));
                         }
-                    });
-                }
-            });
+                    } else {
+                        reject(e);
+                    }
+                });
+
+                this.server?.on('listening', () => {
+                    const address = this.server?.address();
+                    if (typeof address === 'object' && address) {
+                        const port = address.port;
+                        const challenge = encodeURIComponent(request.challenge);
+                        // Force RP ID to localhost because we are running a local server.
+                        // WebAuthn requires the RP ID to match the effective domain (localhost).
+                        // We cannot masquerade as an external domain.
+                        const rpId = encodeURIComponent('localhost');
+                        console.error(`[WebAuthn] Overriding RP ID to 'localhost' for local signature execution. Requested was: ${request.rpId}`);
+
+                        const mode = request.mode || 'sign';
+
+                        let targetUrl = `http://localhost:${port}/?mode=${mode}&challenge=${challenge}&rpId=${rpId}`;
+
+                        if (request.userName) targetUrl += `&userName=${encodeURIComponent(request.userName)}`;
+                        if (request.userDisplayName) targetUrl += `&userDisplayName=${encodeURIComponent(request.userDisplayName)}`;
+
+                        if (request.allowCredentials && request.allowCredentials.length > 0) {
+                            const json = JSON.stringify(request.allowCredentials);
+                            // Base64URL encode the JSON to avoid URL encoding mess
+                            const b64 = Buffer.from(json).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+                            targetUrl += `&allowCredentials=${b64}`;
+                        }
+
+                        console.error(`[WebAuthn] Opening browser at ${targetUrl}`);
+
+                        // Open browser
+                        const openCmd = process.platform === 'darwin' ? `open "${targetUrl}"`
+                            : process.platform === 'win32' ? `start "${targetUrl}"`
+                                : `xdg-open "${targetUrl}"`;
+
+                        exec(openCmd, (err) => {
+                            if (err) {
+                                console.error('Failed to open browser:', err);
+                                // Don't reject yet, user might open manually if we output the URL
+                            }
+                        });
+                    }
+                });
+            };
+
+            tryListen(0);
 
             // Timeout safety (e.g., 2 minutes)
             setTimeout(() => {
