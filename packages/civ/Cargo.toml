@@ -47,3 +47,4 @@ mockall = "0.11"
 pcsc = "2.8"
 clap = { version = "4.4", features = ["derive", "env"] }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+rpassword = "7.3"

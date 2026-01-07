@@ -6,6 +6,8 @@ use civ::{JpkiController, DriversLicenseController, PassportController, Residenc
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
 use base64::Engine;
+#[cfg(not(target_arch = "wasm32"))]
+use rpassword::read_password;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Parser)]
@@ -55,91 +57,66 @@ enum Commands {
     /// US PIV (Personal Identity Verification)
     #[command(name = "piv")]
     Piv,
-    /// Legacy 'myna' command compatibility
-    #[command(name = "myna")]
-    Myna {
-        #[command(subcommand)]
-        command: MynaCommands,
-    },
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Subcommand)]
-enum MynaCommands {
-    /// Read text data
-    Text {
-        /// Type: mynumber, attr
-        #[arg(long)]
-        data_type: String,
-        /// PIN (4 digits)
-        #[arg(short, long)]
-        pin: Option<String>,
-        /// Output format: text, json
-        #[arg(short, long, default_value = "text")]
-        format: String,
-    },
-    /// Read visual data (Photo)
-    Visual {
-         /// Type: photo
-         #[arg(long)]
-         data_type: String,
-         /// PIN (4 digits)
-         #[arg(short, long)]
-         pin: Option<String>,
-         /// Expiration Date (YYYYMMDD) if known/required
-         #[arg(long)]
-         date: Option<String>,
-         /// Security Code (4 digits) if known/required
-         #[arg(long)]
-         security_code: Option<String>,
-         /// Output file path
-         #[arg(short, long)]
-         output: String,
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Subcommand)]
 enum JpkiCommands {
-    /// Show card info
-    #[command(name = "info")]
-    Info,
+    /// Show PIN retry counts
+    #[command(name = "retries")]
+    Retries,
     /// Read certificate
     #[command(name = "cert")]
     Cert {
-        /// Type: auth (sign not fully supported yet)
+        /// Type: auth or sign
         #[arg(short, long, default_value = "auth")]
         type_: String,
-        /// Output file (optional, prints to stdout hex if missing)
+        /// Output file
         #[arg(short, long)]
         output: Option<String>,
     },
     /// Sign data (using Auth or Sign key)
     #[command(name = "sign")]
     Sign {
-        /// PIN (can also be set via JPKI_PIN env var)
-        #[arg(short, long, env = "JPKI_PIN")]
-        pin: String,
         /// Data to sign (string)
         #[arg(short, long)]
         data: String,
         /// Type: auth (4 digits) or sign (6-16 alphanum)
         #[arg(short, long, default_value = "auth")]
         type_: String,
+        /// PIN (Optional, will prompt if missing)
+        #[arg(short, long, env = "JPKI_PIN")]
+        pin: Option<String>,
     },
     /// Read My Number (Individual Number)
     #[command(name = "num")]
     Mynumber {
         /// PIN (4 digits for Card Surface Input Support)
         #[arg(short, long, env = "JPKI_PIN")]
-        pin: String,
+        pin: Option<String>,
     },
-    /// Read Card Attributes (Basic 4 Info: Name, Address, DOB, Gender)
+    /// Read Card Attributes (Basic 4 Info + Photo)
     #[command(name = "attr")]
     Card {
         /// PIN (4 digits for Card Surface Input Support)
         #[arg(short, long, env = "JPKI_PIN")]
-        pin: String,
+        pin: Option<String>,
+        /// Save photo to this file (if available)
+        #[arg(short, long)]
+        photo: Option<String>,
+    },
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_pin(provided: Option<String>, prompt: &str) -> anyhow::Result<String> {
+    if let Some(p) = provided {
+        Ok(p)
+    } else {
+        print!("{}", prompt);
+        use std::io::Write;
+        std::io::stdout().flush()?;
+        let pin = read_password()?;
+        Ok(pin.trim().to_string())
     }
 }
 
@@ -149,7 +126,6 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let mut reader = PcscReader::new()?;
-    // Retry logic could be added here
     let reader_name = reader.connect()?;
     println!("Connected to reader: {}", reader_name);
 
@@ -157,19 +133,29 @@ async fn main() -> anyhow::Result<()> {
         Commands::Jpki { command } => {
             let mut controller = JpkiController::new(reader);
             match command {
-                JpkiCommands::Info => {
-                    controller.select_jpki_ap().await?;
-                    println!("JPKI AP Selected");
-                    println!("Card is ready.");
+                JpkiCommands::Retries => {
+                    println!("--- JPKI PIN Retry Counts ---");
+                    match controller.get_auth_pin_retries().await {
+                        Ok(c) => println!("Auth PIN (4-digit): {}", if c == 255 { "Verified/Unlimited".into() } else { format!("{}", c) }),
+                        Err(e) => println!("Auth PIN: Error ({})", e),
+                    }
+                    match controller.get_sign_pin_retries().await {
+                        Ok(c) => println!("Sign PIN (6-16 alphanum): {}", if c == 255 { "Verified/Unlimited".into() } else { format!("{}", c) }),
+                        Err(e) => println!("Sign PIN: Error ({})", e),
+                    }
+                    match controller.get_input_support_pin_retries().await {
+                        Ok(c) => println!("Input Support PIN (4-digit): {}", if c == 255 { "Verified/Unlimited".into() } else { format!("{}", c) }),
+                        Err(e) => println!("Input Support PIN: Error ({})", e),
+                    }
                 }
                 JpkiCommands::Cert { type_, output } => {
-                    controller.select_jpki_ap().await?;
-                    if type_ != "auth" {
-                        eprintln!("Only 'auth' certificate is supported in this version.");
-                        return Ok(());
-                    }
-                    println!("Reading Auth certificate...");
-                    let cert_data = controller.read_auth_cert().await?;
+                    let cert_data = if type_ == "sign" {
+                        println!("Reading Signature certificate...");
+                        controller.read_sign_cert().await?
+                    } else {
+                        println!("Reading Auth certificate...");
+                        controller.read_auth_cert().await?
+                    };
                     
                     if let Some(path) = output {
                         fs::write(&path, &cert_data)?;
@@ -178,185 +164,72 @@ async fn main() -> anyhow::Result<()> {
                         println!("Certificate (Hex): {}", hex::encode(&cert_data));
                     }
                 }
-                JpkiCommands::Sign { pin, data, type_ } => {
-                    controller.select_jpki_ap().await?;
+                JpkiCommands::Sign { data, type_, pin } => {
+                    let prompt = if type_ == "sign" { "Enter Sign Password (6-16 chars): " } else { "Enter Auth PIN (4 digits): " };
+                    let pin = get_pin(pin, prompt)?;
                     
-                    if type_ == "sign" {
-                        let ef_pin = [0x00, 0x1B]; // Sign PIN EF
-                        println!("Verifying PIN (Sign)...");
-                        controller.verify_pin(&ef_pin, &pin).await?;
-                        println!("PIN Verified.");
-
-                        println!("Selecting Private Key (Sign)...");
-                        controller.select_sign_private_key().await?;
+                    let sig = if type_ == "sign" {
+                        println!("Computing Digital Signature...");
+                        controller.compute_digital_signature(&pin, data.as_bytes()).await?
                     } else {
-                        // Default to Auth
-                        let ef_pin = [0x00, 0x18]; // Auth PIN EF
-                        println!("Verifying PIN (Auth)...");
-                        controller.verify_pin(&ef_pin, &pin).await?;
-                        println!("PIN Verified.");
-
-                        println!("Selecting Private Key (Auth)...");
-                        controller.select_auth_private_key().await?;
-                    }
-        
-                    let signature = controller.sign_data(data.as_bytes()).await?;
-                    println!("Signature: {}", hex::encode(signature));
+                        println!("Computing Auth Signature...");
+                        controller.compute_auth_signature(&pin, data.as_bytes()).await?
+                    };
+                    println!("Signature (Hex): {}", hex::encode(sig));
                 }
                 JpkiCommands::Mynumber { pin } => {
-                    println!("Reading My Number...");
-                    // select_input_support_ap is called inside read_mynumber
+                    let pin = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
                     let my_number = controller.read_mynumber(&pin).await?;
-                    println!("My Number: {}", my_number);
+                    println!("Individual Number (My Number): {}", my_number);
                 }
-                JpkiCommands::Card { pin } => {
-                    println!("Reading Card Attributes...");
+                JpkiCommands::Card { pin, photo } => {
+                    let pin = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
+                    println!("Reading attributes...");
                     let info = controller.read_attributes(&pin, None, None).await?;
                     println!("{}", info);
+                    
+                    if let Some(photo_path) = photo {
+                        if let Some(b64) = info.face_photo {
+                            let bytes = base64::engine::general_purpose::STANDARD.decode(b64)?;
+                            fs::write(&photo_path, bytes)?;
+                            println!("Photo saved to {}", photo_path);
+                        } else {
+                            println!("Photo data not found or access denied.");
+                        }
+                    }
                 }
             }
         }
         Commands::DriverLicense { command, pin1 } => {
             let mut controller = DriversLicenseController::new(reader);
             controller.select_dl_ap().await?;
-            println!("Driver's License AP Selected");
-            
             if command == "common" {
-                if let Some(p) = pin1 {
-                    controller.verify_pin1(&p).await?;
-                    println!("PIN1 Verified");
-                    let info = controller.read_common_data().await?;
-                    println!("{}", info);
-                } else {
-                    eprintln!("PIN1 is required for common data");
-                }
+                let p = get_pin(pin1, "Enter DL PIN1 (4 digits): ")?;
+                controller.verify_pin1(&p).await?;
+                let info = controller.read_common_data().await?;
+                println!("{}", info);
             } 
         }
         Commands::Passport { mrz } => {
             let mut controller = PassportController::new(reader);
             controller.select_ep_ap().await?;
-            println!("Passport AP Selected");
-            
-            println!("Performing BAC using MRZ: {}...", mrz);
-            // In a real implementation, this would establish session keys
-            // For now, we simulate the check or try to read unrestricted data
-            if let Err(e) = controller.perform_bac(&mrz).await {
-                 eprintln!("BAC Warning: {}", e); 
-                 // We continue, as some data might be readable or we assume open access for PoC
-            }
-
-            println!("Reading Common Data (EF.COM)...");
-            match controller.read_common_data().await {
-                Ok(data) => println!("EF.COM: {}", hex::encode(data)),
-                Err(e) => eprintln!("Failed to read EF.COM: {}", e),
-            }
-
-            println!("Reading DG1 (MRZ)...");
-            match controller.read_dg1().await {
-                 Ok(data) => println!("EF.DG1: {}", hex::encode(data)),
-                 Err(e) => eprintln!("Failed to read DG1: {}", e),
-            }
+            controller.perform_bac(&mrz).await?;
+            println!("DG1 (MRZ): {}", hex::encode(controller.read_dg1().await?));
         }
         Commands::ResidenceCard { number, pin } => {
             let mut controller = ResidenceCardController::new(reader);
             controller.select_rc_ap().await?;
-            println!("Residence Card AP Selected");
-
             if let Some(p) = pin {
-                 println!("Verifying PIN...");
-                 // controller.verify_pin(&p).await?;
-                 println!("(PIN verification logic would go here)");
+                 println!("PIN verification not implemented for RC in this CLI yet.");
             } else {
-                 println!("Using Card Number access: {}...", number);
                  controller.verify_card_number(&number).await?;
-                 println!("Card Number verified (Access Granted).");
-            }
-
-            println!("Reading Residence Card Info...");
-            match controller.read_info().await {
-                Ok(info) => println!("{}", info),
-                Err(e) => eprintln!("Failed to read Info: {}", e),
+                 println!("{}", controller.read_info().await?);
             }
         }
         Commands::Piv => {
             let mut controller = PivController::new(reader);
             controller.select_piv_ap().await?;
-            println!("US PIV AP Selected");
-            
-            println!("Reading CHUID...");
-            match controller.read_chuid().await {
-                 Ok(data) => {
-                     // println!("CHUID Raw: {}", hex::encode(&data));
-                     use civ::piv::ParsingUtils;
-                     if let Some(date) = ParsingUtils::extract_expiry_date(&data) {
-                         println!("Card Expiration Date: {}", date);
-                     } else {
-                         println!("Expiration Date not found in CHUID");
-                     }
-                 },
-                 Err(e) => eprintln!("Failed to read CHUID: {}", e),
-            }
-
-            println!("Reading User Auth Certificate (Key 9A)...");
-            match controller.read_auth_cert().await {
-                Ok(data) => println!("Certificate Data found ({} bytes)", data.len()),
-                Err(e) => eprintln!("Failed to read Cert: {}", e),
-            }
-        }
-        Commands::Myna { command } => {
-            let mut controller = JpkiController::new(reader);
-            match command {
-                MynaCommands::Text { data_type, pin, format } => {
-                     let p = pin.expect("PIN is required for myna commands");
-                     
-                     if data_type == "mynumber" {
-                         let num = controller.read_mynumber(&p).await?;
-                         if format == "json" {
-                             println!(r#"{{"mynumber": "{}"}}"#, num);
-                         } else {
-                             println!("{}", num);
-                         }
-                     } else if data_type == "attr" {
-                         // Text command usually relies on auto-detection or basic 4 info which doesn't need B-Number strictly unless photo is wanted implicitly?
-                         // Actually read_attributes needs B-Number for photo. Basic info is plain text.
-                         // We pass None for now as Text viewing usually doesn't involve manual key input flow for photo.
-                         let info = controller.read_attributes(&p, None, None).await?;
-                         if format == "json" {
-                             let json = serde_json::json!({
-                                 "name": info.name,
-                                 "address": info.address,
-                                 "birth": info.birth_date,
-                                 "sex": info.gender
-                             });
-                             println!("{}", json.to_string());
-                         } else {
-                             println!("氏名: {}", info.name);
-                             println!("住所: {}", info.address);
-                             println!("生年月日: {}", info.birth_date);
-                             println!("性別: {}", info.gender);
-                         }
-                     } else {
-                         eprintln!("Unknown data_type: {}", data_type);
-                     }
-                }
-                MynaCommands::Visual { data_type, pin, output, date, security_code } => {
-                     let p = pin.expect("PIN is required for myna commands");
-                     if data_type == "photo" {
-                         // Pass validation inputs if provided
-                         let info = controller.read_attributes(&p, date.as_deref(), security_code.as_deref()).await?;
-                         if let Some(b64) = info.face_photo {
-                             use base64::Engine;
-                             let bytes = base64::engine::general_purpose::STANDARD.decode(b64)?;
-                             std::fs::write(&output, bytes)?;
-                             println!("Photo saved to {}", output);
-                         } else {
-                             eprintln!("Failed to read photo (or derived key generation failed).");
-                         }
-                     } else {
-                         eprintln!("Unknown data_type: {}", data_type);
-                     }
-                }
-            }
+            println!("CHUID: {}", hex::encode(controller.read_chuid().await?));
         }
     }
 
