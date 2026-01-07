@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.3] - 2026-01-08
+
+### Features
+- **JPDL (Drivers License)**:
+  - **Full Support**: Implemented `DriversLicenseController` for reading Text, Photo, and Conditions.
+  - **Encoding**: Proper **Shift-JIS (CP932)** decoding including Gaiji placeholders.
+  - **Security**: Added support for **PIN 1** (Common) and **PIN 2** (Sensitive/Honseki) verification.
+  - **Photo**: Implemented JPEG2000 extraction from `DF2`.
+- **JPRC (Residence Card)**:
+  - **Full Support**: Implemented `ResidenceCardController` targeting `DF2` (Address/Permits) and `DF1` (Photo).
+  - **Encoding**: **UTF-8** parsing for address and permit fields.
+- **Refactor**:
+  - Renamed modules to `jpdl` and `jprc` for better internationalization readiness.
+  - Standardized APDU logic across all card types.
+
 ## [0.3.2] - 2026-01-07
 
 ### Features

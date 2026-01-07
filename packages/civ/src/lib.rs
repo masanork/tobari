@@ -1,12 +1,13 @@
 pub mod apdu;
 pub mod crypto;
 pub mod jpki;
-pub mod drivers_license;
+pub mod jpdl;
 pub mod passport;
 pub mod passport_verify;
-pub mod residence_card;
+pub mod jprc;
 pub mod piv;
 pub mod eu_eid;
+pub mod demo_reader;
 pub mod reader;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native_reader;
@@ -23,10 +24,10 @@ pub mod test_utils;
 pub use apdu::ApduCommand;
 pub use reader::CardReader;
 pub use jpki::JpkiController;
-pub use drivers_license::DriversLicenseController;
+pub use jpdl::DriversLicenseController;
 pub use passport::PassportController;
 pub use passport_verify::PassportVerifier;
-pub use residence_card::ResidenceCardController;
+pub use jprc::ResidenceCardController;
 pub use piv::PivController;
 pub use eu_eid::EuIdController;
 
