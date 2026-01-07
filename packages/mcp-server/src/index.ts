@@ -24,6 +24,7 @@ import {
     handleSignWithWebAuthn,
     handleRegisterWebAuthn
 } from "./tools/webauthn.js";
+import { handleStartDemoServer } from "./tools/demo_submission.js";
 
 const server = new Server(
     {
@@ -267,6 +268,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     },
                     required: ["pin"]
                 }
+            },
+            {
+                name: "start_demo_server",
+                description: "Starts a local demo server (submission portal) on port 22081. This server accepts VP submissions and displays a 'Success' screen. Returns the server URL.",
+                inputSchema: {
+                    type: "object",
+                    properties: {}
+                }
             }
         ],
     };
@@ -300,6 +309,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleReadBasicInfo(request.params.arguments);
         case "read_photo":
             return handleReadPhoto(request.params.arguments);
+        case "start_demo_server":
+            return handleStartDemoServer(request.params.arguments);
         default:
             throw new Error(`Tool not found: ${request.params.name}`);
     }

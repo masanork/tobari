@@ -93,3 +93,5 @@ export const ReadPhotoSchema = z.object({
     pin: z.string().describe("Card PIN code for visual verification (4 digits)"),
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
 });
+
+export const StartDemoServerSchema = z.object({});
