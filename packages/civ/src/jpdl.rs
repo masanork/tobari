@@ -17,22 +17,38 @@ pub struct LicenseInfo {
     pub license_number: String,
     pub issue_date: String,
     pub expire_date: String,
+    pub conditions: Vec<String>,
+    pub color_class: String,
+    pub registered_domicile: Option<String>, // Honseki
 }
 
 impl fmt::Display for LicenseInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "License Info:\n Name: {} ({})\n Address: {}\n DOB: {}\n No: {}\n Expires: {}", 
-            self.name, self.name_kana, self.address, self.birth_date, self.license_number, self.expire_date)
+        write!(f, "License Info:\n Name: {} ({})\n Address: {}\n DOB: {}\n No: {}\n Expires: {}\n Color: {}\n Conditions: {:?}\n Honseki: {:?}", 
+            self.name, self.name_kana, self.address, self.birth_date, self.license_number, self.expire_date, self.color_class, self.conditions, self.registered_domicile)
     }
 }
 
 pub mod file_ids {
+    // DF1: Common Data
     pub const DF_DL: [u8; 16] = [
         0xA0, 0x00, 0x00, 0x02, 0x31, 0x01, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     ];
-    pub const EF_COMMON_DATA: [u8; 2] = [0x00, 0x01]; // EF01
-    pub const EF_SENSITIVE_DATA: [u8; 2] = [0x00, 0x02]; // EF02
+    // DF2: Photo Data
+    pub const DF_DL_PHOTO: [u8; 16] = [
+        0xA0, 0x00, 0x00, 0x02, 0x31, 0x02, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ];
+
+    pub const EF_COMMON_DATA: [u8; 2] = [0x00, 0x01]; // EF01: Main Info
+    pub const EF_HONSEKI: [u8; 2] = [0x00, 0x02];     // EF02: Registered Domicile
+    pub const EF_GAIJI: [u8; 2] = [0x00, 0x03];       // EF03: External Chars
+    pub const EF_CONDITIONS: [u8; 2] = [0x00, 0x04];  // EF04: Condition Changes
+    pub const EF_SIGNATURE: [u8; 2] = [0x00, 0x07];   // EF07: Digital Signature
+    
+    // In DF2
+    pub const EF_PHOTO: [u8; 2] = [0x00, 0x01];       // EF01: Photo (JPEG2000)
 }
 
 impl<R: CardReader> DriversLicenseController<R> {
@@ -49,9 +65,17 @@ impl<R: CardReader> DriversLicenseController<R> {
         Self::check_sw(&res).context("Failed to select DL AP")
     }
 
+    /// Select Driver's License Photo Application (DF2)
+    pub async fn select_dl_photo_ap(&mut self) -> Result<()> {
+        let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C)
+            .with_data(&file_ids::DF_DL_PHOTO);
+        
+        let res = self.reader.transmit(&apdu.to_bytes()).await?;
+        Self::check_sw(&res).context("Failed to select DL Photo AP")
+    }
+
     /// Verify PIN (PIN1 or PIN2)
-    /// Usually PIN1 for Common Data, PIN2 for Sensitive Data.
-    /// Implementation detail: The exact command depends on the card profile (often 00 20 00 80).
+    /// Uses P2=0x80 (Password for current DF context)
     pub async fn verify_pin(&mut self, pin: &str) -> Result<()> {
         let pin_bytes = pin.as_bytes();
         let apdu = ApduCommand::new(CLA_ISO, INS_VERIFY, 0x00, 0x80)
@@ -61,8 +85,13 @@ impl<R: CardReader> DriversLicenseController<R> {
         Self::check_sw(&res).context("PIN Verification Failed")
     }
 
-    /// Alias for PIN1 Verification
+    /// Verify PIN1 (Common Data Access)
     pub async fn verify_pin1(&mut self, pin: &str) -> Result<()> {
+        self.verify_pin(pin).await
+    }
+
+    /// Verify PIN2 (Sensitive Data Access: Honseki, Photo)
+    pub async fn verify_pin2(&mut self, pin: &str) -> Result<()> {
         self.verify_pin(pin).await
     }
 
@@ -75,40 +104,75 @@ impl<R: CardReader> DriversLicenseController<R> {
     
     // Internal parser
     fn parse_common_data(&self, data: &[u8]) -> Result<LicenseInfo> {
-        // Tag definitions from NPA format (approx):
-        // 0x11: Name
-        // 0x12: Kana
-        // 0x13: Birth Date
-        // 0x14: Address
-        // 0x15: Issue Date
-        // 0x16: Inquiry Number
-        // 0x17: License Number
-        // 0x18: Expiry Date
-        // ... conditions ...
-
-        use crate::utils::{parse_tlv_flat, decode_shift_jis_lossy_gaiji};
-        let tlvs = parse_tlv_flat(data);
+        use crate::utils::{parse_ber_tlv, decode_shift_jis_lossy_gaiji};
+        let tlvs = parse_ber_tlv(data);
         let mut info = LicenseInfo::default();
 
         for tlv in tlvs {
             match tlv.tag {
-                0x11 => info.name = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x12 => info.name_kana = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x13 => info.birth_date = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x14 => info.address = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x15 => info.issue_date = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x17 => info.license_number = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x18 => info.expire_date = decode_shift_jis_lossy_gaiji(&tlv.value),
-                _ => {} // Ignore others for now
+                0x11 => info.name = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x12 => info.name_kana = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x13 => info.birth_date = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x14 => info.address = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x15 => info.issue_date = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x17 => info.license_number = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x18 => info.expire_date = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x1A => info.color_class = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x1C..=0x1F => {
+                    let cond = decode_shift_jis_lossy_gaiji(tlv.value);
+                    if !cond.trim().is_empty() {
+                        info.conditions.push(cond);
+                    }
+                }
+                _ => {} 
             }
         }
         Ok(info)
     }
 
-    /// Read Sensitive Data (EF02) - Domicile, Photo
-    /// Requires PIN 2 verification beforehand.
-    pub async fn read_sensitive_data(&mut self) -> Result<Vec<u8>> {
-        self.read_file(&file_ids::EF_SENSITIVE_DATA).await
+    /// Read Registered Domicile (Honseki) - EF02
+    /// Requires PIN 1 & PIN 2 verification.
+    pub async fn read_registered_domicile(&mut self) -> Result<String> {
+        let raw = self.read_file(&file_ids::EF_HONSEKI).await?;
+        // Parse TLV tag 0x41
+        use crate::utils::{parse_ber_tlv, decode_shift_jis_lossy_gaiji};
+        let tlvs = parse_ber_tlv(&raw);
+        for tlv in tlvs {
+            if tlv.tag == 0x41 {
+                return Ok(decode_shift_jis_lossy_gaiji(tlv.value));
+            }
+        }
+        Ok("".to_string())
+    }
+
+    /// Read Digital Signature (EF07)
+    /// Requires PIN 1.
+    pub async fn read_signature(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_SIGNATURE).await
+    }
+
+    /// Read Face Photo (DF2/EF01) - JPEG2000
+    /// Requires PIN 1 & PIN 2. Must select DF2 first.
+    pub async fn read_photo(&mut self) -> Result<Vec<u8>> {
+        self.select_dl_photo_ap().await?;
+        
+        let raw = self.read_file(&file_ids::EF_PHOTO).await?;
+        
+        // Parse TLV Tag 0x5F40
+        use crate::utils::parse_ber_tlv;
+        let tlvs = parse_ber_tlv(&raw);
+        for tlv in tlvs {
+            if tlv.tag == 0x5F40 {
+                return Ok(tlv.value.to_vec());
+            }
+        }
+        
+        // Fallback: search for JPEG2000 header (FF 4F)
+        if let Some(start) = raw.windows(2).position(|w| w == [0xFF, 0x4F]) {
+             return Ok(raw[start..].to_vec());
+        }
+        
+        Ok(Vec::new()) 
     }
 
     /// Helper to Select EF and Read Binary
@@ -147,9 +211,6 @@ impl<R: CardReader> DriversLicenseController<R> {
             }
 
             if sw1 == 0x90 && sw2 == 0x00 {
-                // If we got less than requested max (256), we are likely done, 
-                // but strictly we should check if we hit EOF. 
-                // Simple logic: if chunk < 256, EOF.
                 if chunk.len() < 256 {
                     break;
                 }
@@ -207,7 +268,7 @@ mod tests {
         // 1. select EF01
         reader.push_response(&[0x90, 0x00]);
         // 2. read binary
-        // "外務 太郎" in Shift-JIS: 8a 4f 96 b1 20 91 be 98 59
+        // Tag 0x11: "外務 太郎" in Shift-JIS: 8a 4f 96 b1 20 91 be 98 59
         let name_bytes = [0x8a, 0x4f, 0x96, 0xb1, 0x20, 0x91, 0xbe, 0x98, 0x59];
         let mut mock_data = vec![0x11, name_bytes.len() as u8];
         mock_data.extend_from_slice(&name_bytes);
@@ -216,7 +277,11 @@ mod tests {
         mock_data.extend_from_slice(&[0x13, 8, b'1', b'9', b'8', b'0', b'0', b'1', b'0', b'1']);
         // Tag 0x17: License No
         mock_data.extend_from_slice(&[0x17, 12, b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0', b'1', b'2']);
-        
+        // Tag 0x1A: Color "優良" (Shift-JIS: 97 44 97 C7)
+        mock_data.extend_from_slice(&[0x1A, 4, 0x97, 0x44, 0x97, 0xC7]);
+        // Tag 0x1C: Condition "眼鏡等" (Shift-JIS: 8a e1 8b be 93 99)
+        mock_data.extend_from_slice(&[0x1C, 6, 0x8a, 0xe1, 0x8b, 0xbe, 0x93, 0x99]);
+
         mock_data.extend_from_slice(&[0x90, 0x00]);
         reader.push_response(&mock_data);
 
@@ -225,6 +290,35 @@ mod tests {
         let info = res.unwrap();
         
         assert_eq!(info.name, "外務 太郎");
+        assert_eq!(info.color_class, "優良");
+        assert_eq!(info.conditions.len(), 1);
+        assert_eq!(info.conditions[0], "眼鏡等");
+    }
+
+    #[tokio::test]
+    async fn test_read_photo() {
+        let reader = TestReader::new();
+        let mut controller = DriversLicenseController::new(reader.clone());
+
+        // 1. Select DF2
+        reader.push_response(&[0x90, 0x00]);
+        // 2. Select EF01 (Photo)
+        reader.push_response(&[0x90, 0x00]);
+        // 3. Read Binary (Mock JPEG2000 data wrapped in TLV 5F40)
+        // Tag 5F 40 is 2 bytes. Our parser handles it if it's just bytes. 
+        // Mocking a simple byte sequence containing FF 4F (SOC)
+        let mut mock_photo = vec![0x5F, 0x40, 0x05, 0xFF, 0x4F, 0xFF, 0x51, 0x00];
+        mock_photo.extend_from_slice(&[0x90, 0x00]);
+        reader.push_response(&mock_photo);
+
+        let res = controller.read_photo().await;
+        assert!(res.is_ok());
+        let photo = res.unwrap();
+        // The simplistic logic in read_photo might try TLV first. 
+        // If it fails TLV (because 5F 40 is split), it falls back to finding FF 4F.
+        // Let's verify it extracted the JPEG2000 data starting with FF 4F.
+        assert_eq!(photo[0], 0xFF);
+        assert_eq!(photo[1], 0x4F);
     }
 
     #[tokio::test]

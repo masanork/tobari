@@ -1,4 +1,4 @@
-# Myna Card (Individual Number Card) Technical Specification
+# JPKI (My Number Card) APDU specs
 
 ## 1. System Overview
 - **Standards:** ISO/IEC 14443 Type B (NFC), ISO/IEC 7816-4 (APDU)
@@ -131,7 +131,16 @@ Stored in `EF 00 02` of `Surface-AP`.
    - `6B 00`: Wrong Parameter (Offset out of range / EOF)
    - `6D 00`: INS invalid (Check CLA `00` vs `80`)
 
-## 8. Reference
+## 8. Codes & Values
+
+### 8.1 Gender Codes (JIS X 0401)
+Used in **Basic 4 Info** (Card-AP `00 02`, Surface-AP `00 01`).
+- `1`: Male
+- `2`: Female
+- `0`: Unknown
+- `9`: Other
+
+## 9. Reference
 
 - [myna - マイナンバーカード・ユーティリティ](https://github.com/jpki/myna)
 - [OSSTech Corp / libjeid-android-app](https://github.com/OSSTech-jp/libjeid-android-app)

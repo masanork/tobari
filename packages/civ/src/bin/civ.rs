@@ -1,7 +1,9 @@
 #[cfg(not(target_arch = "wasm32"))]
 use clap::{Parser, Subcommand};
 #[cfg(not(target_arch = "wasm32"))]
-use civ::{JpkiController, PcscReader};
+use civ::{JpkiController, PcscReader, CardReader};
+#[cfg(not(target_arch = "wasm32"))]
+use civ::demo_reader::DemoReader;
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
@@ -14,6 +16,10 @@ use rpassword::read_password;
 #[command(name = "civ")]
 #[command(about = "CIV (Citizen Identity Verification) CLI Tool", long_about = None)]
 struct Cli {
+    /// Use demo/mock reader instead of real card reader
+    #[arg(long, global = true)]
+    demo: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -48,9 +54,15 @@ enum JpkiCommands {
     /// Sign data
     #[command(name = "sign")]
     Sign {
-        /// Data to sign
+        /// Data to sign (string)
+        #[arg(short, long, group = "input")]
+        data: Option<String>,
+        /// Input file path
+        #[arg(short, long, group = "input")]
+        input: Option<String>,
+        /// Output file path (optional, default stdout hex)
         #[arg(short, long)]
-        data: String,
+        output: Option<String>,
         /// Type: auth or sign
         #[arg(short, long, default_value = "auth")]
         type_: String,
@@ -64,6 +76,9 @@ enum JpkiCommands {
         /// PIN (4 digits)
         #[arg(short, long, env = "JPKI_PIN")]
         pin: Option<String>,
+        /// Output JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Read Attributes and Photo
     #[command(name = "attr")]
@@ -74,12 +89,9 @@ enum JpkiCommands {
         /// Save photo
         #[arg(long)]
         photo: Option<String>,
-        /// Expiration Date (YYYYMMDD)
+        /// Output JSON
         #[arg(long)]
-        exp: Option<String>,
-        /// Security Code (4 digits)
-        #[arg(long)]
-        sc: Option<String>,
+        json: bool,
     },
 }
 
@@ -97,79 +109,122 @@ fn get_pin(provided: Option<String>, prompt: &str) -> anyhow::Result<String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+async fn run_jpki<R: CardReader>(mut controller: JpkiController<R>, command: JpkiCommands) -> anyhow::Result<()> {
+    match command {
+        JpkiCommands::Retries => {
+            println!("--- PIN Retry Counts ---");
+            let _ = controller.get_auth_pin_retries().await.map(|c| println!("Auth PIN: {}", c));
+            let _ = controller.get_sign_pin_retries().await.map(|c| println!("Sign PIN: {}", c));
+            let _ = controller.get_input_support_pin_retries().await.map(|c| println!("Input Support: {}", c));
+            let _ = controller.get_surface_pin_retries().await.map(|c| println!("Surface PIN (12-digit): {}", c));
+        }
+        JpkiCommands::Cert { type_, output } => {
+            let data = if type_ == "sign" { controller.read_sign_cert().await? } else { controller.read_auth_cert().await? };
+            if let Some(p) = output { fs::write(p, &data)?; } else { println!("Hex: {}", hex::encode(data)); }
+        }
+        JpkiCommands::Sign { data, input, output, type_, pin } => {
+            let prompt = if type_ == "sign" { "Sign Pass: " } else { "Auth PIN: " };
+            let p = get_pin(pin, prompt)?;
+            
+            let data_bytes = if let Some(d) = data {
+                d.as_bytes().to_vec()
+            } else if let Some(path) = input {
+                fs::read(path)?
+            } else {
+                return Err(anyhow::anyhow!("Either --data or --input context is required"));
+            };
+
+            let sig = if type_ == "sign" { 
+                controller.compute_digital_signature(&p, &data_bytes).await? 
+            } else { 
+                controller.compute_auth_signature(&p, &data_bytes).await? 
+            };
+            
+            if let Some(out_path) = output {
+                fs::write(out_path, &sig)?;
+            } else {
+                println!("Signature: {}", hex::encode(sig));
+            }
+        }
+        JpkiCommands::Mynumber { pin, json } => {
+            let p = get_pin(pin, "PIN: ")?;
+            let num = controller.read_mynumber(&p).await?;
+            if json {
+                println!("{}", serde_json::json!({ "mynumber": num }));
+            } else {
+                println!("MyNumber: {}", num);
+            }
+        }
+        JpkiCommands::Card { pin, photo, json } => {
+            let p = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
+            let mut info = controller.read_attributes(&p).await?;
+            
+            // Try to get photo if requested or if json output (to serialize it)
+            // Wait, getting photo requires My Number (Surface PIN).
+            // BasicInfo has `face_photo` field.
+            if photo.is_some() || json {
+                // We need My Number to get photo
+                 match controller.read_mynumber(&p).await {
+                    Ok(num) => {
+                         // Check retries first? JpkiController.read_face_photo checks PIN.
+                         // But we should be careful about retries.
+                         match controller.get_surface_pin_retries().await {
+                             Ok(retries) => {
+                                 if retries > 3 || retries == 255 {
+                                     // println!("Retrieving photo..."); // Quiet for JSON?
+                                     // For JSON we want to suppress logs?
+                                     // But error logs are important.
+                                     match controller.read_face_photo(&num).await {
+                                         Ok(data) => {
+                                             info.face_photo = Some(base64::engine::general_purpose::STANDARD.encode(data));
+                                         }
+                                         Err(e) => {
+                                             if !json { eprintln!("Warning: Photo extraction failed: {}", e); }
+                                         }
+                                     }
+                                 } else {
+                                     if !json { eprintln!("Warning: Surface PIN constrained. Skipping photo."); }
+                                 }
+                             }
+                             Err(_) => {}
+                         }
+                    }
+                    Err(_) => {
+                        // Ignore if we can't get my number
+                    }
+                 }
+            }
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&info)?);
+            } else {
+                println!("\n{}", info);
+            }
+
+            if let (Some(path), Some(b64)) = (photo, info.face_photo) {
+                fs::write(path, base64::engine::general_purpose::STANDARD.decode(b64)?)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let mut reader = PcscReader::new()?;
-    let _ = reader.connect()?;
 
     match cli.command {
         Commands::Jpki { command } => {
-            let mut controller = JpkiController::new(reader);
-            match command {
-                JpkiCommands::Retries => {
-                    println!("--- PIN Retry Counts ---");
-                    let _ = controller.get_auth_pin_retries().await.map(|c| println!("Auth PIN: {}", c));
-                    let _ = controller.get_sign_pin_retries().await.map(|c| println!("Sign PIN: {}", c));
-                    let _ = controller.get_input_support_pin_retries().await.map(|c| println!("Input Support: {}", c));
-                    let _ = controller.get_surface_pin_retries().await.map(|c| println!("Surface PIN (12-digit): {}", c));
-                }
-                JpkiCommands::Cert { type_, output } => {
-                    let data = if type_ == "sign" { controller.read_sign_cert().await? } else { controller.read_auth_cert().await? };
-                    if let Some(p) = output { fs::write(p, &data)?; } else { println!("Hex: {}", hex::encode(data)); }
-                }
-                JpkiCommands::Sign { data, type_, pin } => {
-                    let prompt = if type_ == "sign" { "Sign Pass: " } else { "Auth PIN: " };
-                    let p = get_pin(pin, prompt)?;
-                    let sig = if type_ == "sign" { controller.compute_digital_signature(&p, data.as_bytes()).await? } else { controller.compute_auth_signature(&p, data.as_bytes()).await? };
-                    println!("Signature: {}", hex::encode(sig));
-                }
-                JpkiCommands::Mynumber { pin } => {
-                    let p = get_pin(pin, "PIN: ")?;
-                    println!("MyNumber: {}", controller.read_mynumber(&p).await?);
-                }
-                JpkiCommands::Card { pin, photo, exp: _, sc: _ } => {
-                    let p = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
-                    let my_number = match controller.read_mynumber(&p).await {
-                        Ok(num) => Some(num),
-                        Err(e) => {
-                            if photo.is_some() { println!("Warning: Failed to retrieve My Number (needed for photo): {}", e); }
-                            None
-                        }
-                    };
-                    let mut info = controller.read_attributes(&p).await?;
-                    
-                    if photo.is_some() {
-                        let mut photo_data = None;
-                        if let Some(ref num) = my_number {
-                            match controller.get_surface_pin_retries().await {
-                                Ok(retries) => {
-                                    if retries > 3 || retries == 255 {
-                                        println!("Attempting photo extraction via Surface PIN (My Number)...");
-                                        match controller.read_face_photo(num).await {
-                                            Ok(data) => photo_data = Some(data),
-                                            Err(e) => println!("Error: Photo extraction failed: {}", e),
-                                        }
-                                    } else {
-                                        println!("Warning: Surface PIN has only {} retries left. Skipping photo extraction for safety.", retries);
-                                    }
-                                }
-                                Err(e) => println!("Error: Failed to check Surface PIN status: {}", e),
-                            }
-                        } else {
-                            println!("Skipping photo extraction: My Number not available.");
-                        }
-                        
-                        if let Some(data) = photo_data {
-                            println!("Photo retrieved successfully!");
-                            info.face_photo = Some(base64::engine::general_purpose::STANDARD.encode(data));
-                        }
-                    }
-                    println!("\n{}", info);
-                    if let (Some(path), Some(b64)) = (photo, info.face_photo) {
-                        fs::write(path, base64::engine::general_purpose::STANDARD.decode(b64)?)?;
-                    }
-                }
+            if cli.demo {
+                let reader = DemoReader::new();
+                let controller = JpkiController::new(reader);
+                run_jpki(controller, command).await?;
+            } else {
+                let mut reader = PcscReader::new()?;
+                let _ = reader.connect()?;
+                let controller = JpkiController::new(reader);
+                run_jpki(controller, command).await?;
             }
         }
     }

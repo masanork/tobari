@@ -3,12 +3,20 @@
 A unified Rust library for accessing and verifying various Citizen Identity Cards.
 Hardware access is powered by PC/SC (Native) or WebUSB (Web).
 
-## [Status Update] 2026-01-07
+## [Status Update] 2026-01-08
 - **JPKI (My Number Card)**: 
     - ✅ **Working**: Basic 4 Info (Name, Addr, DOB, Gender) and My Number retrieval.
     - ✅ **Working**: User Authentication and Digital Signature generation.
     - ✅ **Working**: PIN Retry count monitoring for all PIN types.
     - ✅ **Working**: **Face Photo** retrieval via Surface-AP.
+- **JPDL (Drivers License)**:
+    - ✅ **Working**: Text Data (Shift-JIS/JIS X 0208) including Name, Address, Conditions.
+    - ✅ **Working**: PIN 1 & PIN 2 Verification (Authentication).
+    - ✅ **Working**: **Face Photo** retrieval (JPEG2000 from DF2).
+    - ✅ **Working**: Registered Domicile (Honseki) retrieval.
+- **JPRC (Residence Card)**:
+    - ✅ **Working**: Address and Permit Info (UTF-8).
+    - ✅ **Working**: **Face Photo** retrieval.
 - **Hardware**: Confirmed working with ACS ACR39U and similar PC/SC Type-B readers on macOS.
 
 ---
@@ -45,7 +53,9 @@ cargo run -- jpki sign --type sign --data "document_hash"
 
 ## 📚 Technical Documentation
 
-- [docs/mynacard.md](docs/mynacard.md): Compact technical specification (AIDs, FIDs, APDUs).
+- [docs/jpki.md](docs/jpki.md): JPKI (My Number Card) Specification.
+- [docs/jpdl.md](docs/jpdl.md): Drivers License Specification.
+- [docs/jprc.md](docs/jprc.md): Residence Card Specification.
 - [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md): Detailed progress report by card type.
 - [docs/ROADMAP.md](docs/ROADMAP.md): Future plans for the CIV library.
 
