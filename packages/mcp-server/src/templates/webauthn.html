@@ -210,6 +210,14 @@
             statusDiv.textContent = 'Done. You can close this tab.';
             mainBtn.style.display = 'none';
             switchBtn.style.display = 'none';
+            // Attempt to close the window
+            setTimeout(() => { 
+                window.close(); 
+                // Fallback message if close fails
+                if (!window.closed) {
+                     statusDiv.textContent = 'Done. Please close this tab manually.';
+                }
+            }, 1000);
         }
 
         mainBtn.addEventListener('click', handleAction);
