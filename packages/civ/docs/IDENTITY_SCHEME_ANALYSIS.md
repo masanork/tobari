@@ -42,6 +42,7 @@ The transition of cryptographic standards in ID cards reflects the global race a
 
 ### Phase 1: RSA 1024 / TDES (2000s - Early 2010s)
 *   **Standards:** RSA 1024-bit for signatures, 3DES for encryption. SHA-1 for hashing.
+*   **Japan (Juki-Card):** Basic Resident Registry Card (valid until 2025) used RSA 1024.
 *   **Estonia (EstEID):** First generation (2002-2011) used RSA 1024.
 *   **Malaysia (MyKad):** Introduced in 2001, updated to 64kb PKI in 2002.
 *   **ICAO:** BAC (Basic Access Control) established using 3DES.
@@ -49,13 +50,14 @@ The transition of cryptographic standards in ID cards reflects the global race a
 
 ### Phase 2: RSA 2048 / SHA-256 (2010s - Present)
 *   **Standards:** RSA 2048-bit becomes the baseline. SHA-256 replaces SHA-1.
-*   **Japan (JPKI):** Current specification uses RSA 2048 for User Auth and Signatures.
+*   **Japan (JPKI):** Current My Number Card (since 2016) uses RSA 2048.
 *   **Estonia (EstEID):** Migrated to RSA 2048 in 2011. (Note: 2014-2017 Infineon chips suffered ROCA vulnerability).
 *   **USA (PIV):** Mandated RSA 2048 (or higher).
 *   **Status:** **Current Standard**, but facing deprecation by 2030 (NIST).
 
 ### Phase 3: ECC / AES (Late 2010s - Present)
 *   **Standards:** Elliptic Curve Cryptography (P-256, P-384, Brainpool). AES-128/256 for encryption.
+*   **Japan (Next-Gen JPKI):** Planned for 2026 introduction, aiming for mass adoption by 2030. Will use **ECC P-384**.
 *   **Estonia (EstEID):** Transitioned to **ECC P-384** in 2018 (post-ROCA).
 *   **ICAO:** **PACE** protocol uses ECC (ECDH) for strong session keys. Mandatory for EU eIDs from 2021.
 *   **USA (PIV):** Prefers ECC P-256/P-384 for new authentication keys.
@@ -64,7 +66,7 @@ The transition of cryptographic standards in ID cards reflects the global race a
 ### Phase 4: Post-Quantum Cryptography (Future)
 *   **Standards:** Lattice-based cryptography (Kyber/ML-KEM, Dilithium/ML-DSA).
 *   **Germany:** Conducting **PQC PoC** for eID cards (2024+).
-*   **USA:** NIST roadmap mandates deprecation of classical RSA/ECC by **2035**.
+*   **USA (PIV):** NIST and DHS are actively piloting PQC for PIV cards (FIPS 204/205 integration).
 *   **Challenge:** Large key sizes require Extended Length APDUs and faster hardware interfaces (VHBR).
 
 ---
@@ -76,8 +78,8 @@ Comparing the migration timelines reveals significant regional disparities.
 | Algorithm Transition | Estonia (EstEID) | USA (PIV) | EU (eID/Passport) | Japan (JPKI) | Lag (Japan vs Leaders) |
 |---|---|---|---|---|---|
 | **RSA 1024 → 2048** | 2011 | 2013 (FIPS 201-2) | ~2010-2012 | 2016 (My Number Card) | **3-5 Years** |
-| **RSA → ECC** | 2018 (Gen 3) | 2013 (Option) | 2021 (Mandatory) | ~2026 (Planned) | **5-8 Years** |
-| **PQC (Post-Quantum)**| Watching | 2035 (Target) | 2024 (German Pilot) | TBD | **Unknown** |
+| **RSA → ECC** | 2018 (Gen 3) | 2013 (Option) | 2021 (Mandatory) | ~2030 (Next-Gen) | **5-8 Years** |
+| **PQC (Post-Quantum)**| Watching | **Piloting** | 2024 (German Pilot) | TBD | **Unknown** |
 
 ### 5.1. The "Japan Lag" Hypothesis
 There is a concern that Japan is "10 years behind." The data suggests a **5-8 year lag** in adopting the latest cryptographic primitives (ECC), rather than a full decade.
@@ -117,12 +119,29 @@ PIV is a robust standard (FIPS 201).
 - **Observation:** Widely used in government/defense.
 - **Civ Action:** `PivController` is a high-value addition for enterprise/gov use cases.
 
+### 6.5. USA (PIV) - Post-Quantum Transition (PQC4PIV)
+The US is leading the PQC standardization for ID cards. While the algorithms are finalized (FIPS 204/205), the card specification is currently in **Draft (NIST SP 800-73-5 Revision)**.
+
+*   **Primary Algorithms:**
+    *   **ML-DSA (Module-Lattice-Based Digital Signature):** Derived from **CRYSTALS-Dilithium**. Primary candidate for document signing and authentication due to balanced speed and key size.
+    *   **SLH-DSA (Stateless Hash-Based Digital Signature):** Derived from **SPHINCS+**. Secondary candidate, offering conservative security based on hash functions but with larger signatures.
+*   **Draft Specifications (SP 800-73-5):**
+    *   **New Key Types:** Defining new Algorithm Identifiers (OIDs) for ML-DSA-44/65/87.
+    *   **Hybrid Credentials:** A transition strategy allowing a single PIV card to host both classical (RSA/ECC) and PQC certificates to ensure backward compatibility.
+    *   **Hardware Challenges:**
+        *   **Key Size:** PQC keys (esp. Dilithium) are significantly larger than RSA/ECC.
+        *   **Transmission:** Requires robust support for **Extended Length APDUs** (up to 32KB/64KB) to read certificates and signatures efficiently. While JPKI already utilizes Extended Length for photo and certificate retrieval, PQC payloads may push these limits further.
+        *   **Bus Speed:** Pushing for **VHBR (Very High Bit Rate)** protocols to reduce transaction times for large data payloads.
+
+**Civ Implementation Strategy:**
+Verify and harden **Extended Length APDU** support. Although `civ`'s APDU builder seemingly handles variable lengths, PQC's data sizes might exceed standard buffer limits or require specific T=1 protocol optimizations (chaining) that need explicit testing against next-gen card specs.
+
 ## 7. Summary Timeline
 
 | Era | Crypto | Representative Schemes | Civ Support |
-|---|---|---|---|
-| **2000-2010** | RSA 1024, 3DES, SHA-1 | EstEID (Gen1), MyKad (Gen1), ICAO BAC | Legacy (BAC supported) |
-| **2011-2015** | RSA 2048, SHA-256 | EstEID (Gen2), US PIV (RSA), **Juki-Card (Legacy)** | **Good** |
++|---|---|---|---|
+| **2000-2010** | RSA 1024, 3DES, SHA-1 | EstEID (Gen1), MyKad (Gen1), ICAO BAC, **Juki-Card** | Legacy (BAC supported) |
+| **2011-2015** | RSA 2048, SHA-256 | EstEID (Gen2), US PIV (RSA) | **Good** |
 | **2016-2020** | RSA 2048, SHA-256 | **JPKI (Current)**, ICAO PACE (Early) | **Good (JPKI)** |
 | **2021-2025** | ECC P-256/384, AES | **EU eID (PACE)**, EstEID (Gen3), US PIV (ECC) | **Needs PACE** |
-| **2026+** | PQC (Kyber), Next-Gen ECC | German PQC Pilot, **Next-Gen JPKI** | Future Research |
+| **2026+** | PQC (Kyber), ECC Hybrid | German PQC Pilot, **US PIV (PQC Pilot)** | Future Research |
