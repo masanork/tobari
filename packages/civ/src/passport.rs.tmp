@@ -1,0 +1,17 @@
+    /// Perform Passive Authentication (PA) for all read Data Groups.
+    /// This verifies that the Data Groups match the signed hashes in EF.SOD.
+    pub async fn verify_passive_authentication(&mut self, dgs: &HashMap<u8, Vec<u8>>) -> Result<()> {
+        let sod_data = self.read_sod().await?;
+        let verifier = crate::passport_verify::PassportVerifier::new();
+        let sod = verifier.parse_sod(&sod_data)?;
+
+        // Verify each DG provided in the map
+        for (&dg_num, content) in dgs {
+            verifier.verify_data_group(&sod, dg_num, content)?;
+        }
+
+        // Full PA including certificate validation
+        verifier.verify_passive_authentication(&sod)?;
+
+        Ok(())
+    }

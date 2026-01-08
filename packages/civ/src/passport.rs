@@ -1,6 +1,7 @@
 use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_GET_CHALLENGE, INS_EXTERNAL_AUTHENTICATE, INS_INTERNAL_AUTHENTICATE};
 use crate::reader::CardReader;
 use crate::crypto::bac::BacSession;
+use std::collections::HashMap;
 use crate::crypto::sm::{AesSecureMessaging, SecureMessagingSession};
 use crate::crypto::pace::{PaceP256, PaceMappingType, derive_session_keys_sha256};
 use crate::errors::{Result, CivError};
@@ -223,6 +224,24 @@ impl<R: CardReader> PassportController<R> {
     pub async fn read_dg15(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG15).await }
     pub async fn read_sod(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_SOD).await }
 
+    /// Perform Passive Authentication (PA) for all read Data Groups.
+    /// This verifies that the Data Groups match the signed hashes in EF.SOD.
+    pub async fn verify_passive_authentication(&mut self, dgs: &HashMap<u8, Vec<u8>>) -> Result<()> {
+        let sod_data = self.read_sod().await?;
+        let verifier = crate::passport_verify::PassportVerifier::new();
+        let sod = verifier.parse_sod(&sod_data)?;
+
+        // Verify each DG provided in the map
+        for (&dg_num, content) in dgs {
+            verifier.verify_data_group(&sod, dg_num, content)?;
+        }
+
+        // Full PA including certificate validation
+        verifier.verify_passive_authentication(&sod)?;
+
+        Ok(())
+    }
+
     pub(crate) async fn read_file(&mut self, file_id: &[u8]) -> Result<Vec<u8>> {
         let select = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x02, 0x0C).with_data(file_id);
         let res_sel = self.transmit(&select).await?;
@@ -370,5 +389,24 @@ mod tests {
         
         let dg14 = controller.read_dg14().await;
         assert!(dg14.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_passive_authentication_flow() {
+        let reader = TestReader::new();
+        let _mock = setup_passport_mock(&reader);
+        let mut controller = PassportController::new(reader.clone());
+        let _ = controller.select_ep_ap().await;
+        
+        // 1. Read DG1
+        let dg1 = controller.read_dg1().await.unwrap();
+        
+        // 2. Prepare DG map
+        let mut dgs = HashMap::new();
+        dgs.insert(1, dg1);
+        
+        // 3. Verify PA
+        let res = controller.verify_passive_authentication(&dgs).await;
+        assert!(res.is_ok());
     }
 }
