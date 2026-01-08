@@ -22,6 +22,8 @@ pub mod utils;
 pub mod test_utils;
 #[cfg(test)]
 pub mod mock_passport;
+#[cfg(test)]
+pub mod mock_jpki;
 
 pub use apdu::ApduCommand;
 pub use reader::CardReader;

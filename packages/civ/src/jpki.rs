@@ -269,38 +269,93 @@ impl<R: CardReader> JpkiController<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::TestReader;
+    use crate::mock_jpki::MockJpki;
     use std::sync::{Arc, Mutex};
-    use async_trait::async_trait;
-
-    #[derive(Clone)]
-    struct MockReader {
-        pub sent_apdus: Arc<Mutex<Vec<Vec<u8>>>>,
-        pub responses: Arc<Mutex<Vec<Vec<u8>>>>,
-    }
-
-    impl MockReader {
-        fn new(response: Vec<u8>) -> Self {
-            Self {
-                sent_apdus: Arc::new(Mutex::new(Vec::new())),
-                responses: Arc::new(Mutex::new(vec![response])),
-            }
-        }
-    }
-
-    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-    impl CardReader for MockReader {
-        async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>> {
-            self.sent_apdus.lock().unwrap().push(apdu.to_vec());
-            let mut resps = self.responses.lock().unwrap();
-            if resps.len() > 1 { Ok(resps.remove(0)) } else { Ok(resps[0].clone()) }
-        }
-    }
 
     #[tokio::test]
     async fn test_select_jpki_ap() {
-        let mock = MockReader::new(vec![0x90, 0x00]);
-        let mut controller = JpkiController::new(mock.clone());
+        let reader = TestReader::new();
+        let mut controller = JpkiController::new(reader.clone());
+        reader.push_response(&[0x90, 0x00]);
         assert!(controller.select_jpki_ap().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_read_mynumber() {
+        let reader = TestReader::new();
+        let mock = Arc::new(Mutex::new(MockJpki::new()));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+
+        let mut controller = JpkiController::new(reader.clone());
+        let res = controller.read_mynumber("1234").await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), "123456789012");
+    }
+
+    #[tokio::test]
+    async fn test_read_attributes() {
+        let reader = TestReader::new();
+        let mock = Arc::new(Mutex::new(MockJpki::new()));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+
+        let mut controller = JpkiController::new(reader.clone());
+        let res = controller.read_attributes("1234").await;
+        assert!(res.is_ok());
+        let info = res.unwrap();
+        assert_eq!(info.name, "Taro");
+        assert_eq!(info.birth_date, "19900101");
+    }
+
+    #[tokio::test]
+    async fn test_compute_auth_signature() {
+        let reader = TestReader::new();
+        let mock = Arc::new(Mutex::new(MockJpki::new()));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+
+        let mut controller = JpkiController::new(reader.clone());
+        let data = b"test data";
+        let res = controller.compute_auth_signature("1234", data).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().len(), 256);
+    }
+
+    #[tokio::test]
+    async fn test_pin_retries() {
+        let reader = TestReader::new();
+        let mock = Arc::new(Mutex::new(MockJpki::new()));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+
+        let mut controller = JpkiController::new(reader.clone());
+        
+        // Initial retries for Auth PIN
+        let retries = controller.get_auth_pin_retries().await.unwrap();
+        assert_eq!(retries, 3);
+
+        // Fail attempt
+        let _ = controller.verify_pin(&file_ids::EF_AUTH_PIN, "wrong").await;
+        
+        // Count should decrease
+        let retries = controller.get_auth_pin_retries().await.unwrap();
+        assert_eq!(retries, 2);
+    }
+
+    #[tokio::test]
+    async fn test_read_face_photo() {
+        let reader = TestReader::new();
+        let mock = Arc::new(Mutex::new(MockJpki::new()));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+
+        let mut controller = JpkiController::new(reader.clone());
+        // Using My Number as PIN for Surface AP
+        let res = controller.read_face_photo("123456789012").await;
+        assert!(res.is_ok());
+        let photo = res.unwrap();
+        assert_eq!(photo, vec![0xAA, 0xBB, 0xCC]);
     }
 }

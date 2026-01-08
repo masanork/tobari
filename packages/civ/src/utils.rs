@@ -108,15 +108,11 @@ pub fn parse_ber_tlv(data: &[u8]) -> Vec<BerTlv<'_>> {
         i += length;
 
         // 4. 子要素のパースを試みる
-        // 本来は (first_tag_byte & 0x20) != 0 を見るべきだが、
-        // JPKIの DF20/DF21 等は bit 6 が立っていなくても構造化データを持つ場合がある。
-        // タグが 0xDF で始まる、または特定の構造化タグの場合に再帰的にパースする。
-        let is_likely_constructed = (first_tag_byte & 0x20) != 0 
-            || first_tag_byte == 0xDF || first_tag_byte == 0xFF;
+        // bit 6 が立っている場合は Constructed (構造化)
+        let is_constructed = (first_tag_byte & 0x20) != 0;
 
-        let children = if is_likely_constructed && length > 0 {
+        let children = if is_constructed && length > 0 {
             let inner = parse_ber_tlv(&value);
-            // 意味のあるパース結果が得られた場合のみ採用
             if !inner.is_empty() { inner } else { Vec::new() }
         } else {
             Vec::new()
@@ -161,16 +157,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_ber_tlv_nested() {
-        // Tag 61 (Constructed), Len 06
-        //   Sub-Tag 01, Len 01, Val FF
-        //   Sub-Tag 02, Len 01, Val EE
-        let data = [0x61, 0x06, 0x01, 0x01, 0xFF, 0x02, 0x01, 0xEE];
+    fn test_parse_ber_tlv_myna_tags() {
+        // Tag DF 22, Len 04, Val "Taro"
+        let data = [0xDF, 0x22, 0x04, 0x54, 0x61, 0x72, 0x6F];
         let tlvs = parse_ber_tlv(&data);
         assert_eq!(tlvs.len(), 1);
-        assert_eq!(tlvs[0].tag, 0x61);
-        assert_eq!(tlvs[0].children.len(), 2);
-        assert_eq!(tlvs[0].children[0].tag, 0x01);
-        assert_eq!(tlvs[0].children[1].value, &[0xEE]);
+        assert_eq!(tlvs[0].tag, 0xDF22);
+        assert_eq!(tlvs[0].as_utf8(), "Taro");
     }
 }
