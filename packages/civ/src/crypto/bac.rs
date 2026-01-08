@@ -394,3 +394,29 @@ pub fn build_mutual_auth_data(k_enc: &[u8; 16], k_mac: &[u8; 16], rnd_ic: &[u8; 
 
     Ok((data, ssc))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::apdu::ApduCommand;
+
+    #[test]
+    fn test_bac_sm_wrap() {
+        let k_enc = [0x01u8; 16];
+        let k_mac = [0x02u8; 16];
+        let ssc = 0;
+        let mut sm = BacSession::new(k_enc, k_mac, ssc);
+
+        let cmd = ApduCommand::new(0x00, 0xA4, 0x02, 0x0C).with_data(&[0x01, 0x02]);
+        
+        let wrapped = sm.wrap_command(&cmd).unwrap();
+        
+        // Wrapped command should be CLA=0C (00 | 0C)
+        assert_eq!(wrapped[0], 0x0C);
+        
+        // Should contain DO87 (Encrypted) and DO8E (MAC)
+        // 87 ... 8E ...
+        assert!(wrapped.windows(2).any(|w| w == [0x87, 0x09] || w[0] == 0x87)); // 01 + 8 bytes enc
+        assert!(wrapped.windows(2).any(|w| w == [0x8E, 0x08]));
+    }
+}

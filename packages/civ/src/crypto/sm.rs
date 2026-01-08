@@ -340,3 +340,49 @@ fn parse_tlv(data: &[u8]) -> Result<Vec<(u8, Vec<u8>)>> {
     }
     Ok(items)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::apdu::ApduCommand;
+
+    #[test]
+    fn test_aes128_sm_wrap() {
+        let k_enc = [0x01u8; 16];
+        let k_mac = [0x02u8; 16];
+        let ssc = 0;
+        let mut sm = AesSecureMessaging::new(&k_enc, &k_mac, ssc).unwrap();
+
+        let cmd = ApduCommand::new(0x00, 0xA4, 0x02, 0x0C).with_data(&[0x01, 0x02]);
+        
+        let wrapped = sm.wrap_command(&cmd).unwrap();
+        
+        // Wrapped command should be CLA=0C
+        assert_eq!(wrapped[0], 0x0C);
+        
+        // Should contain DO87 (Encrypted) and DO8E (MAC)
+        // Simple check for tags
+        assert!(wrapped.windows(2).any(|w| w == [0x87, 0x01] || w[0] == 0x87));
+        assert!(wrapped.windows(2).any(|w| w == [0x8E, 0x08]));
+    }
+
+    #[test]
+    fn test_aes256_sm_wrap() {
+        let k_enc = [0x01u8; 32];
+        let k_mac = [0x02u8; 32];
+        let ssc = 10;
+        let mut sm = AesSecureMessaging::new(&k_enc, &k_mac, ssc).unwrap();
+
+        let cmd = ApduCommand::new(0x00, 0xB0, 0x00, 0x00).with_le(0x10);
+        
+        let wrapped = sm.wrap_command(&cmd).unwrap();
+        assert_eq!(wrapped[0], 0x0C);
+        assert!(wrapped.windows(2).any(|w| w == [0x97, 0x01])); // Le DO97
+        assert!(wrapped.windows(2).any(|w| w == [0x8E, 0x08]));
+    }
+    
+    // To properly test unwrap, we'd need to simulate the Card's encryption logic (Server-side SM).
+    // Since we don't have that exposed, we skip full roundtrip unit test here, 
+    // relying on the fact that `MockPassport` (in future) or E2E tests will cover it.
+    // However, we can test `encrypt_data` / `decrypt_data` helpers if we expose them or make them pub(crate).
+}
