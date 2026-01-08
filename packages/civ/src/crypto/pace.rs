@@ -1,16 +1,15 @@
 use anyhow::{Result, anyhow, Context};
 use p256::{
     ecdh::EphemeralSecret,
-    PublicKey,
+    PublicKey, EncodedPoint,
     elliptic_curve::{
-        sec1::ToEncodedPoint,
-        group::GroupEncoding,
+        sec1::{ToEncodedPoint, FromEncodedPoint},
         Field, PrimeField,
     },
-    ProjectivePoint, Scalar, U256,
+    ProjectivePoint, Scalar,
 };
 use rsa::sha2::{Sha256, Digest};
-use aes::cipher::{BlockEncryptMut, BlockDecryptMut, KeyIvInit, KeyInit, block_padding::NoPadding};
+use aes::cipher::{BlockDecryptMut, KeyIvInit, KeyInit, block_padding::NoPadding};
 use cbc::Decryptor;
 use aes::Aes128;
 use cmac::{Cmac, Mac};
@@ -19,7 +18,6 @@ use cipher::generic_array::GenericArray;
 
 // Type aliases
 type Aes128CbcDec = Decryptor<Aes128>;
-type Aes128CbcEnc = cbc::Encryptor<Aes128>;
 type Aes128Cmac = Cmac<Aes128>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -108,18 +106,51 @@ impl PaceP256 {
         let generator = match self.mapping_type {
             PaceMappingType::Standard => ProjectivePoint::GENERATOR,
             PaceMappingType::GenericMapping => {
-                // GM: G_hat = [s]G + T, where T is mapped from s.
-                // Simplified: T = [s]G. So G_hat = [2s]G.
+                // GM: G_hat = [s]G + Map(s)
+                // s: Scalar derived from decrypted nonce
+                // Map(s): Point derived from s (Try-and-Increment X-coordinate)
+                
+                // 1. Derive scalar s
                 let mut s_bytes = [0u8; 32];
                 let copy_len = std::cmp::min(nonce_s.len(), 32);
                 s_bytes[32-copy_len..].copy_from_slice(&nonce_s[0..copy_len]);
-                
-                #[allow(deprecated)]
                 let ga = GenericArray::clone_from_slice(&s_bytes);
                 let s_scalar = Scalar::from_repr(ga).unwrap_or(Scalar::ONE);
                 
-                let t_point = ProjectivePoint::GENERATOR * s_scalar;
-                (ProjectivePoint::GENERATOR * s_scalar) + t_point
+                // 2. Map(s) -> T
+                // Try to find a valid point T where T.x = s (or derivative)
+                let mut t_point = Option::<ProjectivePoint>::None;
+                let mut candidate_bytes = s_bytes; // Start with s
+                
+                for _ in 0..100 { // Max retries
+                    // Construct compressed point: 0x02 || candidate
+                    let mut encoded = Vec::with_capacity(33);
+                    encoded.push(0x02); // Compressed, even Y
+                    encoded.extend_from_slice(&candidate_bytes);
+                    
+                    if let Ok(ep) = EncodedPoint::from_bytes(&encoded) {
+                        // Check if valid point on curve
+                        // EncodedPoint doesn't verify curve equation immediately?
+                        // Convert to Projective/Affine to verify.
+                        // ProjectivePoint::from_encoded_point returns CtOption
+                        let ct_opt = ProjectivePoint::from_encoded_point(&ep);
+                        if bool::from(ct_opt.is_some()) {
+                            t_point = Some(ct_opt.unwrap());
+                            break;
+                        }
+                    }
+                    
+                    // Failed, generate next candidate: H(candidate)
+                    let mut hasher = Sha256::new();
+                    hasher.update(&candidate_bytes);
+                    let hash = hasher.finalize();
+                    candidate_bytes.copy_from_slice(&hash);
+                }
+                
+                let t = t_point.ok_or(anyhow!("Failed to map nonce to point"))?;
+                
+                // G_hat = [s]G + T
+                (ProjectivePoint::GENERATOR * s_scalar) + t
             }
             _ => return Err(anyhow!("Unsupported Mapping Type")),
         };

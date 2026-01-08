@@ -6,7 +6,7 @@ use crate::crypto::pace::{PaceP256, PaceMappingType, derive_session_keys_sha256}
 use anyhow::{Result, Context, anyhow};
 use p256::{PublicKey, ecdh::EphemeralSecret};
 use rand_core::OsRng;
-use p256::elliptic_curve::sec1::{ToEncodedPoint, FromEncodedPoint};
+use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::ecdsa::{SigningKey, Signature};
 use signature::Signer;
 

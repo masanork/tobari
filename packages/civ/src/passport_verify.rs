@@ -1,4 +1,4 @@
-use anyhow::{Result, bail, anyhow, Context};
+use anyhow::{Result, bail, anyhow};
 use sha1::Sha1;
 use rsa::sha2::{Sha256, Sha384, Sha512, Digest};
 use x509_parser::prelude::*;
