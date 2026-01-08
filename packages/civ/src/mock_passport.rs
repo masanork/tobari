@@ -44,10 +44,19 @@ impl MockPassport {
         };
 
         match (ins, p1, p2) {
+            // MSE: SET
             (0x22, 0xC1, 0xA4) => {
                 vec![0x90, 0x00]
             },
+            // GEN AUTH
             (0x86, 0x00, 0x00) => self.handle_gen_auth(data),
+            // INTERNAL AUTHENTICATE (Active Auth)
+            (0x88, 0x00, 0x00) => {
+                // Mock Signature: just return some dummy data + 90 00
+                let mut resp = vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE];
+                resp.extend_from_slice(&[0x90, 0x00]);
+                resp
+            },
             _ => vec![0x6D, 0x00],
         }
     }
