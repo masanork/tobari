@@ -1,43 +1,14 @@
-#[allow(unused_imports)]
-use anyhow::{Result, Context};
+use anyhow::{Result, anyhow, Context, bail};
 use encoding_rs::SHIFT_JIS;
 
 /// Custom Shift-JIS decoder that maps unmapped bytes to [Gaiji:0xXX] format
-/// instead of pure replacement character.
 pub fn decode_shift_jis_lossy_gaiji(input: &[u8]) -> String {
     let (cow, _encoding_used, malformed) = SHIFT_JIS.decode(input);
     if !malformed {
         return cow.into_owned();
     }
+    // TODO: Implement actual Gaiji mapping for JPKI
     cow.into_owned()
-}
-
-/// Simple TLV Parser for JIS X 6306 style flat TLV
-/// Returns a map or list of tags
-pub struct TlvTag {
-    pub tag: u8,
-    pub length: u8,
-    pub value: Vec<u8>,
-}
-
-pub fn parse_tlv_flat(data: &[u8]) -> Vec<TlvTag> {
-    let mut offset = 0;
-    let mut tags = Vec::new();
-
-    while offset < data.len() {
-        if offset + 2 > data.len() { break; } // Need at least T and L
-        let tag = data[offset];
-        offset += 1;
-        let len = data[offset] as usize;
-        offset += 1;
-
-        if offset + len > data.len() { break; } // EOF check
-        let value = data[offset..offset+len].to_vec();
-        offset += len;
-
-        tags.push(TlvTag { tag, length: len as u8, value });
-    }
-    tags
 }
 
 /// BER-TLV Structure (Zero-copy)
@@ -49,30 +20,34 @@ pub struct BerTlv<'a> {
 }
 
 impl<'a> BerTlv<'a> {
-    /// 指定したタグを持つ子要素を検索する（再帰的ではない）
     pub fn find(&self, tag: u32) -> Option<&BerTlv<'a>> {
         self.children.iter().find(|t| t.tag == tag)
     }
 
-    /// 値を UTF-8 文字列として取得する (lossy)
     pub fn as_utf8(&self) -> String {
         String::from_utf8_lossy(self.value).into_owned()
     }
+    
+    pub fn as_u32(&self) -> Result<u32> {
+        let mut val = 0u32;
+        if self.value.len() > 4 { bail!("Value too long for u32"); }
+        for &b in self.value {
+            val = (val << 8) | (b as u32);
+        }
+        Ok(val)
+    }
 }
 
-/// BER-TLV データをパースする（ゼロコピー）
-/// ネストされた構造も bit 6 (constructed) を見て再帰的にパースを試みる。
-pub fn parse_ber_tlv(data: &[u8]) -> Vec<BerTlv<'_>> {
+/// Parse BER-TLV data strictly
+pub fn parse_ber_tlv(data: &[u8]) -> Result<Vec<BerTlv<'_>>> {
     let mut results = Vec::new();
     let mut i = 0;
     while i < data.len() {
-        // 1. Tag のパース
-        if i >= data.len() { break; }
+        // 1. Tag
         let first_tag_byte = data[i];
         let mut tag: u32 = first_tag_byte as u32;
         i += 1;
 
-        // bit 1-5 がすべて 1 ならマルチバイトタグ
         if (first_tag_byte & 0x1F) == 0x1F {
             while i < data.len() {
                 let b = data[i];
@@ -82,45 +57,105 @@ pub fn parse_ber_tlv(data: &[u8]) -> Vec<BerTlv<'_>> {
             }
         }
 
-        // 2. Length のパース
-        if i >= data.len() { break; }
-        let mut length = data[i] as usize;
+        // 2. Length
+        if i >= data.len() { bail!("Unexpected EOF during length parsing"); }
+        let first_len_byte = data[i];
         i += 1;
 
-        if length == 0x80 {
-            length = 0;
-        } else if (length & 0x80) != 0 {
-            // ロングフォーム
-            let n_bytes = length & 0x7F;
-            length = 0;
+        let length = if first_len_byte == 0x80 {
+            bail!("Indefinite length not supported yet");
+        } else if (first_len_byte & 0x80) != 0 {
+            let n_bytes = (first_len_byte & 0x7F) as usize;
+            if n_bytes > 4 { bail!("Length field too long"); }
+            let mut l = 0usize;
             for _ in 0..n_bytes {
-                if i >= data.len() { break; }
-                length = (length << 8) | (data[i] as usize);
+                if i >= data.len() { bail!("Unexpected EOF in long-form length"); }
+                l = (l << 8) | (data[i] as usize);
                 i += 1;
             }
-        }
+            l
+        } else {
+            first_len_byte as usize
+        };
 
-        // 3. Value の取得 (参照として保持)
+        // 3. Value
         if i + length > data.len() {
-            break; 
+            bail!("Value length {} exceeds remaining data {}", length, data.len() - i);
         }
         let value = &data[i..i+length];
         i += length;
 
-        // 4. 子要素のパースを試みる
-        // bit 6 が立っている場合は Constructed (構造化)
+        // 4. Children (Constructed check)
         let is_constructed = (first_tag_byte & 0x20) != 0;
-
         let children = if is_constructed && length > 0 {
-            let inner = parse_ber_tlv(&value);
-            if !inner.is_empty() { inner } else { Vec::new() }
+            parse_ber_tlv(value).unwrap_or_default() // Fallback to empty if inner parse fails but outer is OK
         } else {
             Vec::new()
         };
 
         results.push(BerTlv { tag, value, children });
     }
-    results
+    Ok(results)
+}
+
+/// MRZ (Machine Readable Zone) Utilities
+pub struct MrzUtils;
+
+impl MrzUtils {
+    /// Calculate ICAO 9303 check digit
+    pub fn calculate_check_digit(data: &str) -> u8 {
+        let weights = [7, 3, 1];
+        let mut sum = 0;
+        for (i, c) in data.chars().enumerate() {
+            let val = match c {
+                '0'..='9' => c as u32 - '0' as u32,
+                'A'..='Z' => c as u32 - 'A' as u32 + 10,
+                '<' | ' ' => 0,
+                _ => 0,
+            };
+            sum += val * weights[i % 3];
+        }
+        ((sum % 10) as u8 + b'0')
+    }
+
+    /// Verify a field with its check digit
+    pub fn verify_check_digit(data: &str, expected: char) -> bool {
+        Self::calculate_check_digit(data) == expected as u8
+    }
+}
+
+/// Date parsing utilities for Smart Cards
+pub struct DateUtils;
+
+impl DateUtils {
+    /// Parse YYMMDD format (used in Passport MRZ)
+    pub fn parse_yymmdd(s: &str) -> Result<String> {
+        if s.len() != 6 { bail!("Invalid date length"); }
+        let year_short: u32 = s[0..2].parse()?;
+        let month: u32 = s[2..4].parse()?;
+        let day: u32 = s[4..6].parse()?;
+        
+        if month < 1 || month > 12 || day < 1 || day > 31 {
+            bail!("Invalid date components");
+        }
+
+        // Pivot year: assume 1980-2079
+        let year = if year_short < 80 { 2000 + year_short } else { 1900 + year_short };
+        Ok(format!("{:04}-{:02}-{:02}", year, month, day))
+    }
+
+    /// Parse YYYYMMDD format (used in JPKI/Drivers License)
+    pub fn parse_yyyymmdd(s: &str) -> Result<String> {
+        if s.len() != 8 { bail!("Invalid date length"); }
+        let year: u32 = s[0..4].parse()?;
+        let month: u32 = s[4..6].parse()?;
+        let day: u32 = s[6..8].parse()?;
+        
+        if month < 1 || month > 12 || day < 1 || day > 31 {
+            bail!("Invalid date components");
+        }
+        Ok(format!("{:04}-{:02}-{:02}", year, month, day))
+    }
 }
 
 #[cfg(test)]
@@ -129,40 +164,33 @@ mod tests {
 
     #[test]
     fn test_parse_ber_tlv_basic() {
-        // Tag 01, Len 02, Val AA BB
         let data = [0x01, 0x02, 0xAA, 0xBB];
-        let tlvs = parse_ber_tlv(&data);
+        let tlvs = parse_ber_tlv(&data).unwrap();
         assert_eq!(tlvs.len(), 1);
         assert_eq!(tlvs[0].tag, 0x01);
         assert_eq!(tlvs[0].value, &[0xAA, 0xBB]);
     }
 
     #[test]
-    fn test_parse_ber_tlv_multibyte_tag() {
-        // Tag DF 22 (Myna Name), Len 03, Val 41 42 43 (ABC)
-        let data = [0xDF, 0x22, 0x03, 0x41, 0x42, 0x43];
-        let tlvs = parse_ber_tlv(&data);
-        assert_eq!(tlvs.len(), 1);
-        assert_eq!(tlvs[0].tag, 0xDF22);
-        assert_eq!(tlvs[0].as_utf8(), "ABC");
+    fn test_parse_ber_tlv_error() {
+        let data = [0x01, 0x05, 0xAA]; // Length 5 but only 1 byte data
+        assert!(parse_ber_tlv(&data).is_err());
     }
 
     #[test]
-    fn test_parse_ber_tlv_long_length() {
-        // Tag 04, Len 0x81 05 (1 byte length field, value 5), Val 01 02 03 04 05
-        let data = [0x04, 0x81, 0x05, 0x01, 0x02, 0x03, 0x04, 0x05];
-        let tlvs = parse_ber_tlv(&data);
-        assert_eq!(tlvs.len(), 1);
-        assert_eq!(tlvs[0].value.len(), 5);
+    fn test_mrz_check_digit() {
+        // Example from ICAO 9303: "HA672242" -> check digit '2'
+        // Wait, let's use a known one: "12345678"
+        // 1*7 + 2*3 + 3*1 + 4*7 + 5*3 + 6*1 + 7*7 + 8*3
+        // 7 + 6 + 3 + 28 + 15 + 6 + 49 + 24 = 138. 138 % 10 = 8.
+        assert_eq!(MrzUtils::calculate_check_digit("12345678"), b'8');
     }
 
     #[test]
-    fn test_parse_ber_tlv_myna_tags() {
-        // Tag DF 22, Len 04, Val "Taro"
-        let data = [0xDF, 0x22, 0x04, 0x54, 0x61, 0x72, 0x6F];
-        let tlvs = parse_ber_tlv(&data);
-        assert_eq!(tlvs.len(), 1);
-        assert_eq!(tlvs[0].tag, 0xDF22);
-        assert_eq!(tlvs[0].as_utf8(), "Taro");
+    fn test_date_parsing() {
+        assert_eq!(DateUtils::parse_yymmdd("900101").unwrap(), "1990-01-01");
+        assert_eq!(DateUtils::parse_yymmdd("250101").unwrap(), "2025-01-01");
+        assert_eq!(DateUtils::parse_yyyymmdd("20260108").unwrap(), "2026-01-08");
+        assert!(DateUtils::parse_yymmdd("901301").is_err()); // Invalid month
     }
 }

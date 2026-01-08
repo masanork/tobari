@@ -9,6 +9,7 @@ use rand_core::OsRng;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::ecdsa::{SigningKey, Signature};
 use signature::Signer;
+use crate::utils::{parse_ber_tlv, DateUtils, MrzUtils};
 
 /// Secure Session Wrapper (BAC or PACE)
 pub enum SecureSession {
@@ -272,30 +273,19 @@ impl<R: CardReader> PassportController<R> {
     }
 }
 
+// Helper functions for PACE Parsing
 fn parse_pace_response(res: &[u8], target_tag: u8) -> Result<Vec<u8>> {
-    if res.len() < 4 || res[0] != 0x7C { return Err(anyhow!("Invalid PACE response format")); }
-    let mut offset = 1;
-    let (_len, l_len) = parse_asn1_len(res, offset)?;
-    offset += l_len;
-    while offset < res.len() - 2 {
-        let tag = res[offset]; offset += 1;
-        let (len, l_len) = parse_asn1_len(res, offset)?; offset += l_len;
-        if tag == target_tag { return Ok(res[offset..offset+len].to_vec()); }
-        offset += len;
+    let tlvs = parse_ber_tlv(res).context("Failed to parse PACE TLV")?;
+    
+    fn find_tag_recursive(tlvs: &[crate::utils::BerTlv], target: u32) -> Option<Vec<u8>> {
+        for tlv in tlvs {
+            if tlv.tag == target { return Some(tlv.value.to_vec()); }
+            if let Some(v) = find_tag_recursive(&tlv.children, target) { return Some(v); }
+        }
+        None
     }
-    Err(anyhow!("Tag {:02X} not found", target_tag))
-}
-
-fn parse_asn1_len(data: &[u8], offset: usize) -> Result<(usize, usize)> {
-    if offset >= data.len() { return Err(anyhow!("Out of bounds")); }
-    let b = data[offset];
-    if b & 0x80 == 0 { Ok((b as usize, 1)) }
-    else {
-        let count = (b & 0x7F) as usize;
-        let mut len = 0;
-        for i in 0..count { len = (len << 8) | data[offset + 1 + i] as usize; }
-        Ok((len, 1 + count))
-    }
+    
+    find_tag_recursive(&tlvs, target_tag as u32).ok_or_else(|| anyhow!("Tag {:02X} not found", target_tag))
 }
 
 fn encode_len(len: usize) -> Vec<u8> {
@@ -342,8 +332,6 @@ mod tests {
         let mock_clone = mock.clone();
         reader.set_handler(move |apdu| { mock_clone.lock().unwrap().handle_apdu(apdu) });
         let mut controller = PassportController::new(reader.clone());
-        
-        // Mock MRZ (Passport No + DOB + Expiry)
         let mrz = "L898902C<36908061F9406236";
         let res = controller.perform_bac(mrz).await;
         assert!(res.is_ok());
@@ -403,7 +391,7 @@ mod tests {
         reader.set_handler(move |apdu| { mock_clone.lock().unwrap().handle_apdu(apdu) });
         let mut controller = PassportController::new(reader.clone());
         let cert_chain = vec![vec![0x7F, 0x21, 0x05, 0x01, 0x02, 0x03, 0x04, 0x05]]; 
-        let terminal_priv_key = [0x01u8; 32]; // Valid P-256 scalar
+        let terminal_priv_key = [0x01u8; 32];
         let res = controller.perform_terminal_authentication(&cert_chain, &terminal_priv_key).await;
         assert!(res.is_ok());
         let dg3 = controller.read_dg3().await;
