@@ -73,6 +73,21 @@ impl MockPassport {
                     vec![0x6A, 0x82]
                 }
             },
+            // GET CHALLENGE (BAC)
+            (0x84, 0x00, 0x00) => {
+                let rnd_icc = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+                let mut resp = rnd_icc;
+                resp.extend_from_slice(&[0x90, 0x00]);
+                resp
+            },
+            // EXTERNAL AUTHENTICATE (BAC)
+            (0x82, 0x00, 0x00) => {
+                // Input: E_Kenc(RND.IFD || RND.ICC || K.IFD) || MAC_Kmac(...) = 40 bytes
+                // For mock, just return success cryptogram
+                let mut resp = vec![0xEE; 40];
+                resp.extend_from_slice(&[0x90, 0x00]);
+                vec![0x90, 0x00] // Just success is often enough for BAC if SM not strictly enforced next
+            },
             // READ BINARY
             (0xB0, _, _) => {
                 if let Some(fid) = &self.current_file {

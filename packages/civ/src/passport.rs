@@ -334,6 +334,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_perform_bac_flow() {
+        use crate::mock_passport::MockPassport;
+        use std::sync::{Arc, Mutex};
+        let reader = TestReader::new();
+        let mock = Arc::new(Mutex::new(MockPassport::new("123456")));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| { mock_clone.lock().unwrap().handle_apdu(apdu) });
+        let mut controller = PassportController::new(reader.clone());
+        
+        // Mock MRZ (Passport No + DOB + Expiry)
+        let mrz = "L898902C<36908061F9406236";
+        let res = controller.perform_bac(mrz).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
     async fn test_perform_pace_flow() {
         use crate::mock_passport::MockPassport;
         use std::sync::{Arc, Mutex};
