@@ -2,8 +2,11 @@ use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_GE
 use crate::reader::CardReader;
 use crate::crypto::bac::BacSession;
 use crate::crypto::sm::{AesSecureMessaging, SecureMessagingSession};
-use crate::crypto::pace::{PaceP256, PaceMappingType};
+use crate::crypto::pace::{PaceP256, PaceMappingType, derive_session_keys_sha256};
 use anyhow::{Result, Context, anyhow};
+use p256::{PublicKey, ecdh::EphemeralSecret};
+use rand_core::OsRng;
+use p256::elliptic_curve::sec1::{ToEncodedPoint, FromEncodedPoint};
 
 /// Secure Session Wrapper (BAC or PACE)
 pub enum SecureSession {
@@ -48,6 +51,8 @@ pub mod file_ids {
     pub const EF_DG11: [u8; 2] = [0x01, 0x0B];
     /// EF.DG12 (Additional Document Details)
     pub const EF_DG12: [u8; 2] = [0x01, 0x0C];
+    /// EF.DG14 (Security Infos / Chip Authentication Info)
+    pub const EF_DG14: [u8; 2] = [0x01, 0x0E];
     /// EF.DG15 (Active Authentication Public Key Info)
     pub const EF_DG15: [u8; 2] = [0x01, 0x0F];
     /// EF.SOD (Security Object Document - Signed hashes of all DGs)
@@ -106,7 +111,6 @@ impl<R: CardReader> PassportController<R> {
     }
 
     /// Perform PACE (Password Authenticated Connection Establishment)
-    /// mrz_or_can: MRZ (Legacy) or CAN (Card Access Number)
     pub async fn perform_pace(&mut self, mrz_or_can: &str) -> Result<()> {
         println!("[PACE] Starting PACE with password: {}", mrz_or_can);
 
@@ -173,7 +177,6 @@ impl<R: CardReader> PassportController<R> {
         println!("[PACE] Step 3 done (Shared Secret)");
         
         // 5. GEN AUTH (Mutual Auth)
-        // Note: perform_token_exchange sets state to Authenticated!
         let t_pcd = pace.perform_token_exchange(&[])?; 
         println!("[PACE] Step 4 done (Token generated). State should be Auth.");
         
@@ -190,11 +193,12 @@ impl<R: CardReader> PassportController<R> {
             .with_data(&cmd_data_3)
             .with_le(0x00);
 
+        println!("[PACE] Sending Token...");
         let res_auth = self.transmit(&gen_auth_3).await?;
         Self::check_sw(&res_auth).context("GEN AUTH (Token) failed")?;
         
         // 6. Establish Secure Messaging
-        println!("[PACE] Finalizing...");
+        println!("[PACE] Finalizing session...");
         let session = pace.finalize_session()?;
         self.secure_session = Some(SecureSession::Pace(AesSecureMessaging::new(
             &session.k_enc, &session.k_mac, session.ssc
@@ -204,12 +208,90 @@ impl<R: CardReader> PassportController<R> {
         Ok(())
     }
 
+    /// Perform Chip Authentication (EACv1)
+    pub async fn perform_chip_authentication(&mut self, ca_oid: &[u8], picc_pk_bytes: &[u8]) -> Result<()> {
+        println!("[CA] Starting Chip Authentication...");
+
+        // 1. Generate Ephemeral Key Pair (PCD)
+        let secret = EphemeralSecret::random(&mut OsRng);
+        let public_key = PublicKey::from(&secret);
+        let pk_bytes = public_key.to_encoded_point(false).as_bytes().to_vec();
+
+        // 2. MSE: SET (KAT)
+        // 80 [OID]
+        let mut mse_data = Vec::new();
+        mse_data.push(0x80);
+        mse_data.extend_from_slice(&encode_len(ca_oid.len()));
+        mse_data.extend_from_slice(ca_oid);
+
+        let mse_cmd = ApduCommand::new(0x00, 0x22, 0x41, 0xA6)
+            .with_data(&mse_data);
+            
+        let res_mse = self.transmit(&mse_cmd).await?;
+        Self::check_sw(&res_mse).context("CA MSE: SET failed")?;
+
+        // 3. GENERAL AUTHENTICATE
+        // 7C L [ 80 L [PK_PCD] ]
+        let mut cmd_data = Vec::new();
+        cmd_data.push(0x7C);
+        let mut inner = Vec::new();
+        inner.push(0x80); // Dynamic Data (Plain)
+        inner.extend_from_slice(&encode_len(pk_bytes.len()));
+        inner.extend_from_slice(&pk_bytes);
+        
+        cmd_data.extend_from_slice(&encode_len(inner.len()));
+        cmd_data.extend_from_slice(&inner);
+        
+        // Note: CA is usually performed over existing Secure Messaging.
+        // `transmit` will handle SM wrapping.
+        let gen_auth = ApduCommand::new(0x00, 0x86, 0x00, 0x00)
+            .with_data(&cmd_data)
+            .with_le(0x00);
+            
+        let res_auth = self.transmit(&gen_auth).await?;
+        Self::check_sw(&res_auth).context("CA GEN AUTH failed")?;
+        
+        // 4. Compute Shared Secret
+        let picc_pk = PublicKey::from_sec1_bytes(picc_pk_bytes)
+            .map_err(|e| anyhow!("Invalid PICC Public Key: {}", e))?;
+            
+        let shared_secret = secret.diffie_hellman(&picc_pk);
+        let shared_bytes = shared_secret.raw_secret_bytes();
+        
+        // 5. Derive New Session Keys
+        // CA KDF: SHA-1/256 counter mode. Assuming SHA-256 and AES-128 for prototype.
+        let (k_enc, k_mac) = derive_session_keys_sha256(shared_bytes.as_slice(), 16);
+        
+        // 6. Update Secure Session (Restart SSC)
+        // Note: The response to GEN AUTH was protected with OLD keys (handled by transmit).
+        // New keys apply from NEXT command.
+        self.secure_session = Some(SecureSession::Pace(AesSecureMessaging::new(
+            &k_enc, &k_mac, 0
+        )?));
+        
+        println!("[CA] Chip Authentication successful. New keys established.");
+        Ok(())
+    }
+
+    /// Perform Active Authentication (Internal Authenticate)
+    pub async fn perform_active_authentication(&mut self, challenge: &[u8]) -> Result<Vec<u8>> {
+        let apdu = ApduCommand::new(CLA_ISO, INS_INTERNAL_AUTHENTICATE, 0x00, 0x00)
+            .with_data(challenge)
+            .with_le(0x00);
+            
+        let res = self.transmit(&apdu).await?;
+        Self::check_sw(&res).context("Active Authentication failed")?;
+        
+        let signature = res[0..res.len()-2].to_vec();
+        Ok(signature)
+    }
+
     /// Read EF.COM
     pub async fn read_common_data(&mut self) -> Result<Vec<u8>> {
         self.read_file(&file_ids::EF_COM).await
     }
 
-    /// Read EF.DG1 (MRZ) - Requires BAC/PACE in reality
+    /// Read EF.DG1 (MRZ)
     pub async fn read_dg1(&mut self) -> Result<Vec<u8>> {
         self.read_file(&file_ids::EF_DG1).await
     }
@@ -219,7 +301,7 @@ impl<R: CardReader> PassportController<R> {
         self.read_file(&file_ids::EF_DG2).await
     }
 
-    /// Read EF.DG11 (Additional Personal Details - Address, etc.)
+    /// Read EF.DG11 (Additional Personal Details)
     pub async fn read_dg11(&mut self) -> Result<Vec<u8>> {
         self.read_file(&file_ids::EF_DG11).await
     }
@@ -227,6 +309,11 @@ impl<R: CardReader> PassportController<R> {
     /// Read EF.DG12 (Additional Document Details)
     pub async fn read_dg12(&mut self) -> Result<Vec<u8>> {
         self.read_file(&file_ids::EF_DG12).await
+    }
+
+    /// Read EF.DG14 (Security Infos / Chip Authentication)
+    pub async fn read_dg14(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG14).await
     }
 
     /// Read EF.DG15 (Active Authentication Public Key Info)
@@ -239,35 +326,13 @@ impl<R: CardReader> PassportController<R> {
         self.read_file(&file_ids::EF_SOD).await
     }
 
-    /// Perform Active Authentication (Internal Authenticate)
-    /// Signs the challenge using the key in DG15 to prove chip genuineness.
-    pub async fn perform_active_authentication(&mut self, challenge: &[u8]) -> Result<Vec<u8>> {
-        // INTERNAL AUTHENTICATE
-        // P1=00, P2=00
-        // Data: Challenge (usually 8 bytes)
-        // Le: 00 (Max length signature)
-        
-        let apdu = ApduCommand::new(CLA_ISO, INS_INTERNAL_AUTHENTICATE, 0x00, 0x00)
-            .with_data(challenge)
-            .with_le(0x00);
-            
-        let res = self.transmit(&apdu).await?;
-        Self::check_sw(&res).context("Active Authentication failed")?;
-        
-        // Response is the signature (format depends on DG15 algorithm)
-        let signature = res[0..res.len()-2].to_vec();
-        Ok(signature)
-    }
-
     // Helper to Select EF and Read Binary
     pub(crate) async fn read_file(&mut self, file_id: &[u8]) -> Result<Vec<u8>> {
-        // 1. Select File
         let select = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x02, 0x0C)
             .with_data(file_id);
         let res_sel = self.transmit(&select).await?;
         Self::check_sw(&res_sel).context("Failed to select EF")?;
 
-        // 2. Read Binary Loop
         let mut data = Vec::new();
         let mut offset: u16 = 0;
         
@@ -275,14 +340,13 @@ impl<R: CardReader> PassportController<R> {
             let p1 = (offset >> 8) as u8;
             let p2 = (offset & 0xFF) as u8;
             
-            // Le=00 means 256 bytes
             let read = ApduCommand::new(CLA_ISO, INS_READ_BINARY, p1, p2)
                 .with_le(0x00);
             
             let res = self.transmit(&read).await?;
             
             if res.len() < 2 {
-                return Err(anyhow::anyhow!("Response too short"));
+                return Err(anyhow!("Response too short"));
             }
             
             let sw1 = res[res.len() - 2];
@@ -299,14 +363,14 @@ impl<R: CardReader> PassportController<R> {
                     break;
                 }
             } else if sw1 == 0x6B {
-                 break; // Offset outside limits
+                 break;
             } else if sw1 == 0x62 && sw2 == 0x82 {
-                 break; // EOF
+                 break;
             } else {
-                 return Err(anyhow::anyhow!("Read Binary Error: {:02X}{:02X}", sw1, sw2));
+                 return Err(anyhow!("Read Binary Error: {:02X}{:02X}", sw1, sw2));
             }
 
-            if offset > 32768 { // Safety Limit
+            if offset > 32768 {
                 break;
             }
         }
@@ -316,14 +380,14 @@ impl<R: CardReader> PassportController<R> {
 
     fn check_sw(res: &[u8]) -> Result<()> {
         if res.len() < 2 {
-            return Err(anyhow::anyhow!("Response too short"));
+            return Err(anyhow!("Response too short"));
         }
         let sw1 = res[res.len() - 2];
         let sw2 = res[res.len() - 1];
         if sw1 == 0x90 && sw2 == 0x00 {
             Ok(())
         } else {
-            Err(anyhow::anyhow!("Card Error: SW={:02X}{:02X}", sw1, sw2))
+            Err(anyhow!("Card Error: SW={:02X}{:02X}", sw1, sw2))
         }
     }
 
@@ -344,16 +408,13 @@ impl<R: CardReader> PassportController<R> {
 
 // Helper functions for PACE Parsing
 fn parse_pace_response(res: &[u8], target_tag: u8) -> Result<Vec<u8>> {
-    // Structure: 7C L [ Tag L Value ... ] 90 00
     if res.len() < 4 || res[0] != 0x7C {
         return Err(anyhow!("Invalid PACE response format"));
     }
-    // Skip 7C L
     let mut offset = 1;
     let (_len, l_len) = parse_asn1_len(res, offset)?;
     offset += l_len;
     
-    // Search for target tag in DOs
     while offset < res.len() - 2 {
         let tag = res[offset];
         offset += 1;
@@ -467,33 +528,73 @@ mod tests {
         let apdus = reader.sent_apdus.lock().unwrap();
         // Expected: MSE, GEN AUTH (Nonce), GEN AUTH (Map), GEN AUTH (Token)
         assert!(apdus.len() >= 4);
-                assert_eq!(apdus[0][1], 0x22); // MSE
-                assert_eq!(apdus[1][1], 0x86); // GEN AUTH
-            }
+        assert_eq!(apdus[0][1], 0x22); // MSE
+        assert_eq!(apdus[1][1], 0x86); // GEN AUTH
+    }
+
+    #[tokio::test]
+    async fn test_active_authentication() {
+        use crate::mock_passport::MockPassport;
+        use std::sync::{Arc, Mutex};
+
+        let reader = TestReader::new();
+        let mock = Arc::new(Mutex::new(MockPassport::new("123456")));
         
-            #[tokio::test]
-            async fn test_active_authentication() {
-                use crate::mock_passport::MockPassport;
-                use std::sync::{Arc, Mutex};
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| {
+            mock_clone.lock().unwrap().handle_apdu(apdu)
+        });
+
+        let mut controller = PassportController::new(reader.clone());
         
-                let reader = TestReader::new();
-                let mock = Arc::new(Mutex::new(MockPassport::new("123456")));
-                
-                let mock_clone = mock.clone();
-                reader.set_handler(move |apdu| {
-                    mock_clone.lock().unwrap().handle_apdu(apdu)
-                });
+        // Execute AA
+        let challenge = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let res = controller.perform_active_authentication(&challenge).await;
         
-                let mut controller = PassportController::new(reader.clone());
-                
-                // Execute AA
-                let challenge = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
-                let res = controller.perform_active_authentication(&challenge).await;
-                
-                assert!(res.is_ok());
-                let signature = res.unwrap();
-                // Matching dummy signature from mock_passport.rs
-                assert_eq!(signature, vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE]);
-            }
-        }
+        assert!(res.is_ok());
+        let signature = res.unwrap();
+        // Matching dummy signature from mock_passport.rs
+        assert_eq!(signature, vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE]);
+    }
+
+    #[tokio::test]
+    async fn test_chip_authentication_flow() {
+        use crate::mock_passport::MockPassport;
+        use std::sync::{Arc, Mutex};
+
+        let reader = TestReader::new();
+        let mock = Arc::new(Mutex::new(MockPassport::new("123456")));
         
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| {
+            mock_clone.lock().unwrap().handle_apdu(apdu)
+        });
+
+        let mut controller = PassportController::new(reader.clone());
+
+        // 1. Read DG14
+        let dg14 = controller.read_dg14().await;
+        assert!(dg14.is_ok(), "Failed to read DG14");
+
+        // 2. Perform Chip Authentication
+        // Mock valid PICC Public Key (Uncompressed P-256)
+        let picc_pk = hex::decode("046B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C2964FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5").unwrap();
+        let ca_oid = vec![0x06, 0x0A, 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x03, 0x02, 0x01]; // Dummy OID
+
+        let res = controller.perform_chip_authentication(&ca_oid, &picc_pk).await;
+        
+        assert!(res.is_ok());
+        
+        let apdus = reader.sent_apdus.lock().unwrap();
+        // Expected: READ BINARY (DG14), MSE: SET, GEN AUTH
+        // Note: MSE and GEN AUTH might use Secure Messaging if a session is active.
+        // For this test, we run CA directly (no prior PACE), so it's plaintext.
+        
+        let len = apdus.len();
+        assert!(len >= 2);
+        // Verify MSE
+        assert_eq!(apdus[len-2][1], 0x22); 
+        // Verify GEN AUTH
+        assert_eq!(apdus[len-1][1], 0x86); 
+    }
+}
