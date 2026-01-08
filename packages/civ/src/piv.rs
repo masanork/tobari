@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY};
 use crate::reader::CardReader;
-use anyhow::{Result, Context};
+use crate::errors::{Result, CivError};
 
 /// US PIV (Personal Identity Verification) Controller
 /// Based on NIST SP 800-73-5
@@ -66,7 +66,7 @@ impl<R: CardReader> PivController<R> {
             .with_data(&file_ids::DF_PIV);
         
         let res = self.reader.transmit(&apdu.to_bytes()).await?;
-        Self::check_sw(&res).context("Failed to select PIV AP")
+        Self::check_sw(&res)
     }
 
     /// Verify PIN (verify against PIV Card Application PIN 0x80)
@@ -82,7 +82,7 @@ impl<R: CardReader> PivController<R> {
             .with_data(&pin_bytes);
 
         let res = self.reader.transmit(&apdu.to_bytes()).await?;
-        Self::check_sw(&res).context("PIN Verification Failed")
+        Self::check_sw(&res)
     }
 
     /// General Authenticate
@@ -94,20 +94,6 @@ impl<R: CardReader> PivController<R> {
         payload: &[u8],
         _is_sign: bool, // true for SIGN (Internal Authenticate), false for Decrypt/External
     ) -> Result<Vec<u8>> {
-        // Dynamic Authentication Template (Tag 7C)
-        // For Sign (Internal Auth):
-        // 7C L [ 82 00 (Empty Dynamic Auth Data to request response) ] [ 85 L (Challenge/Data) ... ]
-        // Note: 82 is "Response" tag (we want response), 85 is "Object" tag (input data)
-        // NIST SP 800-73-4:
-        // C.3 Internal Authenticate (Sign)
-        // Data Field: 7C L1 { 82 00 81 L2 { Challenge } }
-        // Wait, standard General Authenticate structure:
-        // Dynamic Authentication Template (7C)
-        //   Witness (80) - Optional
-        //   Challenge (81) - Optional (Data to be signed/decrypted)
-        //   Response (82) - Optional (If present with length 0, requests return of data)
-        //   Committed Challenge (83) - Optional
-        
         let mut data = Vec::new();
         // 7C Tag
         data.push(0x7C);
@@ -119,36 +105,26 @@ impl<R: CardReader> PivController<R> {
         template_content.push(0x00);
 
         // Tag 81 (Challenge / Data input)
-        // PIV uses 81 for the data input in Internal Authenticate (Sign) usually?
-        // Or 85? 
-        // NIST SP 800-73-4:
-        // GENERAL AUTHENTICATE (Internal Authenticate - Sign)
-        // Request: '7C' L1 '82' '00' '81' L2 { Challenge }
-        // Response: '7C' L3 '82' L4 { Response }
         template_content.push(0x81);
         if payload.len() > 255 {
-             // Basic DER handling for length > 255 if needed, but for hashes usually small.
-             // Assume < 255 for now or handle simple multi-byte
-             return Err(anyhow::anyhow!("Payload too large for simple encoder"));
+             return Err(CivError::InvalidData("Payload too large for simple encoder".to_string()));
         }
         template_content.push(payload.len() as u8);
         template_content.extend_from_slice(payload);
 
         // Encode 7C length
-        data.push(template_content.len() as u8); // Simplify: assume < 128 bytes total for now
+        data.push(template_content.len() as u8); 
         data.extend(template_content);
 
         let apdu = ApduCommand::new(0x00, 0x87, alg as u8, key_ref as u8)
             .with_data(&data);
 
         let res = self.reader.transmit(&apdu.to_bytes()).await?;
-        Self::check_sw(&res).context("General Authenticate Failed")?;
+        Self::check_sw(&res)?;
 
         // Parse Response
         // Expect: 7C L 82 L { Data }
-        // Simple parser
         if res.len() > 4 && res[0] == 0x7C {
-            // finding 82
             let mut i = 2; // skip 7C L
             while i < res.len() - 2 { // -2 for SW
                 if res[i] == 0x82 {
@@ -165,14 +141,12 @@ impl<R: CardReader> PivController<R> {
     }
 
     /// Read CHUID (Card Holder Unique Identifier)
-    /// PIV uses "GET DATA" (INS=CB) for retrieving data objects (BER-TLV encoded).
     pub async fn read_chuid(&mut self) -> Result<Vec<u8>> {
         let tag_data = [0x5C, 0x03, 0x5F, 0xC1, 0x02];
         self.get_data(&tag_data).await
     }
 
     /// Read PIV Authentication Certificate (X.509)
-    /// Tag: 5FC105 (Key 9A)
     pub async fn read_auth_cert(&mut self) -> Result<Vec<u8>> {
          let tag_data = [0x5C, 0x03, 0x5F, 0xC1, 0x05];
          self.get_data(&tag_data).await
@@ -185,19 +159,15 @@ impl<R: CardReader> PivController<R> {
             KeyReference::PivSignKey => file_ids::TAG_SIGN_CERT,
             KeyReference::PivKeyMgmtKey => file_ids::TAG_KEY_MGMT_CERT,
             KeyReference::PivCardAuthKey => file_ids::TAG_CARD_AUTH_CERT,
-            _ => return Err(anyhow::anyhow!("Invalid Key Reference for Certificate")),
+            _ => return Err(CivError::InvalidData("Invalid Key Reference for Certificate".to_string())),
         };
-        // Construct GET DATA payload: 5C 03 [Tag]
         let mut tag_data = vec![0x5C, 0x03];
         tag_data.extend_from_slice(&tag);
         
         self.get_data(&tag_data).await
     }
 
-    /// Sign data using the specified key and algorithm
-    /// Note: 'data' should be the digest (Hash) or DigestInfo depending on the algorithm requirements.
-    /// For P-256, it should be the raw 32-byte hash.
-    /// For RSA, it usually requires the DigestInfo structure.
+    /// Sign data
     pub async fn sign(&mut self, key_ref: KeyReference, alg: Algorithm, data: &[u8]) -> Result<Vec<u8>> {
         self.general_authenticate(alg, key_ref, data, true).await
     }
@@ -208,25 +178,25 @@ impl<R: CardReader> PivController<R> {
             .with_data(tag_data);
 
         let res = self.reader.transmit(&apdu.to_bytes()).await?;
-        Self::check_sw(&res).context("GET DATA Failed")?;
+        Self::check_sw(&res)?;
         
         if res.len() >= 2 {
             Ok(res[0..res.len()-2].to_vec())
         } else {
-            Err(anyhow::anyhow!("Response too short"))
+            Err(CivError::Communication("Response too short".to_string()))
         }
     }
 
     fn check_sw(res: &[u8]) -> Result<()> {
         if res.len() < 2 {
-            return Err(anyhow::anyhow!("Response too short"));
+            return Err(CivError::Communication("Response too short".to_string()));
         }
         let sw1 = res[res.len() - 2];
         let sw2 = res[res.len() - 1];
         if sw1 == 0x90 && sw2 == 0x00 {
             Ok(())
         } else {
-            Err(anyhow::anyhow!("Card Error: SW={:02X}{:02X}", sw1, sw2))
+            Err(CivError::from_sw(sw1, sw2))
         }
     }
 }
@@ -261,7 +231,6 @@ mod tests {
         assert!(res.is_ok());
 
         let apdus = reader.sent_apdus.lock().unwrap();
-        // Check data: "123456" + FF FF
         let expected_data = [b'1', b'2', b'3', b'4', b'5', b'6', 0xFF, 0xFF];
         assert_eq!(&apdus[0][5..13], &expected_data);
     }
@@ -270,7 +239,6 @@ mod tests {
     async fn test_get_data_chuid() {
         let reader = TestReader::new();
         let mut controller = PivController::new(reader.clone());
-        // Mock CHUID response
         let mock_chuid = vec![0x53, 0x03, 0x01, 0x02, 0x03, 0x90, 0x00];
         reader.push_response(&mock_chuid);
 
@@ -286,7 +254,6 @@ mod tests {
     async fn test_sign_template() {
         let reader = TestReader::new();
         let mut controller = PivController::new(reader.clone());
-        // Response template: 7C 05 82 03 AA BB CC + 90 00
         reader.push_response(&[0x7C, 0x05, 0x82, 0x03, 0xAA, 0xBB, 0xCC, 0x90, 0x00]);
 
         let dummy_hash = [0x11; 32];
@@ -297,7 +264,6 @@ mod tests {
 
         let apdus = reader.sent_apdus.lock().unwrap();
         assert_eq!(apdus[0][1], 0x87); // GENERAL AUTH
-        // Check for template tags 7C, 82, 81
         let data = &apdus[0][5..];
         assert_eq!(data[0], 0x7C);
         assert!(data.iter().any(|&b| b == 0x81)); // Challenge tag
@@ -307,11 +273,7 @@ mod tests {
 
 pub struct ParsingUtils;
 impl ParsingUtils {
-    /// extract expiration date from CHUID raw data
-    /// CHUID structure: 53 Length ( 30 (FASC-N...) 34 (GUID...) 35 (Expiration Date YYYYMMDD) ... )
-    /// Very rough scanner for tag 0x35
     pub fn extract_expiry_date(chuid: &[u8]) -> Option<String> {
-        // Simple linear scan for tag 0x35
         let mut i = 0;
         while i < chuid.len() - 5 {
              if chuid[i] == 0x35 && chuid[i+1] == 0x08 {

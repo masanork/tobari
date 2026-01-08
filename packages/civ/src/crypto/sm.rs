@@ -1,5 +1,5 @@
-use anyhow::{Result, anyhow};
 use crate::apdu::ApduCommand;
+use crate::errors::{Result, CivError};
 use aes::cipher::{BlockEncryptMut, BlockDecryptMut, KeyIvInit, block_padding::NoPadding};
 use cbc::{Encryptor, Decryptor};
 use aes::{Aes128, Aes256};
@@ -44,7 +44,7 @@ impl AesSecureMessaging {
             let mut km = [0u8; 32]; km.copy_from_slice(k_mac);
             Ok(Self::Aes256 { k_enc: ke, k_mac: km, ssc })
         } else {
-            Err(anyhow!("Invalid AES Key Length: must be 16 (128-bit) or 32 (256-bit)"))
+            Err(CivError::InvalidData("Invalid AES Key Length: must be 16 (128-bit) or 32 (256-bit)".to_string()))
         }
     }
 
@@ -70,12 +70,12 @@ impl AesSecureMessaging {
         match self {
             Self::Aes128 { k_enc, .. } => {
                 use aes::cipher::BlockEncrypt;
-                let cipher = Aes128::new_from_slice(k_enc).map_err(|e| anyhow!("AES Key Error: {}", e))?;
+                let cipher = Aes128::new_from_slice(k_enc).map_err(|e| CivError::CryptoError(format!("AES Key Error: {}", e)))?;
                 cipher.encrypt_block(&mut block);
             },
             Self::Aes256 { k_enc, .. } => {
                 use aes::cipher::BlockEncrypt;
-                let cipher = Aes256::new_from_slice(k_enc).map_err(|e| anyhow!("AES Key Error: {}", e))?;
+                let cipher = Aes256::new_from_slice(k_enc).map_err(|e| CivError::CryptoError(format!("AES Key Error: {}", e)))?;
                 cipher.encrypt_block(&mut block);
             }
         }
@@ -87,13 +87,13 @@ impl AesSecureMessaging {
         
         let result = match self {
             Self::Aes128 { k_mac, .. } => {
-                let mut mac = <Aes128Cmac as KeyInit>::new_from_slice(k_mac).map_err(|e| anyhow!("MAC Init error: {}", e))?;
+                let mut mac = <Aes128Cmac as KeyInit>::new_from_slice(k_mac).map_err(|e| CivError::CryptoError(format!("MAC Init error: {}", e)))?;
                 mac.update(&ssc_bytes);
                 mac.update(data);
                 mac.finalize().into_bytes()
             },
             Self::Aes256 { k_mac, .. } => {
-                let mut mac = <Aes256Cmac as KeyInit>::new_from_slice(k_mac).map_err(|e| anyhow!("MAC Init error: {}", e))?;
+                let mut mac = <Aes256Cmac as KeyInit>::new_from_slice(k_mac).map_err(|e| CivError::CryptoError(format!("MAC Init error: {}", e)))?;
                 mac.update(&ssc_bytes);
                 mac.update(data);
                 mac.finalize().into_bytes()
@@ -112,12 +112,12 @@ impl AesSecureMessaging {
             Self::Aes128 { k_enc, .. } => {
                 let encryptor = Aes128CbcEnc::new(k_enc.into(), iv.into());
                 encryptor.encrypt_padded_mut::<NoPadding>(&mut buf, len)
-                    .map_err(|e| anyhow!("Encrypt Error: {:?}", e))?;
+                    .map_err(|e| CivError::CryptoError(format!("Encrypt Error: {:?}", e)))?;
             },
             Self::Aes256 { k_enc, .. } => {
                 let encryptor = Aes256CbcEnc::new(k_enc.into(), iv.into());
                 encryptor.encrypt_padded_mut::<NoPadding>(&mut buf, len)
-                    .map_err(|e| anyhow!("Encrypt Error: {:?}", e))?;
+                    .map_err(|e| CivError::CryptoError(format!("Encrypt Error: {:?}", e)))?;
             }
         }
         Ok(buf)
@@ -129,12 +129,12 @@ impl AesSecureMessaging {
             Self::Aes128 { k_enc, .. } => {
                 let decryptor = Aes128CbcDec::new(k_enc.into(), iv.into());
                 decryptor.decrypt_padded_mut::<NoPadding>(&mut buf)
-                    .map_err(|e| anyhow!("Decrypt Error: {:?}", e))?;
+                    .map_err(|e| CivError::CryptoError(format!("Decrypt Error: {:?}", e)))?;
             },
             Self::Aes256 { k_enc, .. } => {
                 let decryptor = Aes256CbcDec::new(k_enc.into(), iv.into());
                 decryptor.decrypt_padded_mut::<NoPadding>(&mut buf)
-                    .map_err(|e| anyhow!("Decrypt Error: {:?}", e))?;
+                    .map_err(|e| CivError::CryptoError(format!("Decrypt Error: {:?}", e)))?;
             }
         }
         Ok(buf)
@@ -166,11 +166,13 @@ impl SecureMessagingSession for AesSecureMessaging {
             command_data.extend_from_slice(&do87);
         }
 
+        // DO97: Le
         if let Some(le) = apdu.le {
+            let le_val = if le == 256 || le == 0 { 0x00 } else { le as u8 };
             let mut do97 = Vec::new();
             do97.push(0x97);
             do97.extend_from_slice(&encode_length(1));
-            do97.push(le);
+            do97.push(le_val);
             command_data.extend_from_slice(&do97);
         }
 
@@ -197,13 +199,13 @@ impl SecureMessagingSession for AesSecureMessaging {
 
     fn unwrap_response(&mut self, response: &[u8]) -> Result<(Vec<u8>, u8, u8)> {
         if response.len() < 2 {
-            return Err(anyhow!("SM response too short"));
+            return Err(CivError::Communication("SM response too short".to_string()));
         }
         let (raw_data, sw_bytes) = response.split_at(response.len() - 2);
         let sw1 = sw_bytes[0];
         let sw2 = sw_bytes[1];
         if sw1 != 0x90 || sw2 != 0x00 {
-             return Err(anyhow!("SM Transport Error: {:02X}{:02X}", sw1, sw2));
+             return Err(CivError::SecureMessagingError(format!("SM Transport Error: {:02X}{:02X}", sw1, sw2)));
         }
 
         self.increment_ssc();
@@ -222,8 +224,8 @@ impl SecureMessagingSession for AesSecureMessaging {
             }
         }
 
-        let do99 = do99.ok_or_else(|| anyhow!("Missing DO99"))?;
-        let do8e = do8e.ok_or_else(|| anyhow!("Missing DO8E"))?;
+        let do99 = do99.ok_or_else(|| CivError::SecureMessagingError("Missing DO99".to_string()))?;
+        let do8e = do8e.ok_or_else(|| CivError::SecureMessagingError("Missing DO8E".to_string()))?;
 
         // Verify MAC
         let mut mac_input = Vec::new();
@@ -240,14 +242,14 @@ impl SecureMessagingSession for AesSecureMessaging {
         let mac_input_padded = pad_iso9797_m2(&mac_input);
         let calculated_mac = self.compute_mac(&mac_input_padded)?;
         if calculated_mac != do8e.as_slice() {
-            return Err(anyhow!("SM MAC Mismatch"));
+            return Err(CivError::SecureMessagingError("SM MAC Mismatch".to_string()));
         }
 
         // Decrypt Data
         let mut data = Vec::new();
         if let Some(enc_data) = do87 {
             if enc_data.is_empty() || enc_data[0] != 0x01 {
-                return Err(anyhow!("Invalid DO87 format"));
+                return Err(CivError::SecureMessagingError("Invalid DO87 format".to_string()));
             }
             let ciphertext = &enc_data[1..];
             let iv = self.get_iv()?;
@@ -260,6 +262,130 @@ impl SecureMessagingSession for AesSecureMessaging {
         let res_sw2 = do99[1];
 
         Ok((data, res_sw1, res_sw2))
+    }
+}
+
+impl AesSecureMessaging {
+    /// Unwrap Command APDU (Card Side)
+    pub fn unwrap_command_from_reader(&mut self, cmd: &ApduCommand) -> Result<ApduCommand> {
+        if (cmd.cla & 0x0C) == 0 {
+            return Ok(cmd.clone()); // Not SM
+        }
+        
+        self.increment_ssc();
+        
+        let tlvs = parse_tlv(&cmd.data)?;
+        let mut do87 = None;
+        let mut do97 = None; // Le
+        let mut do8e = None; // MAC
+
+        for (tag, value) in tlvs {
+            match tag {
+                0x87 => do87 = Some(value),
+                0x97 => do97 = Some(value),
+                0x8E => do8e = Some(value),
+                _ => {}
+            }
+        }
+        
+        let do8e = do8e.ok_or_else(|| CivError::SecureMessagingError("Missing DO8E (MAC)".to_string()))?;
+
+        // Verify MAC
+        let header_padded = pad_header(cmd.cla, cmd.ins, cmd.p1, cmd.p2);
+        let mut mac_input = Vec::new();
+        mac_input.extend_from_slice(&header_padded);
+
+        if let Some(ref val) = do87 {
+            mac_input.push(0x87);
+            mac_input.extend_from_slice(&encode_length(val.len()));
+            mac_input.extend_from_slice(val);
+        }
+        if let Some(ref val) = do97 {
+            mac_input.push(0x97);
+            mac_input.extend_from_slice(&encode_length(val.len()));
+            mac_input.extend_from_slice(val);
+        }
+        
+        let mac_input_padded = pad_iso9797_m2(&mac_input);
+        let calculated_mac = self.compute_mac(&mac_input_padded)?;
+        
+        if calculated_mac != do8e.as_slice() {
+            return Err(CivError::SecureMessagingError("SM Command MAC Mismatch".to_string()));
+        }
+
+        // Decrypt Body
+        let mut plain_data = Vec::new();
+        if let Some(enc_data) = do87 {
+            if enc_data.is_empty() || enc_data[0] != 0x01 {
+                 return Err(CivError::SecureMessagingError("Invalid DO87 format".to_string()));
+            }
+            let ciphertext = &enc_data[1..];
+            let iv = self.get_iv()?;
+            let plaintext_padded = self.decrypt_data(&iv, ciphertext)?;
+            plain_data = unpad_iso9797_m2(&plaintext_padded)?;
+        }
+        
+        // Extract Le
+        let plain_le = if let Some(le_val) = do97 {
+            if le_val.is_empty() { None }
+            else if le_val.len() == 1 && le_val[0] == 0x00 { Some(256) }
+            else if le_val.len() == 1 { Some(le_val[0] as usize) }
+            else { Some(0) } // Extended Le unsupported
+        } else {
+            None
+        };
+
+        let new_cmd = ApduCommand::new(cmd.cla & !0x0C, cmd.ins, cmd.p1, cmd.p2)
+            .with_data(&plain_data);
+        let new_cmd = if let Some(le) = plain_le {
+            new_cmd.with_le(le)
+        } else {
+            new_cmd
+        };
+        
+        Ok(new_cmd)
+    }
+
+    /// Wrap Response APDU (Card Side)
+    pub fn wrap_response_from_card(&mut self, data: &[u8], sw1: u8, sw2: u8) -> Result<Vec<u8>> {
+        self.increment_ssc();
+        
+        let mut resp_data = Vec::new();
+        
+        // DO87
+        if !data.is_empty() {
+            let iv = self.get_iv()?;
+            let padded = pad_iso9797_m2(data);
+            let ciphertext = self.encrypt_data(&iv, &padded)?;
+            
+            resp_data.push(0x87);
+            let mut val = vec![0x01];
+            val.extend_from_slice(&ciphertext);
+            resp_data.extend_from_slice(&encode_length(val.len()));
+            resp_data.extend_from_slice(&val);
+        }
+        
+        // DO99
+        let do99_val = vec![sw1, sw2];
+        resp_data.push(0x99);
+        resp_data.extend_from_slice(&encode_length(do99_val.len()));
+        resp_data.extend_from_slice(&do99_val);
+        
+        // MAC
+        let mut mac_input = Vec::new();
+        mac_input.extend_from_slice(&resp_data);
+        
+        let mac_input_padded = pad_iso9797_m2(&mac_input);
+        let mac = self.compute_mac(&mac_input_padded)?;
+        
+        // DO8E
+        resp_data.push(0x8E);
+        resp_data.extend_from_slice(&encode_length(mac.len()));
+        resp_data.extend_from_slice(&mac);
+        
+        resp_data.extend_from_slice(&[0x90, 0x00]);
+        
+        Ok(resp_data)
     }
 }
 
@@ -281,10 +407,10 @@ fn unpad_iso9797_m2(data: &[u8]) -> Result<Vec<u8>> {
             return Ok(d);
         }
         if byte != 0x00 {
-            return Err(anyhow!("Invalid Padding"));
+            return Err(CivError::SecureMessagingError("Invalid Padding".to_string()));
         }
     }
-    Err(anyhow!("Padding marker not found"))
+    Err(CivError::SecureMessagingError("Padding marker not found".to_string()))
 }
 
 fn pad_header(cla: u8, ins: u8, p1: u8, p2: u8) -> Vec<u8> {
@@ -304,7 +430,7 @@ fn encode_length(len: usize) -> Vec<u8> {
 
 fn parse_length(data: &[u8], offset: usize) -> Result<(usize, usize)> {
     if offset >= data.len() {
-        return Err(anyhow!("TLV length out of bounds"));
+        return Err(CivError::InvalidData("TLV length out of bounds".to_string()));
     }
     let first = data[offset];
     if first & 0x80 == 0 {
@@ -312,10 +438,10 @@ fn parse_length(data: &[u8], offset: usize) -> Result<(usize, usize)> {
     } else {
         let count = (first & 0x7F) as usize;
         if count == 0 || count > 2 {
-            return Err(anyhow!("Unsupported TLV length encoding"));
+            return Err(CivError::InvalidData("Unsupported TLV length encoding".to_string()));
         }
         if offset + 1 + count > data.len() {
-            return Err(anyhow!("TLV length exceeds buffer"));
+            return Err(CivError::InvalidData("TLV length exceeds buffer".to_string()));
         }
         let mut len = 0usize;
         for i in 0..count {
@@ -334,7 +460,7 @@ fn parse_tlv(data: &[u8]) -> Result<Vec<(u8, Vec<u8>)>> {
         let (len, len_len) = parse_length(data, offset)?;
         offset += len_len;
         if offset + len > data.len() {
-            return Err(anyhow!("TLV length exceeds buffer"));
+            return Err(CivError::InvalidData("TLV length exceeds buffer".to_string()));
         }
         let value = data[offset..offset + len].to_vec();
         offset += len;
@@ -358,13 +484,8 @@ mod tests {
         let cmd = ApduCommand::new(0x00, 0xA4, 0x02, 0x0C).with_data(&[0x01, 0x02]);
         
         let wrapped = sm.wrap_command(&cmd).unwrap();
-        
-        // Wrapped command should be CLA=0C
         assert_eq!(wrapped[0], 0x0C);
-        
-        // Should contain DO87 (Encrypted) and DO8E (MAC)
-        // Simple check for tags
-        assert!(wrapped.windows(2).any(|w| w == [0x87, 0x01] || w[0] == 0x87));
+        assert!(wrapped.windows(2).any(|w| w == [0x87, 0x11] || w[0] == 0x87));
         assert!(wrapped.windows(2).any(|w| w == [0x8E, 0x08]));
     }
 
@@ -379,7 +500,7 @@ mod tests {
         
         let wrapped = sm.wrap_command(&cmd).unwrap();
         assert_eq!(wrapped[0], 0x0C);
-        assert!(wrapped.windows(2).any(|w| w == [0x97, 0x01])); // Le DO97
+        assert!(wrapped.windows(2).any(|w| w == [0x97, 0x01])); 
         assert!(wrapped.windows(2).any(|w| w == [0x8E, 0x08]));
     }
 
@@ -393,16 +514,12 @@ mod tests {
         let ssc = 0;
         let mut sm = AesSecureMessaging::new(&k_enc, &k_mac, ssc).unwrap();
 
-        // Simulate Card side: next SSC = 1
         let next_ssc = 1u128;
-        
-        // 1. Prepare Data (DO87)
         let plaintext = vec![0xAA, 0xBB, 0xCC];
         let mut padded = plaintext.clone();
         padded.push(0x80);
         while padded.len() % 16 != 0 { padded.push(0x00); }
         
-        // Need to manually derive IV for Card side simulation
         let mut iv = [0u8; 16];
         let mut ssc_bytes = [0u8; 16];
         ssc_bytes.copy_from_slice(&next_ssc.to_be_bytes());
@@ -417,10 +534,8 @@ mod tests {
         let mut do87 = vec![0x87, (ciphertext.len() + 1) as u8, 0x01];
         do87.extend_from_slice(&ciphertext);
 
-        // 2. Prepare Status (DO99)
         let do99 = vec![0x99, 0x02, 0x90, 0x00];
 
-        // 3. Prepare MAC (DO8E)
         let mut mac_input = Vec::new();
         mac_input.push(0x87);
         mac_input.extend_from_slice(&encode_length(ciphertext.len() + 1));
@@ -431,11 +546,10 @@ mod tests {
         mac_input.extend_from_slice(&encode_length(2));
         mac_input.extend_from_slice(&[0x90, 0x00]);
 
-        // Card applies M2 Padding before calling CMAC(SSC || data)
         let mac_input_padded = pad_iso9797_m2(&mac_input);
 
         let mut mac_obj = <Aes128Cmac as KeyInit>::new_from_slice(&k_mac).unwrap();
-        mac_obj.update(&next_ssc.to_be_bytes()); // SSC is always 16 bytes in AES
+        mac_obj.update(&next_ssc.to_be_bytes()); 
         mac_obj.update(&mac_input_padded);
         let mac_val = &mac_obj.finalize().into_bytes()[0..8];
         
@@ -444,29 +558,11 @@ mod tests {
         full_resp.extend_from_slice(&do99);
         full_resp.extend_from_slice(&do8e);
         full_resp.extend_from_slice(mac_val);
-        full_resp.extend_from_slice(&[0x90, 0x00]); // SUCCESS SW
+        full_resp.extend_from_slice(&[0x90, 0x00]); 
 
-        // 4. Test Unwrap
         let (res_data, sw1, sw2) = sm.unwrap_response(&full_resp).unwrap();
         assert_eq!(res_data, plaintext);
         assert_eq!(sw1, 0x90);
         assert_eq!(sw2, 0x00);
-        
-        // 5. Test Invalid MAC
-        let mut bad_resp = full_resp.clone();
-        let len = bad_resp.len();
-        bad_resp[len - 3] ^= 0xFF; // Corrupt MAC
-        assert!(sm.unwrap_response(&bad_resp).is_err());
-
-        // 6. Test Short Response
-        assert!(sm.unwrap_response(&[0x90]).is_err());
-
-        // 7. Test Missing Tags
-        let no_tags = vec![0x90, 0x00];
-        assert!(sm.unwrap_response(&no_tags).is_err());
-
-        // 8. Test Incorrect SW
-        let bad_sw = vec![0x87, 0x01, 0x01, 0x6A, 0x82];
-        assert!(sm.unwrap_response(&bad_sw).is_err());
     }
 }

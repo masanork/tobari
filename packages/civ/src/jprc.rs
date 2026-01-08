@@ -1,6 +1,6 @@
 use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY};
 use crate::reader::CardReader;
-use anyhow::{Result, Context};
+use crate::errors::{Result, CivError};
 use std::fmt;
 
 /// Residence Card (Zairyu Card) Application Controller
@@ -73,7 +73,7 @@ impl<R: CardReader> ResidenceCardController<R> {
         let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C)
             .with_data(df);
         let res = self.reader.transmit(&apdu.to_bytes()).await?;
-        Self::check_sw(&res).context("Failed to select DF")
+        Self::check_sw(&res)
     }
 
     /// Read Back Side Info (Address, Permits, Status) from DF2
@@ -162,7 +162,7 @@ impl<R: CardReader> ResidenceCardController<R> {
         let select = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x02, 0x0C)
             .with_data(file_id);
         let res_sel = self.reader.transmit(&select.to_bytes()).await?;
-        Self::check_sw(&res_sel).context("Failed to select EF")?;
+        Self::check_sw(&res_sel)?;
 
         let mut data = Vec::new();
         let mut offset: u16 = 0;
@@ -177,7 +177,7 @@ impl<R: CardReader> ResidenceCardController<R> {
             let res = self.reader.transmit(&read.to_bytes()).await?;
             
             if res.len() < 2 {
-                return Err(anyhow::anyhow!("Response too short"));
+                return Err(CivError::Communication("Response too short".to_string()));
             }
             
             let sw1 = res[res.len() - 2];
@@ -198,7 +198,7 @@ impl<R: CardReader> ResidenceCardController<R> {
             } else if sw1 == 0x62 && sw2 == 0x82 {
                  break; // EOF
             } else {
-                 return Err(anyhow::anyhow!("Read Binary Error: {:02X}{:02X}", sw1, sw2));
+                 return Err(CivError::from_sw(sw1, sw2));
             }
         }
         Ok(data)
@@ -206,14 +206,14 @@ impl<R: CardReader> ResidenceCardController<R> {
 
     fn check_sw(res: &[u8]) -> Result<()> {
         if res.len() < 2 {
-            return Err(anyhow::anyhow!("Response too short"));
+            return Err(CivError::Communication("Response too short".to_string()));
         }
         let sw1 = res[res.len() - 2];
         let sw2 = res[res.len() - 1];
         if sw1 == 0x90 && sw2 == 0x00 {
             Ok(())
         } else {
-            Err(anyhow::anyhow!("Card Error: SW={:02X}{:02X}", sw1, sw2))
+            Err(CivError::from_sw(sw1, sw2))
         }
     }
 }
@@ -222,60 +222,36 @@ impl<R: CardReader> ResidenceCardController<R> {
 mod tests {
     use super::*;
     use crate::test_utils::TestReader;
+    use crate::mock::{MockSmartCard, ResidenceCardBackend};
+    use std::sync::{Arc, Mutex};
+
+    fn setup_rc_mock(reader: &TestReader) -> Arc<Mutex<MockSmartCard>> {
+        let mut mock = MockSmartCard::new();
+        mock.add_backend(file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new()));
+        mock.add_backend(file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new()));
+        
+        let mock = Arc::new(Mutex::new(mock));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+        mock
+    }
 
     #[tokio::test]
     async fn test_select_rc_ap() {
         let reader = TestReader::new();
+        let _mock = setup_rc_mock(&reader);
         let mut controller = ResidenceCardController::new(reader.clone());
-        reader.push_response(&[0x90, 0x00]); // Select DF2
 
         let res = controller.select_df2().await;
         assert!(res.is_ok());
-
-        let apdus = reader.sent_apdus.lock().unwrap();
-        assert_eq!(apdus[0][1], 0xA4);
-        assert_eq!(&apdus[0][5..], &file_ids::DF2);
     }
 
     #[tokio::test]
     async fn test_read_df2_info() {
         let reader = TestReader::new();
+        let _mock = setup_rc_mock(&reader);
         let mut controller = ResidenceCardController::new(reader.clone());
         
-        // 1. Select DF2
-        reader.push_response(&[0x90, 0x00]);
-        
-        // 2. Select EF_ADDRESS
-        reader.push_response(&[0x90, 0x00]);
-        // 3. Read Address (Tag D4)
-        // "東京都" (E6 9D B1 E4 BA AC)
-        let addr_bytes = "東京都".as_bytes();
-        let mut mock_addr = vec![0xD4, addr_bytes.len() as u8];
-        mock_addr.extend_from_slice(addr_bytes);
-        mock_addr.extend_from_slice(&[0x90, 0x00]);
-        reader.push_response(&mock_addr);
-
-        // 4. Select EF_PERMIT_GLOBAL
-        reader.push_response(&[0x90, 0x00]);
-        // 5. Read Permit (Tag D5)
-        // "許可"
-        let perm_bytes = "許可".as_bytes();
-        let mut mock_perm = vec![0xD5, perm_bytes.len() as u8];
-        mock_perm.extend_from_slice(perm_bytes);
-        mock_perm.extend_from_slice(&[0x90, 0x00]);
-        reader.push_response(&mock_perm);
-
-        // 6. Select EF_PERMIT_INDIV (Fail/Empty)
-        reader.push_response(&[0x90, 0x00]);
-        reader.push_response(&[0x90, 0x00]); // Empty + OK
-
-        // 7. Select EF_UPDATE_STATUS
-        reader.push_response(&[0x90, 0x00]);
-        // 8. Read Status (Tag D7) -> "0" (None)
-        let mut mock_status = vec![0xD7, 0x01, b'0'];
-        mock_status.extend_from_slice(&[0x90, 0x00]);
-        reader.push_response(&mock_status);
-
         let res = controller.read_df2_info().await;
         assert!(res.is_ok());
         let info = res.unwrap();

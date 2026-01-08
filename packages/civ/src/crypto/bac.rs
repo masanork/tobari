@@ -37,8 +37,15 @@ impl BacSession {
             command_data.extend_from_slice(&do87);
         }
 
+        // DO97: Le
         if let Some(le) = apdu.le {
-            let do97 = [0x97, 0x01, le];
+            // TODO: Support Extended Le in BAC (DO97 length > 1)
+            let le_val = if le == 256 || le == 0 { 0x00 } else { le as u8 };
+            let mut do97 = Vec::new();
+            do97.push(0x97);
+            do97.push(0x01);
+            do97.push(le_val);
+            
             command_data.extend_from_slice(&do97);
         }
 

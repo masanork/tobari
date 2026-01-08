@@ -1,63 +1,91 @@
-# CIV (Citizen Identity Verification) Library
+# civ (Citizen Identity Verification)
 
-A unified Rust library for accessing and verifying various Citizen Identity Cards.
-Hardware access is powered by PC/SC (Native) or WebUSB (Web).
+**civ** is a universal Rust library for interacting with government-issued smart cards (National Designators, ePassports, etc.). It abstracts the complexity of ISO 7816-4 APDUs, PC/SC, and cryptographic protocols into a unified, high-level API.
 
-## [Status Update] 2026-01-08
-- **JPKI (My Number Card)**: 
-    - ✅ **Working**: Basic 4 Info (Name, Addr, DOB, Gender) and My Number retrieval.
-    - ✅ **Working**: User Authentication and Digital Signature generation.
-    - ✅ **Working**: PIN Retry count monitoring for all PIN types.
-    - ✅ **Working**: **Face Photo** retrieval via Surface-AP.
-- **JPDL (Drivers License)**:
-    - ✅ **Working**: Text Data (Shift-JIS/JIS X 0208) including Name, Address, Conditions.
-    - ✅ **Working**: PIN 1 & PIN 2 Verification (Authentication).
-    - ✅ **Working**: **Face Photo** retrieval (JPEG2000 from DF2).
-    - ✅ **Working**: Registered Domicile (Honseki) retrieval.
-- **JPRC (Residence Card)**:
-    - ✅ **Working**: Address and Permit Info (UTF-8).
-    - ✅ **Working**: **Face Photo** retrieval.
-- **Hardware**: Confirmed working with ACS ACR39U and similar PC/SC Type-B readers on macOS.
+It is designed to be the foundational "driver layer" for building Digital Identity Wallets, Authentication Services, and KYC tools.
 
----
+## ✨ Features
 
-## 🛠 CLI Usage
+- **Unified API**: access different card types (JPKI, Driver's License, ePassport) through a consistent interface.
+- **Cross-Platform**: Built on pure Rust, works on `macOS`, `Linux`, `Windows` (PC/SC) and `Web` (WebUSB - WIP).
+- **Standards Compliant**: Implements ISO 7816-4, ICAO 9303 (BAC/PACE), and various national specifications.
+- **Type-Safe**: Leverages Rust's type system to prevent common errors in APDU construction and parsing.
 
-### 🇯🇵 JPKI (My Number Card)
+## 💳 Supported Cards
 
-**⚠️ Safety First: Check PIN Retries**
-```bash
-cargo run -- jpki retries
+| Card Type | Region | Standard | Features |
+|---|---|---|---|
+| **JPKI (My Number Card)** | 🇯🇵 Japan | ISO 7816 | Auth, Sign, 4 attributes, Face Photo, MyNumber |
+| **Driver's License** | 🇯🇵 Japan | ISO 7816 | Data Reading, PIN Verify, PIN Unblock (WIP) |
+| **Residence Card** | 🇯🇵 Japan | ISO 7816 | Read Address, Period of Stay |
+| **ePassport** | 🌏 Global | ICAO 9303 | BAC (Basic Access Control), PACE (Planned) |
+| **PIV (Gov ID)** | 🇺🇸 USA | NIST FIPS 201 | Auth, Sign (Planned) |
+
+## 📦 Installation
+
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+civ = "0.1"
 ```
 
-**Read Card Attributes (including Face Photo)**
-```bash
-cargo run -- jpki attr --photo my_photo.jp2
+## 📖 Usage (Library)
+
+**Reading basic information from a Japanese My Number Card:**
+
+```rust
+use civ::{CardReader, PcscReader, JpkiController};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Detect and connect to a reader
+    let mut reader = PcscReader::new()?;
+    reader.connect()?;
+
+    // 2. Initialize JPKI Controller
+    let mut jpki = JpkiController::new(reader);
+
+    // 3. Read specific data (e.g., My Number) with PIN
+    let pin = "1234"; // User input
+    let my_number = jpki.read_mynumber(pin).await?;
+    
+    println!("My Number: {}", my_number);
+
+    Ok(())
+}
 ```
 
-**Read Individual Number (My Number)**
+## 🛠 Usage (CLI)
+
+`civ` comes with a handy CLI tool for testing and debugging cards.
+
 ```bash
-cargo run -- jpki num
+# Read My Number (requires 4-digit PIN)
+civ jpki num --pin 1234
+
+# Read Face Photo to a file
+civ jpki attr --photo face.jp2
+
+# Check ID Card PIN retry counter
+civ jpki retries
 ```
 
-**Digital Signature**
-```bash
-# Authenticate (4-digit PIN)
-cargo run -- jpki sign --type auth --data "challenge"
+## 📚 Documentation
 
-# Sign Document (6-16 alphanum password)
-cargo run -- jpki sign --type sign --data "document_hash"
-```
+- **[Identity Scheme Analysis](docs/IDENTITY_SCHEME_ANALYSIS.md)**: Deep dive into global ID architectures (RSA vs ECC vs PQC).
+- **[JPKI Spec](docs/jpki.md)**: Details on Japanese Public Key Infrastructure.
+- **[JPDL Spec](docs/jpdl.md)**: Japanese Driver's License structure.
 
----
+## 🤝 Contributing
 
-## 📚 Technical Documentation
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- [docs/jpki.md](docs/jpki.md): JPKI (My Number Card) Specification.
-- [docs/jpdl.md](docs/jpdl.md): Drivers License Specification.
-- [docs/jprc.md](docs/jprc.md): Residence Card Specification.
-- [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md): Detailed progress report by card type.
-- [docs/ROADMAP.md](docs/ROADMAP.md): Future plans for the CIV library.
+## 📄 License
 
-## License
-MIT / Apache-2.0
+This project is licensed under either of
+
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.

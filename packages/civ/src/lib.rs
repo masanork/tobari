@@ -1,4 +1,6 @@
 pub mod apdu;
+pub mod errors;
+pub mod mock;
 pub mod crypto;
 pub mod jpki;
 pub mod jpdl;
@@ -21,9 +23,7 @@ pub mod utils;
 #[cfg(test)]
 pub mod test_utils;
 #[cfg(test)]
-pub mod mock_passport;
 #[cfg(test)]
-pub mod mock_jpki;
 
 pub use apdu::ApduCommand;
 pub use reader::CardReader;
