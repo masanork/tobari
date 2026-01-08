@@ -1,6 +1,6 @@
 use crate::passport::PassportController;
 use crate::reader::CardReader;
-use anyhow::Result;
+use crate::errors::{Result};
 
 /// European Identity Card Controller
 /// Most EU National ID cards (compliant with EU 2019/1157) are ICAO 9303 compliant.

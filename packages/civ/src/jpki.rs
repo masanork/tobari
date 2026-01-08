@@ -1,7 +1,7 @@
 use crate::apdu::{ApduCommand, file_ids, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_VERIFY, INS_COMPUTE_DIGITAL_SIGNATURE};
 use crate::reader::CardReader;
 use crate::utils::parse_ber_tlv;
-use anyhow::Result;
+use crate::errors::{Result, CivError};
 
 /// High-level JPKI Controller
 pub struct JpkiController<R: CardReader> {
@@ -87,16 +87,16 @@ impl<R: CardReader> JpkiController<R> {
     }
 
     fn interpret_retry_sw(&self, res: &[u8]) -> Result<u8> {
-        if res.len() < 2 { return Err(anyhow::anyhow!("Response too short")); }
+        if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
         let sw1 = res[res.len()-2];
         let sw2 = res[res.len()-1];
         if sw1 == 0x90 && sw2 == 0x00 { return Ok(255); } 
         if sw1 == 0x63 && (sw2 & 0xF0) == 0xC0 { return Ok(sw2 & 0x0F); }
         if sw1 == 0x69 && sw2 == 0x83 { return Ok(0); } 
         if sw1 == 0x69 && (sw2 == 0x86 || sw2 == 0x81) {
-             return Err(anyhow::anyhow!("Access Denied (SW: {:02X}{:02X})", sw1, sw2));
+             return Err(CivError::AccessDenied(format!("Access Denied (SW: {:02X}{:02X})", sw1, sw2)));
         }
-        Err(anyhow::anyhow!("Unexpected SW: {:02X}{:02X}", sw1, sw2))
+        Err(CivError::ApduError(sw1, sw2))
     }
 
     pub async fn compute_auth_signature(&mut self, pin: &str, data: &[u8]) -> Result<Vec<u8>> {
@@ -165,7 +165,7 @@ impl<R: CardReader> JpkiController<R> {
             }
         }
         
-        Err(anyhow::anyhow!("MyNumber not found in EF 00 01"))
+        Err(CivError::NotFound("MyNumber not found in EF 00 01".to_string()))
     }
 
     pub async fn read_attributes(&mut self, pin: &str) -> Result<BasicInfo> {
@@ -177,7 +177,7 @@ impl<R: CardReader> JpkiController<R> {
 
     pub async fn read_face_photo(&mut self, my_number: &str) -> Result<Vec<u8>> {
         if my_number.len() != 12 {
-            return Err(anyhow::anyhow!("Invalid My Number length."));
+            return Err(CivError::InvalidData("Invalid My Number length.".to_string()));
         }
         self.select_surface_ap().await?;
         self.verify_pin(&file_ids::EF_SURFACE_PIN, my_number).await?;
@@ -200,7 +200,7 @@ impl<R: CardReader> JpkiController<R> {
         } else if data.len() > 1000 {
             Ok(data)
         } else {
-            Err(anyhow::anyhow!("Face photo (tag DF27) not found."))
+            Err(CivError::NotFound("Face photo (tag DF27) not found.".to_string()))
         }
     }
 
@@ -230,12 +230,12 @@ impl<R: CardReader> JpkiController<R> {
             let p1 = (offset >> 8) as u8;
             let p2 = (offset & 0xFF) as u8;
             let res = self.reader.transmit(&ApduCommand::new(CLA_ISO, INS_READ_BINARY, p1, p2).with_le(0x00).to_bytes()).await?;
-            if res.len() < 2 { return Err(anyhow::anyhow!("Response too short")); }
+            if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
             let (sw1, sw2) = (res[res.len()-2], res[res.len()-1]);
             if sw1 == 0x90 && sw2 == 0x00 { } 
             else if sw1 == 0x62 && sw2 == 0x82 { } 
             else if sw1 == 0x6B && sw2 == 0x00 { break; }
-            else { return Err(anyhow::anyhow!("Read Error SW={:02X}{:02X}", sw1, sw2)); }
+            else { return Err(CivError::from_sw(sw1, sw2)); }
             let chunk = &res[0..res.len()-2];
             if chunk.is_empty() { break; }
             data.extend_from_slice(chunk);
@@ -251,11 +251,11 @@ impl<R: CardReader> JpkiController<R> {
     }
 
     fn check_sw(res: &[u8]) -> Result<()> {
-        if res.len() < 2 { return Err(anyhow::anyhow!("Response too short")); }
+        if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
         let sw1 = res[res.len()-2];
         let sw2 = res[res.len()-1];
         if sw1 == 0x90 && sw2 == 0x00 { Ok(()) }
-        else { Err(anyhow::anyhow!("Card Error SW={:02X}{:02X}", sw1, sw2)) }
+        else { Err(CivError::from_sw(sw1, sw2)) }
     }
 }
 
@@ -263,24 +263,39 @@ impl<R: CardReader> JpkiController<R> {
 mod tests {
     use super::*;
     use crate::test_utils::TestReader;
-    use crate::mock_jpki::MockJpki;
+    use crate::mock::{MockSmartCard, JpkiBackend};
     use std::sync::{Arc, Mutex};
+
+    fn setup_jpki_mock(reader: &TestReader) -> Arc<Mutex<MockSmartCard>> {
+        let mut mock = MockSmartCard::new();
+        // Register same backend for all JPKI related AIDs for simplicity
+        let backend = Box::new(JpkiBackend::new());
+        mock.add_backend(file_ids::DF_JPKI.to_vec(), backend);
+        
+        let backend = Box::new(JpkiBackend::new());
+        mock.add_backend(file_ids::DF_INPUT_SUPPORT.to_vec(), backend);
+
+        let backend = Box::new(JpkiBackend::new());
+        mock.add_backend(file_ids::DF_SURFACE.to_vec(), backend);
+
+        let mock = Arc::new(Mutex::new(mock));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+        mock
+    }
 
     #[tokio::test]
     async fn test_select_jpki_ap() {
         let reader = TestReader::new();
+        let _mock = setup_jpki_mock(&reader);
         let mut controller = JpkiController::new(reader.clone());
-        reader.push_response(&[0x90, 0x00]);
         assert!(controller.select_jpki_ap().await.is_ok());
     }
 
     #[tokio::test]
     async fn test_read_mynumber() {
         let reader = TestReader::new();
-        let mock = Arc::new(Mutex::new(MockJpki::new()));
-        let mock_clone = mock.clone();
-        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
-
+        let _mock = setup_jpki_mock(&reader);
         let mut controller = JpkiController::new(reader.clone());
         let res = controller.read_mynumber("1234").await;
         assert!(res.is_ok());
@@ -290,10 +305,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_attributes() {
         let reader = TestReader::new();
-        let mock = Arc::new(Mutex::new(MockJpki::new()));
-        let mock_clone = mock.clone();
-        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
-
+        let _mock = setup_jpki_mock(&reader);
         let mut controller = JpkiController::new(reader.clone());
         let res = controller.read_attributes("1234").await;
         assert!(res.is_ok());
@@ -305,10 +317,7 @@ mod tests {
     #[tokio::test]
     async fn test_compute_auth_signature() {
         let reader = TestReader::new();
-        let mock = Arc::new(Mutex::new(MockJpki::new()));
-        let mock_clone = mock.clone();
-        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
-
+        let _mock = setup_jpki_mock(&reader);
         let mut controller = JpkiController::new(reader.clone());
         let data = b"test data";
         let res = controller.compute_auth_signature("1234", data).await;
@@ -319,10 +328,7 @@ mod tests {
     #[tokio::test]
     async fn test_pin_retries() {
         let reader = TestReader::new();
-        let mock = Arc::new(Mutex::new(MockJpki::new()));
-        let mock_clone = mock.clone();
-        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
-
+        let _mock = setup_jpki_mock(&reader);
         let mut controller = JpkiController::new(reader.clone());
         
         let retries = controller.get_auth_pin_retries().await.unwrap();
@@ -337,10 +343,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_face_photo() {
         let reader = TestReader::new();
-        let mock = Arc::new(Mutex::new(MockJpki::new()));
-        let mock_clone = mock.clone();
-        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
-
+        let _mock = setup_jpki_mock(&reader);
         let mut controller = JpkiController::new(reader.clone());
         let res = controller.read_face_photo("123456789012").await;
         assert!(res.is_ok());

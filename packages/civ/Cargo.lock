@@ -219,6 +219,7 @@ dependencies = [
  "cipher",
  "clap",
  "cmac",
+ "der-parser",
  "des",
  "encoding_rs",
  "getrandom",
