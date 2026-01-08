@@ -1,4 +1,4 @@
-use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_GET_CHALLENGE, INS_EXTERNAL_AUTHENTICATE};
+use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_GET_CHALLENGE, INS_EXTERNAL_AUTHENTICATE, INS_INTERNAL_AUTHENTICATE};
 use crate::reader::CardReader;
 use crate::crypto::bac::BacSession;
 use crate::crypto::sm::{AesSecureMessaging, SecureMessagingSession};
@@ -234,10 +234,29 @@ impl<R: CardReader> PassportController<R> {
         self.read_file(&file_ids::EF_DG15).await
     }
 
-    /// Read EF.SOD (Security Object Document - Signed hashes of all DGs)
-    /// Contains signed hashes of all data groups for authenticity verification
+    /// Read EF.SOD (Security Object Document)
     pub async fn read_sod(&mut self) -> Result<Vec<u8>> {
         self.read_file(&file_ids::EF_SOD).await
+    }
+
+    /// Perform Active Authentication (Internal Authenticate)
+    /// Signs the challenge using the key in DG15 to prove chip genuineness.
+    pub async fn perform_active_authentication(&mut self, challenge: &[u8]) -> Result<Vec<u8>> {
+        // INTERNAL AUTHENTICATE
+        // P1=00, P2=00
+        // Data: Challenge (usually 8 bytes)
+        // Le: 00 (Max length signature)
+        
+        let apdu = ApduCommand::new(CLA_ISO, INS_INTERNAL_AUTHENTICATE, 0x00, 0x00)
+            .with_data(challenge)
+            .with_le(0x00);
+            
+        let res = self.transmit(&apdu).await?;
+        Self::check_sw(&res).context("Active Authentication failed")?;
+        
+        // Response is the signature (format depends on DG15 algorithm)
+        let signature = res[0..res.len()-2].to_vec();
+        Ok(signature)
     }
 
     // Helper to Select EF and Read Binary
@@ -448,7 +467,33 @@ mod tests {
         let apdus = reader.sent_apdus.lock().unwrap();
         // Expected: MSE, GEN AUTH (Nonce), GEN AUTH (Map), GEN AUTH (Token)
         assert!(apdus.len() >= 4);
-        assert_eq!(apdus[0][1], 0x22); // MSE
-        assert_eq!(apdus[1][1], 0x86); // GEN AUTH
-    }
-}
+                assert_eq!(apdus[0][1], 0x22); // MSE
+                assert_eq!(apdus[1][1], 0x86); // GEN AUTH
+            }
+        
+            #[tokio::test]
+            async fn test_active_authentication() {
+                use crate::mock_passport::MockPassport;
+                use std::sync::{Arc, Mutex};
+        
+                let reader = TestReader::new();
+                let mock = Arc::new(Mutex::new(MockPassport::new("123456")));
+                
+                let mock_clone = mock.clone();
+                reader.set_handler(move |apdu| {
+                    mock_clone.lock().unwrap().handle_apdu(apdu)
+                });
+        
+                let mut controller = PassportController::new(reader.clone());
+                
+                // Execute AA
+                let challenge = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+                let res = controller.perform_active_authentication(&challenge).await;
+                
+                assert!(res.is_ok());
+                let signature = res.unwrap();
+                // Matching dummy signature from mock_passport.rs
+                assert_eq!(signature, vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE]);
+            }
+        }
+        

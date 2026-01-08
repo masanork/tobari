@@ -1,4 +1,4 @@
-use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_VERIFY};
+use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY};
 use crate::reader::CardReader;
 use anyhow::{Result, Context};
 use std::fmt;
