@@ -289,7 +289,13 @@ impl PassportBackend {
         let mut files = HashMap::new();
         files.insert(vec![0x01, 0x0E], vec![0x31, 0x10, 0x30, 0x0E, 0x04, 0x0C, 0x01, 0x02, 0x03, 0x04]); 
         files.insert(vec![0x01, 0x0F], vec![0x30, 0x05, 0x01, 0x02, 0x03]);
-        files.insert(vec![0x01, 0x01], vec![0x61, 0x05, 0x5F, 0x1F, 0x02, 0x41, 0x42]);
+        
+        let dg1_data = vec![0x61, 0x05, 0x5F, 0x1F, 0x02, 0x41, 0x42];
+        files.insert(vec![0x01, 0x01], dg1_data.clone());
+
+        // Generate mock SOD
+        let sod = Self::generate_mock_sod(vec![(1, dg1_data)]);
+        files.insert(vec![0x01, 0x1D], sod);
 
         Self {
             files,
@@ -299,6 +305,68 @@ impl PassportBackend {
             new_secure_session: None,
         }
     }
+
+    fn generate_mock_sod(dgs: Vec<(u8, Vec<u8>)>) -> Vec<u8> {
+        use sha2::{Sha256, Digest};
+        let mut hash_list = Vec::new();
+        for (num, data) in dgs {
+            let hash = Sha256::digest(&data);
+            let item = der_wrap(0x30, &vec![
+                der_wrap(0x02, &vec![num]), // dg_num
+                der_wrap(0x04, &hash.to_vec()), // hash
+            ].concat());
+            hash_list.extend(item);
+        }
+
+        let lds = der_wrap(0x30, &vec![
+            der_wrap(0x02, &vec![0x00]), // version
+            hex::decode("300d06096086480165030402010500").unwrap(), // algo
+            der_wrap(0x30, &hash_list),
+        ].concat());
+
+        let lds_hash = Sha256::digest(&lds);
+        let signed_attrs = der_wrap(0xA0, &vec![
+            der_wrap(0x30, &vec![
+                der_wrap(0x06, &hex::decode("2A864886F70D010904").unwrap()), // message-digest OID
+                der_wrap(0x31, &der_wrap(0x04, &lds_hash.to_vec())), // value set
+            ].concat())
+        ].concat());
+
+        let encap_content = der_wrap(0x30, &vec![
+            der_wrap(0x06, &hex::decode("2A864886F70D010919").unwrap()), // LDS OID
+            der_wrap(0xA0, &der_wrap(0x04, &lds)), // explicit [0]
+        ].concat());
+
+        let signed_data = der_wrap(0x30, &vec![
+            der_wrap(0x02, &vec![0x03]), // version
+            der_wrap(0x31, &vec![]), // digestAlgos
+            encap_content,
+            signed_attrs,
+            der_wrap(0x31, &vec![]), // signerInfos
+        ].concat());
+
+        der_wrap(0x30, &vec![
+            der_wrap(0x06, &hex::decode("2A864886F70D010702").unwrap()), // signedData OID
+            der_wrap(0xA0, &signed_data),
+        ].concat())
+    }
+}
+
+fn der_wrap(tag: u8, data: &[u8]) -> Vec<u8> {
+    let mut out = vec![tag];
+    let len = data.len();
+    if len <= 127 {
+        out.push(len as u8);
+    } else if len <= 255 {
+        out.push(0x81);
+        out.push(len as u8);
+    } else {
+        out.push(0x82);
+        out.push((len >> 8) as u8);
+        out.push((len & 0xFF) as u8);
+    }
+    out.extend_from_slice(data);
+    out
 }
 
 impl MockBackend for PassportBackend {
