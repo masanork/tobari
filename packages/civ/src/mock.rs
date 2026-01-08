@@ -319,7 +319,9 @@ impl MockBackend for PassportBackend {
                         if offset >= data.len() { (vec![], 0x6B00) }
                         else { (data[offset..].to_vec(), 0x9000) }
                     } else { (vec![], 0x6A82) }
-                } else { (vec![], 0x6986) }
+                } else { 
+                    (vec![], 0x6986) 
+                }
             },
             0x84 => { // GET CHALLENGE
                 (vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08], 0x9000)
@@ -344,7 +346,10 @@ impl MockBackend for PassportBackend {
                         0x81 => { // Map
                             if let Some(pace) = &mut self.pace_state {
                                 let server_pk = pace.perform_mapping_and_generate_key().unwrap();
-                                pace.compute_shared_secret(&server_pk).unwrap();
+                                let pcd_pk = extract_tlv_value(&cmd.data, 0x81).unwrap_or_default();
+                                if !pcd_pk.is_empty() {
+                                    pace.compute_shared_secret(&pcd_pk).unwrap();
+                                }
                                 (build_tlv(0x82, &server_pk), 0x9000)
                             } else { (vec![], 0x6A80) }
                         },
