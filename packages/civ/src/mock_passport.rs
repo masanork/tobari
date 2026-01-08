@@ -157,8 +157,12 @@ impl MockPassport {
                 build_tlv_response(0x82, &server_pk)
             },
             0x85 => {
-                // 3. Mutual Auth
-                let server_token = self.pace_state.perform_token_exchange(&[]).unwrap();
+                // 3. Mutual Auth (Receive Client Token)
+                // Extract Client Token (Tag 85)
+                // Incoming data: 7C L [ 85 L Token ]
+                let client_token = extract_tlv_value(data, 0x85).unwrap_or_default();
+                
+                let server_token = self.pace_state.perform_token_exchange(&client_token).unwrap();
                 
                 let session = self.pace_state.finalize_session().unwrap();
                 self.secure_session = Some(AesSecureMessaging::new(
