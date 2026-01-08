@@ -179,7 +179,8 @@ impl SecureMessagingSession for AesSecureMessaging {
         mac_input.extend_from_slice(&header_padded);
         mac_input.extend_from_slice(&command_data);
         
-        let mac = self.compute_mac(&mac_input)?;
+        let mac_input_padded = pad_iso9797_m2(&mac_input);
+        let mac = self.compute_mac(&mac_input_padded)?;
         
         let mut do8e = Vec::new();
         do8e.push(0x8E);
@@ -236,7 +237,8 @@ impl SecureMessagingSession for AesSecureMessaging {
         mac_input.extend_from_slice(&encode_length(do99.len()));
         mac_input.extend_from_slice(&do99);
 
-        let calculated_mac = self.compute_mac(&mac_input)?;
+        let mac_input_padded = pad_iso9797_m2(&mac_input);
+        let calculated_mac = self.compute_mac(&mac_input_padded)?;
         if calculated_mac != do8e.as_slice() {
             return Err(anyhow!("SM MAC Mismatch"));
         }
@@ -380,9 +382,80 @@ mod tests {
         assert!(wrapped.windows(2).any(|w| w == [0x97, 0x01])); // Le DO97
         assert!(wrapped.windows(2).any(|w| w == [0x8E, 0x08]));
     }
-    
-    // To properly test unwrap, we'd need to simulate the Card's encryption logic (Server-side SM).
-    // Since we don't have that exposed, we skip full roundtrip unit test here, 
-    // relying on the fact that `MockPassport` (in future) or E2E tests will cover it.
-    // However, we can test `encrypt_data` / `decrypt_data` helpers if we expose them or make them pub(crate).
+
+    #[test]
+    fn test_aes128_sm_unwrap() {
+        use aes::cipher::{BlockEncryptMut, KeyIvInit};
+        type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
+
+        let k_enc = [0x01u8; 16];
+        let k_mac = [0x02u8; 16];
+        let ssc = 0;
+        let mut sm = AesSecureMessaging::new(&k_enc, &k_mac, ssc).unwrap();
+
+        // Simulate Card side: next SSC = 1
+        let next_ssc = 1u128;
+        
+        // 1. Prepare Data (DO87)
+        let plaintext = vec![0xAA, 0xBB, 0xCC];
+        let mut padded = plaintext.clone();
+        padded.push(0x80);
+        while padded.len() % 16 != 0 { padded.push(0x00); }
+        
+        // Need to manually derive IV for Card side simulation
+        let mut iv = [0u8; 16];
+        let mut ssc_bytes = [0u8; 16];
+        ssc_bytes.copy_from_slice(&next_ssc.to_be_bytes());
+        let iv_encryptor = Aes128CbcEnc::new(&k_enc.into(), &[0u8; 16].into());
+        iv_encryptor.encrypt_padded_mut::<NoPadding>(&mut ssc_bytes, 16).unwrap();
+        iv.copy_from_slice(&ssc_bytes);
+
+        let encryptor = Aes128CbcEnc::new(&k_enc.into(), &iv.into());
+        let mut ciphertext = padded.clone();
+        encryptor.encrypt_padded_mut::<NoPadding>(&mut ciphertext, padded.len()).unwrap();
+
+        let mut do87 = vec![0x87, (ciphertext.len() + 1) as u8, 0x01];
+        do87.extend_from_slice(&ciphertext);
+
+        // 2. Prepare Status (DO99)
+        let do99 = vec![0x99, 0x02, 0x90, 0x00];
+
+        // 3. Prepare MAC (DO8E)
+        let mut mac_input = Vec::new();
+        mac_input.push(0x87);
+        mac_input.extend_from_slice(&encode_length(ciphertext.len() + 1));
+        mac_input.push(0x01);
+        mac_input.extend_from_slice(&ciphertext);
+        
+        mac_input.push(0x99);
+        mac_input.extend_from_slice(&encode_length(2));
+        mac_input.extend_from_slice(&[0x90, 0x00]);
+
+        // Card applies M2 Padding before calling CMAC(SSC || data)
+        let mac_input_padded = pad_iso9797_m2(&mac_input);
+
+        let mut mac_obj = <Aes128Cmac as KeyInit>::new_from_slice(&k_mac).unwrap();
+        mac_obj.update(&next_ssc.to_be_bytes()); // SSC is always 16 bytes in AES
+        mac_obj.update(&mac_input_padded);
+        let mac_val = &mac_obj.finalize().into_bytes()[0..8];
+        
+        let do8e = vec![0x8E, 0x08];
+        let mut full_resp = do87;
+        full_resp.extend_from_slice(&do99);
+        full_resp.extend_from_slice(&do8e);
+        full_resp.extend_from_slice(mac_val);
+        full_resp.extend_from_slice(&[0x90, 0x00]); // SUCCESS SW
+
+        // 4. Test Unwrap
+        let (res_data, sw1, sw2) = sm.unwrap_response(&full_resp).unwrap();
+        assert_eq!(res_data, plaintext);
+        assert_eq!(sw1, 0x90);
+        assert_eq!(sw2, 0x00);
+        
+        // 5. Test Invalid MAC
+        let mut bad_resp = full_resp.clone();
+        let len = bad_resp.len();
+        bad_resp[len - 3] ^= 0xFF; // Corrupt MAC
+        assert!(sm.unwrap_response(&bad_resp).is_err());
+    }
 }
