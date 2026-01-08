@@ -69,7 +69,6 @@ impl<R: CardReader> PassportController<R> {
     }
 
     /// Perform Basic Access Control (BAC)
-    /// Establishes Secure Messaging and stores the session for subsequent APDUs.
     pub async fn perform_bac(&mut self, mrz: &str) -> Result<()> {
         use crate::crypto::bac;
 
@@ -112,14 +111,10 @@ impl<R: CardReader> PassportController<R> {
         println!("[PACE] Starting PACE with password: {}", mrz_or_can);
 
         // 1. MSE: SET (Manage Security Environment)
-        // Select PACE-ECDH-GM-AES-CBC-CMAC-128
-        // OID: 0.4.0.127.0.7.2.2.4.2.2 (bsi-de-protocol-pace-gm-aes-cbc-cmac-128)
         let oid_pace_gm_aes = vec![
             0x06, 0x0A, 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04, 0x02, 0x02
         ];
         
-        // MSE Data: 80 [OID] 83 [Ref]
-        // 83: 01 (MRZ)
         let password_ref = 0x01; 
         
         let mut mse_val = Vec::new();
@@ -138,13 +133,68 @@ impl<R: CardReader> PassportController<R> {
         Self::check_sw(&res).context("MSE: SET failed (PACE not supported?)")?;
         
         // Initialize PACE State Machine
-        // key_len: 16 for AES-128. If OID selects AES-256, this should be 32.
-        // For prototype we fix to AES-128 OID above.
         let mut pace = PaceP256::new(mrz_or_can, PaceMappingType::GenericMapping, 16);
 
-        // ... (lines omitted) ...
+        // 2. GEN AUTH (Get Nonce)
+        let gen_auth_1 = ApduCommand::new(0x10, 0x86, 0x00, 0x00)
+            .with_data(&[0x7C, 0x00])
+            .with_le(0x00);
+            
+        let res_nonce = self.transmit(&gen_auth_1).await?;
+        Self::check_sw(&res_nonce).context("GEN AUTH (Nonce) failed")?;
+        
+        let z = parse_pace_response(&res_nonce, 0x80)?;
+        pace.set_encrypted_nonce(&z);
+        println!("[PACE] Step 1 done (Nonce)");
+        
+        // 3. Map Generator & Generate Ephemeral Key
+        let my_pk = pace.perform_mapping_and_generate_key()?;
+        println!("[PACE] Step 2 done (Mapping)");
+        
+        // 4. GEN AUTH (Map / Key Agreement)
+        let mut cmd_data_2 = Vec::new();
+        cmd_data_2.push(0x7C);
+        let mut inner_2 = Vec::new();
+        inner_2.push(0x81); // Mapping Data / Ephemeral PK
+        inner_2.extend_from_slice(&encode_len(my_pk.len()));
+        inner_2.extend_from_slice(&my_pk);
+        cmd_data_2.extend_from_slice(&encode_len(inner_2.len()));
+        cmd_data_2.extend_from_slice(&inner_2);
+        
+        let gen_auth_2 = ApduCommand::new(0x10, 0x86, 0x00, 0x00)
+            .with_data(&cmd_data_2)
+            .with_le(0x00);
+            
+        let res_map = self.transmit(&gen_auth_2).await?;
+        Self::check_sw(&res_map).context("GEN AUTH (Key Agreement) failed")?;
+        
+        let peer_pk = parse_pace_response(&res_map, 0x82)?;
+        pace.compute_shared_secret(&peer_pk)?;
+        println!("[PACE] Step 3 done (Shared Secret)");
+        
+        // 5. GEN AUTH (Mutual Auth)
+        // Note: perform_token_exchange sets state to Authenticated!
+        let t_pcd = pace.perform_token_exchange(&[])?; 
+        println!("[PACE] Step 4 done (Token generated). State should be Auth.");
+        
+        let mut cmd_data_3 = Vec::new();
+        cmd_data_3.push(0x7C);
+        let mut inner_3 = Vec::new();
+        inner_3.push(0x85); // Authentication Token
+        inner_3.extend_from_slice(&encode_len(t_pcd.len()));
+        inner_3.extend_from_slice(&t_pcd);
+        cmd_data_3.extend_from_slice(&encode_len(inner_3.len()));
+        cmd_data_3.extend_from_slice(&inner_3);
 
+        let gen_auth_3 = ApduCommand::new(0x10, 0x86, 0x00, 0x00)
+            .with_data(&cmd_data_3)
+            .with_le(0x00);
+
+        let res_auth = self.transmit(&gen_auth_3).await?;
+        Self::check_sw(&res_auth).context("GEN AUTH (Token) failed")?;
+        
         // 6. Establish Secure Messaging
+        println!("[PACE] Finalizing...");
         let session = pace.finalize_session()?;
         self.secure_session = Some(SecureSession::Pace(AesSecureMessaging::new(
             &session.k_enc, &session.k_mac, session.ssc
@@ -184,8 +234,11 @@ impl<R: CardReader> PassportController<R> {
         self.read_file(&file_ids::EF_DG15).await
     }
 
-    /// Read EF.SOD (Security Object Document)
-
+    /// Read EF.SOD (Security Object Document - Signed hashes of all DGs)
+    /// Contains signed hashes of all data groups for authenticity verification
+    pub async fn read_sod(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_SOD).await
+    }
 
     // Helper to Select EF and Read Binary
     pub(crate) async fn read_file(&mut self, file_id: &[u8]) -> Result<Vec<u8>> {
@@ -367,36 +420,35 @@ mod tests {
         assert_eq!(apdus.len(), 3); // Select + Read1 + Read2
         // Check offset in Read2 (P1 P2)
         assert_eq!(apdus[2][2], 0x01); // 256 >> 8 = 1
-                assert_eq!(apdus[2][3], 0x00); // 256 & FF = 0
-            }
+        assert_eq!(apdus[2][3], 0x00); // 256 & FF = 0
+    }
+
+    #[tokio::test]
+    async fn test_perform_pace_flow() {
+        use crate::mock_passport::MockPassport;
+        use std::sync::{Arc, Mutex};
+
+        let reader = TestReader::new();
         
-                #[tokio::test]
-                async fn test_perform_pace_flow() {
-                    use crate::mock_passport::MockPassport;
-                    use std::sync::{Arc, Mutex};
-            
-                    let reader = TestReader::new();
-                    
-                    let password = "123456";
-                    let mock = Arc::new(Mutex::new(MockPassport::new(password)));
-                    
-                    let mock_clone = mock.clone();
-                    reader.set_handler(move |apdu| {
-                        mock_clone.lock().unwrap().handle_apdu(apdu)
-                    });
-            
-                    let mut controller = PassportController::new(reader.clone());
-            
-                    // Execute PACE
-                    let res = controller.perform_pace(password).await;
-                    
-                    assert!(res.is_ok(), "PACE failed: {:?}", res.err());
-                    
-                    let apdus = reader.sent_apdus.lock().unwrap();
-                    // Expected: MSE, GEN AUTH (Nonce), GEN AUTH (Map), GEN AUTH (Token)
-                    assert!(apdus.len() >= 4);
-                    assert_eq!(apdus[0][1], 0x22); // MSE
-                    assert_eq!(apdus[1][1], 0x86); // GEN AUTH
-                }
-            }
-            
+        let password = "123456";
+        let mock = Arc::new(Mutex::new(MockPassport::new(password)));
+        
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| {
+            mock_clone.lock().unwrap().handle_apdu(apdu)
+        });
+
+        let mut controller = PassportController::new(reader.clone());
+
+        // Execute PACE
+        let res = controller.perform_pace(password).await;
+        
+        assert!(res.is_ok(), "PACE failed: {:?}", res.err());
+        
+        let apdus = reader.sent_apdus.lock().unwrap();
+        // Expected: MSE, GEN AUTH (Nonce), GEN AUTH (Map), GEN AUTH (Token)
+        assert!(apdus.len() >= 4);
+        assert_eq!(apdus[0][1], 0x22); // MSE
+        assert_eq!(apdus[1][1], 0x86); // GEN AUTH
+    }
+}

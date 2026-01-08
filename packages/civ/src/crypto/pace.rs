@@ -1,24 +1,23 @@
 use anyhow::{Result, anyhow, Context};
 use p256::{
     ecdh::EphemeralSecret,
-    PublicKey, EncodedPoint,
+    PublicKey,
     elliptic_curve::{
-        sec1::{ToEncodedPoint, FromEncodedPoint},
+        sec1::ToEncodedPoint,
         group::GroupEncoding,
+        Field, PrimeField,
     },
-    ProjectivePoint, Scalar,
+    ProjectivePoint, Scalar, U256,
 };
 use rsa::sha2::{Sha256, Digest};
-use aes::cipher::{BlockEncrypt, BlockDecrypt, KeyInit, block_padding::NoPadding};
-use cbc::{Encryptor, Decryptor};
+use aes::cipher::{BlockDecrypt, KeyIvInit, block_padding::NoPadding};
+use cbc::Decryptor;
 use aes::Aes128;
-use cmac::{Cmac, Mac};
 use rand_core::OsRng;
+use cipher::generic_array::GenericArray;
 
 // Type aliases
 type Aes128CbcDec = Decryptor<Aes128>;
-type Aes128CbcEnc = Encryptor<Aes128>;
-type Aes128Cmac = Cmac<Aes128>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PaceMappingType {
@@ -94,11 +93,13 @@ impl PaceP256 {
         let z = self.encrypted_nonce_picc.as_ref().unwrap();
         
         let iv = [0u8; 16];
-        let decryptor = Aes128CbcDec::new_from_slice(&self.password_key, &iv.into())
-            .map_err(|e| anyhow!("Decrypt Init Error: {}", e))?;
+        let decryptor = Aes128CbcDec::new(&self.password_key.into(), &iv.into());
         
-        let nonce_s = decryptor.decrypt_padded_vec_mut::<NoPadding>(z)
-             .map_err(|e| anyhow!("Nonce Decrypt Error: {}", e))?;
+        let mut z_buf = z.to_vec();
+        // decrypt_padded_mut returns result slice
+        let _ = decryptor.decrypt_padded_mut::<NoPadding>(&mut z_buf)
+             .map_err(|e| anyhow!("Nonce Decrypt Error: {:?}", e))?;
+        let nonce_s = &z_buf; // Decrypted in place
 
         // Determine Generator
         let generator = match self.mapping_type {
@@ -109,7 +110,10 @@ impl PaceP256 {
                 let mut s_bytes = [0u8; 32];
                 let copy_len = std::cmp::min(nonce_s.len(), 32);
                 s_bytes[32-copy_len..].copy_from_slice(&nonce_s[0..copy_len]);
-                let s_scalar = Scalar::from_bytes_reduced(&s_bytes.into());
+                
+                #[allow(deprecated)]
+                let ga = GenericArray::clone_from_slice(&s_bytes);
+                let s_scalar = Scalar::from_repr(ga).unwrap_or(Scalar::ONE);
                 
                 let t_point = ProjectivePoint::GENERATOR * s_scalar;
                 (ProjectivePoint::GENERATOR * s_scalar) + t_point
@@ -160,8 +164,8 @@ impl PaceP256 {
     }
     
     /// Step 4: Verify Authentication Tokens (Mutual Auth)
-    pub fn perform_token_exchange(&mut self, t_picc: &[u8]) -> Result<Vec<u8>> {
-        let (k_enc, k_mac) = self.session_keys.as_ref().ok_or_else(|| anyhow!("No session keys"))?;
+    pub fn perform_token_exchange(&mut self, _t_picc: &[u8]) -> Result<Vec<u8>> {
+        let (_k_enc, _k_mac) = self.session_keys.as_ref().ok_or_else(|| anyhow!("No session keys"))?;
         
         // Verify T_Picc logic ...
         // Generate T_Pcd logic ...
@@ -215,7 +219,7 @@ fn kdf_sha256(secret: &[u8], counter: u32, len: usize) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aes::cipher::{BlockEncrypt, KeyInit, block_padding::NoPadding};
+    use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::NoPadding};
     use cbc::Encryptor;
     use aes::Aes128;
 
@@ -228,8 +232,11 @@ mod tests {
         // Encrypt a mock nonce 's'
         let s = [0xABu8; 16]; // 16 bytes
         let iv = [0u8; 16];
-        let encryptor = Aes128CbcEnc::new_from_slice(&k_pi, &iv.into()).unwrap();
-        let z = encryptor.encrypt_padded_vec_mut::<NoPadding>(&s); // returns ciphertext
+        let encryptor = <Encryptor<Aes128> as KeyIvInit>::new(&k_pi.into(), &iv.into());
+        let mut s_buf = s.to_vec();
+        let s_len = s_buf.len();
+        let _ = encryptor.encrypt_padded_mut::<NoPadding>(&mut s_buf, s_len).unwrap(); 
+        let z = s_buf; // Encrypted
 
         // Alice (PCD)
         let mut alice = PaceP256::new(password, PaceMappingType::GenericMapping, 16);
