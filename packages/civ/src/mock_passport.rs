@@ -1,11 +1,10 @@
-use anyhow::{Result, anyhow};
-use crate::crypto::pace::{PaceP256, PaceMappingType, PaceSession, derive_session_keys_sha256};
-use crate::crypto::sm::{AesSecureMessaging, SecureMessagingSession};
+use crate::crypto::pace::{PaceP256, PaceMappingType, derive_session_keys_sha256};
+use crate::crypto::sm::AesSecureMessaging;
 use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::NoPadding};
 use cbc::Encryptor;
 use aes::Aes128;
 use std::collections::HashMap;
-use p256::{PublicKey, elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint}};
+use p256::{PublicKey, elliptic_curve::sec1::ToEncodedPoint};
 
 type Aes128CbcEnc = Encryptor<Aes128>;
 
