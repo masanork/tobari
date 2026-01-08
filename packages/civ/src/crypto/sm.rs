@@ -176,9 +176,11 @@ impl SecureMessagingSession for AesSecureMessaging {
             command_data.extend_from_slice(&do97);
         }
 
-        let header_padded = pad_header(cla_sm, apdu.ins, apdu.p1, apdu.p2);
         let mut mac_input = Vec::new();
-        mac_input.extend_from_slice(&header_padded);
+        mac_input.push(apdu.cla); // Use original CLA (SM bits = 0)
+        mac_input.push(apdu.ins);
+        mac_input.push(apdu.p1);
+        mac_input.push(apdu.p2);
         mac_input.extend_from_slice(&command_data);
         
         let mac_input_padded = pad_iso9797_m2(&mac_input);
@@ -194,7 +196,8 @@ impl SecureMessagingSession for AesSecureMessaging {
             .with_data(&command_data)
             .with_le(0x00);
 
-        Ok(wrapped.to_bytes())
+        let res = wrapped.to_bytes();
+        Ok(res)
     }
 
     fn unwrap_response(&mut self, response: &[u8]) -> Result<(Vec<u8>, u8, u8)> {
@@ -291,9 +294,11 @@ impl AesSecureMessaging {
         let do8e = do8e.ok_or_else(|| CivError::SecureMessagingError("Missing DO8E (MAC)".to_string()))?;
 
         // Verify MAC
-        let header_padded = pad_header(cmd.cla, cmd.ins, cmd.p1, cmd.p2);
         let mut mac_input = Vec::new();
-        mac_input.extend_from_slice(&header_padded);
+        mac_input.push(cmd.cla & !0x0C); // Mask out SM bits for MAC calculation
+        mac_input.push(cmd.ins);
+        mac_input.push(cmd.p1);
+        mac_input.push(cmd.p2);
 
         if let Some(ref val) = do87 {
             mac_input.push(0x87);
@@ -411,11 +416,6 @@ fn unpad_iso9797_m2(data: &[u8]) -> Result<Vec<u8>> {
         }
     }
     Err(CivError::SecureMessagingError("Padding marker not found".to_string()))
-}
-
-fn pad_header(cla: u8, ins: u8, p1: u8, p2: u8) -> Vec<u8> {
-    let h = vec![cla, ins, p1, p2];
-    pad_iso9797_m2(&h)
 }
 
 fn encode_length(len: usize) -> Vec<u8> {

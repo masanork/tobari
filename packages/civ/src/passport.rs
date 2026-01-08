@@ -132,7 +132,7 @@ impl<R: CardReader> PassportController<R> {
         let peer_pk = parse_pace_response(&res_map, 0x82)?;
         pace.compute_shared_secret(&peer_pk).map_err(|e| CivError::CryptoError(e.to_string()))?;
 
-        let t_pcd = pace.perform_token_exchange(&[]).map_err(|e| CivError::CryptoError(e.to_string()))?; 
+        let t_pcd = pace.perform_token_exchange(&[])?; 
         let mut cmd_data_3 = vec![0x7C];
         let mut inner_3 = vec![0x85]; 
         inner_3.extend_from_slice(&encode_len(t_pcd.len()));
@@ -208,10 +208,7 @@ impl<R: CardReader> PassportController<R> {
     pub async fn perform_active_authentication(&mut self, challenge: &[u8]) -> Result<Vec<u8>> {
         let apdu = ApduCommand::new(CLA_ISO, INS_INTERNAL_AUTHENTICATE, 0x00, 0x00).with_data(challenge).with_le(0x00);
         let res = self.transmit(&apdu).await?;
-        if let Err(e) = Self::check_sw(&res) {
-            println!("AA SW Check failed: {:?}", e);
-            return Err(e);
-        }
+        Self::check_sw(&res)?;
         Ok(res[0..res.len()-2].to_vec())
     }
 
@@ -341,6 +338,7 @@ mod tests {
         let res = controller.perform_pace("password").await;
         assert!(res.is_ok());
         
+        // Test SM read after PACE
         let dg14 = controller.read_dg14().await;
         assert!(dg14.is_ok());
         assert_eq!(dg14.unwrap(), vec![0x31, 0x10, 0x30, 0x0E, 0x04, 0x0C, 0x01, 0x02, 0x03, 0x04]);
