@@ -1,9 +1,10 @@
 use anyhow::{Result, anyhow};
 use crate::apdu::ApduCommand;
-use aes::cipher::{BlockEncrypt, KeyInit, block_padding::NoPadding};
+use aes::cipher::{BlockEncryptMut, BlockDecryptMut, KeyIvInit, block_padding::NoPadding};
 use cbc::{Encryptor, Decryptor};
 use aes::{Aes128, Aes256};
 use cmac::{Cmac, Mac};
+use aes::cipher::KeyInit;
 
 // Type Aliases
 type Aes128CbcEnc = Encryptor<Aes128>;
@@ -68,10 +69,12 @@ impl AesSecureMessaging {
 
         match self {
             Self::Aes128 { k_enc, .. } => {
+                use aes::cipher::BlockEncrypt;
                 let cipher = Aes128::new_from_slice(k_enc).map_err(|e| anyhow!("AES Key Error: {}", e))?;
                 cipher.encrypt_block(&mut block);
             },
             Self::Aes256 { k_enc, .. } => {
+                use aes::cipher::BlockEncrypt;
                 let cipher = Aes256::new_from_slice(k_enc).map_err(|e| anyhow!("AES Key Error: {}", e))?;
                 cipher.encrypt_block(&mut block);
             }
@@ -84,66 +87,67 @@ impl AesSecureMessaging {
         
         let result = match self {
             Self::Aes128 { k_mac, .. } => {
-                let mut mac = Aes128Cmac::new_from_slice(k_mac).map_err(|e| anyhow!("MAC Init error: {}", e))?;
+                let mut mac = <Aes128Cmac as KeyInit>::new_from_slice(k_mac).map_err(|e| anyhow!("MAC Init error: {}", e))?;
                 mac.update(&ssc_bytes);
                 mac.update(data);
                 mac.finalize().into_bytes()
             },
             Self::Aes256 { k_mac, .. } => {
-                let mut mac = Aes256Cmac::new_from_slice(k_mac).map_err(|e| anyhow!("MAC Init error: {}", e))?;
+                let mut mac = <Aes256Cmac as KeyInit>::new_from_slice(k_mac).map_err(|e| anyhow!("MAC Init error: {}", e))?;
                 mac.update(&ssc_bytes);
                 mac.update(data);
                 mac.finalize().into_bytes()
             }
         };
 
-        // Truncate to 8 bytes
         let mut out = [0u8; 8];
         out.copy_from_slice(&result[0..8]);
         Ok(out)
     }
     
     fn encrypt_data(&self, iv: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
+        let mut buf = data.to_vec();
+        let len = buf.len();
         match self {
             Self::Aes128 { k_enc, .. } => {
-                let encryptor = Aes128CbcEnc::new_from_slice(k_enc, iv.into())
-                    .map_err(|e| anyhow!("CBC Init Error: {}", e))?;
-                Ok(encryptor.encrypt_padded_vec_mut::<NoPadding>(data))
+                let encryptor = Aes128CbcEnc::new(k_enc.into(), iv.into());
+                encryptor.encrypt_padded_mut::<NoPadding>(&mut buf, len)
+                    .map_err(|e| anyhow!("Encrypt Error: {:?}", e))?;
             },
             Self::Aes256 { k_enc, .. } => {
-                let encryptor = Aes256CbcEnc::new_from_slice(k_enc, iv.into())
-                    .map_err(|e| anyhow!("CBC Init Error: {}", e))?;
-                Ok(encryptor.encrypt_padded_vec_mut::<NoPadding>(data))
+                let encryptor = Aes256CbcEnc::new(k_enc.into(), iv.into());
+                encryptor.encrypt_padded_mut::<NoPadding>(&mut buf, len)
+                    .map_err(|e| anyhow!("Encrypt Error: {:?}", e))?;
             }
         }
+        Ok(buf)
     }
     
     fn decrypt_data(&self, iv: &[u8; 16], ciphertext: &[u8]) -> Result<Vec<u8>> {
+        let mut buf = ciphertext.to_vec();
         match self {
             Self::Aes128 { k_enc, .. } => {
-                let decryptor = Aes128CbcDec::new_from_slice(k_enc, iv.into())
-                    .map_err(|e| anyhow!("Decrypt Init Error: {}", e))?;
-                decryptor.decrypt_padded_vec_mut::<NoPadding>(ciphertext)
-                    .map_err(|e| anyhow!("Decrypt Error: {}", e))
+                let decryptor = Aes128CbcDec::new(k_enc.into(), iv.into());
+                decryptor.decrypt_padded_mut::<NoPadding>(&mut buf)
+                    .map_err(|e| anyhow!("Decrypt Error: {:?}", e))?;
             },
             Self::Aes256 { k_enc, .. } => {
-                let decryptor = Aes256CbcDec::new_from_slice(k_enc, iv.into())
-                    .map_err(|e| anyhow!("Decrypt Init Error: {}", e))?;
-                decryptor.decrypt_padded_vec_mut::<NoPadding>(ciphertext)
-                    .map_err(|e| anyhow!("Decrypt Error: {}", e))
+                let decryptor = Aes256CbcDec::new(k_enc.into(), iv.into());
+                decryptor.decrypt_padded_mut::<NoPadding>(&mut buf)
+                    .map_err(|e| anyhow!("Decrypt Error: {:?}", e))?;
             }
         }
+        Ok(buf)
     }
 }
 
 impl SecureMessagingSession for AesSecureMessaging {
     fn wrap_command(&mut self, apdu: &ApduCommand) -> Result<Vec<u8>> {
         self.increment_ssc();
-        let cla_sm = apdu.cla | 0x0C; // Secure Messaging Indication
+        let cla_sm = apdu.cla | 0x0C;
 
         let mut command_data = Vec::new();
         
-        // Encrypt Data (DO 87)
         if !apdu.data.is_empty() {
             let iv = self.get_iv()?;
             let padded = pad_iso9797_m2(&apdu.data);
@@ -153,9 +157,8 @@ impl SecureMessagingSession for AesSecureMessaging {
             let mut do87 = Vec::new();
             do87.push(0x87);
             
-            // Value: 01 (Type) || Ciphertext
             let mut value = Vec::with_capacity(1 + ciphertext.len());
-            value.push(0x01); // 01 marker
+            value.push(0x01); 
             value.extend_from_slice(&ciphertext);
             
             do87.extend_from_slice(&encode_length(value.len()));
@@ -163,7 +166,6 @@ impl SecureMessagingSession for AesSecureMessaging {
             command_data.extend_from_slice(&do87);
         }
 
-        // Le (DO 97)
         if let Some(le) = apdu.le {
             let mut do97 = Vec::new();
             do97.push(0x97);
@@ -172,7 +174,6 @@ impl SecureMessagingSession for AesSecureMessaging {
             command_data.extend_from_slice(&do97);
         }
 
-        // Compute MAC (DO 8E)
         let header_padded = pad_header(cla_sm, apdu.ins, apdu.p1, apdu.p2);
         let mut mac_input = Vec::new();
         mac_input.extend_from_slice(&header_padded);
@@ -285,7 +286,7 @@ fn unpad_iso9797_m2(data: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn pad_header(cla: u8, ins: u8, p1: u8, p2: u8) -> Vec<u8> {
-    let mut h = vec![cla, ins, p1, p2];
+    let h = vec![cla, ins, p1, p2];
     pad_iso9797_m2(&h)
 }
 
