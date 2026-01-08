@@ -103,7 +103,7 @@ impl<R: CardReader> ResidenceCardController<R> {
         if let Ok(raw) = self.read_file(&file_ids::EF_UPDATE_STATUS).await {
              // Tag D7, 1 byte char
              use crate::utils::parse_ber_tlv;
-             let tlvs = parse_ber_tlv(&raw);
+             let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
              for tlv in tlvs {
                  if tlv.tag == 0xD7 {
                      info.update_status = tlv.as_utf8(); // Usually "0" or "1"
@@ -116,7 +116,7 @@ impl<R: CardReader> ResidenceCardController<R> {
 
     fn parse_address(&self, data: &[u8], info: &mut ResidenceCardInfo) {
         use crate::utils::parse_ber_tlv;
-        let tlvs = parse_ber_tlv(data);
+        let tlvs = parse_ber_tlv(data).unwrap_or_default();
         for tlv in tlvs {
             match tlv.tag {
                 0xD2 => info.date_updated = tlv.as_utf8(),
@@ -129,7 +129,7 @@ impl<R: CardReader> ResidenceCardController<R> {
 
     fn parse_utf8_tag(&self, data: &[u8], target_tag: u32, out: &mut String) {
         use crate::utils::parse_ber_tlv;
-        let tlvs = parse_ber_tlv(data);
+        let tlvs = parse_ber_tlv(data).unwrap_or_default();
         for tlv in tlvs {
             if tlv.tag == target_tag {
                 *out = tlv.as_utf8();
@@ -143,7 +143,7 @@ impl<R: CardReader> ResidenceCardController<R> {
         let raw = self.read_file(&file_ids::EF_PHOTO).await?;
         // Parse Tag D1
         use crate::utils::parse_ber_tlv;
-        let tlvs = parse_ber_tlv(&raw);
+        let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
         for tlv in tlvs {
             if tlv.tag == 0xD1 {
                 return Ok(tlv.value.to_vec());

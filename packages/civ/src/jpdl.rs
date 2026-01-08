@@ -105,7 +105,7 @@ impl<R: CardReader> DriversLicenseController<R> {
     // Internal parser
     fn parse_common_data(&self, data: &[u8]) -> Result<LicenseInfo> {
         use crate::utils::{parse_ber_tlv, decode_shift_jis_lossy_gaiji};
-        let tlvs = parse_ber_tlv(data);
+        let tlvs = parse_ber_tlv(data).unwrap_or_default();
         let mut info = LicenseInfo::default();
 
         for tlv in tlvs {
@@ -136,7 +136,7 @@ impl<R: CardReader> DriversLicenseController<R> {
         let raw = self.read_file(&file_ids::EF_HONSEKI).await?;
         // Parse TLV tag 0x41
         use crate::utils::{parse_ber_tlv, decode_shift_jis_lossy_gaiji};
-        let tlvs = parse_ber_tlv(&raw);
+        let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
         for tlv in tlvs {
             if tlv.tag == 0x41 {
                 return Ok(decode_shift_jis_lossy_gaiji(tlv.value));
@@ -160,7 +160,7 @@ impl<R: CardReader> DriversLicenseController<R> {
         
         // Parse TLV Tag 0x5F40
         use crate::utils::parse_ber_tlv;
-        let tlvs = parse_ber_tlv(&raw);
+        let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
         for tlv in tlvs {
             if tlv.tag == 0x5F40 {
                 return Ok(tlv.value.to_vec());

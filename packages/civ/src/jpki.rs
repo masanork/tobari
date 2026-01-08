@@ -82,7 +82,6 @@ impl<R: CardReader> JpkiController<R> {
     }
 
     async fn get_status_at_p2(&mut self, p2: u8) -> Result<u8> {
-        // Direct VERIFY with empty data to check status. No SELECT EF.
         let res = self.reader.transmit(&ApduCommand::new(CLA_ISO, INS_VERIFY, 0x00, p2).to_bytes()).await?;
         self.interpret_retry_sw(&res)
     }
@@ -91,10 +90,9 @@ impl<R: CardReader> JpkiController<R> {
         if res.len() < 2 { return Err(anyhow::anyhow!("Response too short")); }
         let sw1 = res[res.len()-2];
         let sw2 = res[res.len()-1];
-        if sw1 == 0x90 && sw2 == 0x00 { return Ok(255); } // Already verified
+        if sw1 == 0x90 && sw2 == 0x00 { return Ok(255); } 
         if sw1 == 0x63 && (sw2 & 0xF0) == 0xC0 { return Ok(sw2 & 0x0F); }
-        if sw1 == 0x69 && sw2 == 0x83 { return Ok(0); } // Locked
-        // Some cards return 69 86 or 69 81 if no PIN is currently selected/available
+        if sw1 == 0x69 && sw2 == 0x83 { return Ok(0); } 
         if sw1 == 0x69 && (sw2 == 0x86 || sw2 == 0x81) {
              return Err(anyhow::anyhow!("Access Denied (SW: {:02X}{:02X})", sw1, sw2));
         }
@@ -144,8 +142,7 @@ impl<R: CardReader> JpkiController<R> {
         self.verify_pin(&file_ids::EF_INPUT_SUPPORT_PIN, pin).await?;
         let data = self.read_ef_full(&file_ids::EF_MYNUMBER).await?;
         
-        // Try TLV parsing first
-        let tlvs = parse_ber_tlv(&data);
+        let tlvs = parse_ber_tlv(&data).unwrap_or_default();
         fn find_mynumber_recursive(tlvs: &[crate::utils::BerTlv]) -> Option<String> {
             for tlv in tlvs {
                 if tlv.tag == 0x01 && tlv.value.len() == 12 && tlv.value.iter().all(|&b| b.is_ascii_digit()) {
@@ -160,7 +157,6 @@ impl<R: CardReader> JpkiController<R> {
             return Ok(num);
         }
 
-        // Fallback: If not TLV, check if the raw data is 12 digits
         if data.len() >= 12 {
             let s = String::from_utf8_lossy(&data).to_string();
             let digits: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
@@ -169,7 +165,7 @@ impl<R: CardReader> JpkiController<R> {
             }
         }
         
-        Err(anyhow::anyhow!("MyNumber not found in EF 00 01 (Data len: {})", data.len()))
+        Err(anyhow::anyhow!("MyNumber not found in EF 00 01"))
     }
 
     pub async fn read_attributes(&mut self, pin: &str) -> Result<BasicInfo> {
@@ -181,22 +177,20 @@ impl<R: CardReader> JpkiController<R> {
 
     pub async fn read_face_photo(&mut self, my_number: &str) -> Result<Vec<u8>> {
         if my_number.len() != 12 {
-            return Err(anyhow::anyhow!("Invalid PIN length: {}. Expected 12 digits (My Number).", my_number.len()));
+            return Err(anyhow::anyhow!("Invalid My Number length."));
         }
         self.select_surface_ap().await?;
         self.verify_pin(&file_ids::EF_SURFACE_PIN, my_number).await?;
         
         let data = self.read_ef_full(&file_ids::EF_FACE_PHOTO).await?;
-        let tlvs = parse_ber_tlv(&data);
+        let tlvs = parse_ber_tlv(&data).unwrap_or_default();
         
         fn find_photo_recursive(tlvs: &[crate::utils::BerTlv]) -> Option<Vec<u8>> {
             for tlv in tlvs {
                 if tlv.tag == 0xDF27 {
                     return Some(tlv.value.to_vec());
                 }
-                if let Some(found) = find_photo_recursive(&tlv.children) {
-                    return Some(found);
-                }
+                if let Some(found) = find_photo_recursive(&tlv.children) { return Some(found); }
             }
             None
         }
@@ -204,16 +198,15 @@ impl<R: CardReader> JpkiController<R> {
         if let Some(photo) = find_photo_recursive(&tlvs) {
             Ok(photo)
         } else if data.len() > 1000 {
-            // Fallback: If no DF27 tag but data looks like an image
             Ok(data)
         } else {
-            Err(anyhow::anyhow!("Face photo (tag DF27) not found in EF data (len: {})", data.len()))
+            Err(anyhow::anyhow!("Face photo (tag DF27) not found."))
         }
     }
 
     fn parse_basic_info(data: &[u8]) -> Result<BasicInfo> {
         let mut info = BasicInfo::default();
-        let tlvs = parse_ber_tlv(data);
+        let tlvs = parse_ber_tlv(data).unwrap_or_default();
         fn collect_tags(tlvs: &[crate::utils::BerTlv], map: &mut std::collections::HashMap<u32, String>) {
             for tlv in tlvs {
                 map.insert(tlv.tag, tlv.as_utf8());
@@ -332,14 +325,11 @@ mod tests {
 
         let mut controller = JpkiController::new(reader.clone());
         
-        // Initial retries for Auth PIN
         let retries = controller.get_auth_pin_retries().await.unwrap();
         assert_eq!(retries, 3);
 
-        // Fail attempt
         let _ = controller.verify_pin(&file_ids::EF_AUTH_PIN, "wrong").await;
         
-        // Count should decrease
         let retries = controller.get_auth_pin_retries().await.unwrap();
         assert_eq!(retries, 2);
     }
@@ -352,7 +342,6 @@ mod tests {
         reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
 
         let mut controller = JpkiController::new(reader.clone());
-        // Using My Number as PIN for Surface AP
         let res = controller.read_face_photo("123456789012").await;
         assert!(res.is_ok());
         let photo = res.unwrap();
