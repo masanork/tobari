@@ -2,7 +2,12 @@
 name = "civ"
 version = "0.1.0"
 edition = "2021"
-description = "CIV (Citizen Identity Verification) Library: JPKI, Driver License, Passport, etc."
+authors = ["Masanori Kiyokawa <masanork@gmail.com>"]
+description = "A universal identity verification library (Rust) supporting JPKI (Japan), ICAO 9303 (ePassport), Drivers License, and ISO-7816 smart cards."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/masanork/tobari/tree/main/packages/civ"
+keywords = ["jpki", "myna", "smartcard", "pcsc", "civid"]
+categories = ["cryptography", "authentication", "hardware-support"]
 default-run = "civ"
 
 [lib]
@@ -27,6 +32,7 @@ rsa = { version = "0.9", features = ["sha2"] }
 p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
 signature = "2.2"
 x509-parser = "0.15"
+der-parser = "8.2"
 zeroize = "1.7"
 
 rand = "0.8"

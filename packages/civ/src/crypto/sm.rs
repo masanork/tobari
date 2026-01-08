@@ -457,5 +457,16 @@ mod tests {
         let len = bad_resp.len();
         bad_resp[len - 3] ^= 0xFF; // Corrupt MAC
         assert!(sm.unwrap_response(&bad_resp).is_err());
+
+        // 6. Test Short Response
+        assert!(sm.unwrap_response(&[0x90]).is_err());
+
+        // 7. Test Missing Tags
+        let no_tags = vec![0x90, 0x00];
+        assert!(sm.unwrap_response(&no_tags).is_err());
+
+        // 8. Test Incorrect SW
+        let bad_sw = vec![0x87, 0x01, 0x01, 0x6A, 0x82];
+        assert!(sm.unwrap_response(&bad_sw).is_err());
     }
 }
