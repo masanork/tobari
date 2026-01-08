@@ -22,6 +22,10 @@ impl MockPassport {
         let mut files = HashMap::new();
         // DG14 (Security Infos) Mock Data
         files.insert(vec![0x01, 0x0E], vec![0x31, 0x10, 0x30, 0x0E, 0x04, 0x0C, 0x01, 0x02, 0x03, 0x04]); 
+        // DG3 (Fingerprints)
+        files.insert(vec![0x01, 0x03], vec![0x03, 0x01, 0xAA]);
+        // DG4 (Iris)
+        files.insert(vec![0x01, 0x04], vec![0x04, 0x01, 0xBB]);
         
         Self {
             password: password.to_string(),
@@ -89,8 +93,16 @@ impl MockPassport {
                 }
             },
             // MSE: SET
-            (0x22, 0xC1, 0xA4) | (0x22, 0x41, 0xA6) => {
-                // 41 A6 is for CA Key Agreement
+            (0x22, 0xC1, 0xA4) | (0x22, 0x41, 0xA6) | (0x22, 0x81, 0xB6) => {
+                // 41 A6: CA, 81 B6: TA (SET DST)
+                vec![0x90, 0x00]
+            },
+            // GET CHALLENGE
+            (0x84, 0x00, 0x00) => {
+                vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x90, 0x00]
+            },
+            // EXTERNAL AUTHENTICATE
+            (0x82, 0x00, 0x00) => {
                 vec![0x90, 0x00]
             },
             // GEN AUTH
