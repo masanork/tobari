@@ -1,10 +1,24 @@
-account_address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
-chain_namespace: "eip155"
-chain_reference: "1"
+# Multi-Chain Account Portfolio
+accounts:
+  - chain: "Ethereum (Mainnet)"
+    chain_id: "eip155:1"
+    address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+    binding: "secp256k1_signature"
+  
+  - chain: "Polygon (PoS)"
+    chain_id: "eip155:137"
+    address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+    binding: "secp256k1_signature"
+
+  - chain: "Solana"
+    chain_id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
+    address: "HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrx"
+    binding: "ed25519_signature"
+
 verification_level: "ial3"
-key_binding_method: "challenge_response_secp256k1"
 issuance_date: "2026-01-09T12:00:00Z"
 expiry_date: "2027-01-09T12:00:00Z"
+
 family_name: "外務"
 given_name: "太郎"
 birth_date: "1980-01-01"
