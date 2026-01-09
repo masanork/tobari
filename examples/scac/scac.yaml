@@ -1,0 +1,45 @@
+id: io.github.masanork.tobari.crypto_account_cert
+name:
+  ja: 暗号資産アカウント保有証明書
+  en: Crypto Account Ownership Credential
+description:
+  ja: 本人確認済みの自己管理型ウォレットアカウントの証明
+  en: Verified ownership of a self-hosted crypto account.
+
+fields:
+  - id: account_address
+    name:
+      ja: アドレス
+      en: Address
+  - id: chain_namespace
+    name:
+      ja: チェーン規格
+      en: Chain Namespace
+  - id: chain_reference
+    name:
+      ja: チェーンID
+      en: Chain ID
+  - id: verification_level
+    name:
+      ja: 本人確認レベル
+      en: Verification Level
+  - id: issuance_date
+    name:
+      ja: 発行日
+      en: Issuance Date
+  - id: family_name
+    name:
+      ja: 姓
+      en: Family Name
+  - id: given_name
+    name:
+      ja: 名
+      en: Given Name
+  - id: birth_date
+    name:
+      ja: 生年月日
+      en: Date of Birth
+  - id: document_type
+    name:
+      ja: 本人確認書類
+      en: Identity Document
