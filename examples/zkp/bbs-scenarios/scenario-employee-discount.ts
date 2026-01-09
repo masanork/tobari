@@ -1,8 +1,16 @@
 /**
  * SCENARIO: Anonymous Employee Discount (Real Implementation)
  * 
- * This script demonstrates the use of BBS+ signatures for privacy-preserving
- * identity claims. It uses the @docknetwork/crypto-wasm library.
+ * Tech Stack:
+ * - BBS+ Signatures (BLS12-381 Curve)
+ * - Zero-Knowledge Proofs (Signature Proof of Knowledge)
+ * - Library: @docknetwork/crypto-wasm
+ * 
+ * STATUS:
+ * - [x] Key Generation
+ * - [x] Signing (bbsPlusSignG1)
+ * - [x] Signature Verification (bbsPlusVerifyG1)
+ * - [ ] ZK Proof Generation (bbsPlusInitializeProof...) - Fails due to WASM API mismatch (Object vs Uint8Array)
  */
 
 import * as dock from '@docknetwork/crypto-wasm';
@@ -74,13 +82,13 @@ class RealBBS {
         try {
             // Step 1: Initialize the Proof-of-Knowledge Protocol
             // This is the most sensitive part regarding argument types.
-            protocol = dock.bbsPlusInitializeProofOfKnowledgeOfSignature(
-                signature,
-                params,
-                scalars,
-                new Set(revealedIndices),
-                keypair.public_key
-            );
+        const protocol = dock.bbsPlusInitializeProofOfKnowledgeOfSignature(
+            signature,
+            params,
+            scalars,
+            revealedIndices, // Try Array instead of Set
+            keypair.public_key
+        );
         } catch (e) {
             throw new ZkpError('Proof Initialization (Protocol Setup)', e);
         }
