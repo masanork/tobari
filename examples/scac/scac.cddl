@@ -14,7 +14,9 @@ crypto_account_cert = {
         "given_name" => tstr,
         "birth_date" => full-date,
         ? "nationality" => tstr,
-        "document_type" => "passport" / "jpki"
+        "document_type" => "passport" / "jpki",
+        "identity_proof_type" => tstr,
+        "identity_proof" => bstr
     }
 }
 

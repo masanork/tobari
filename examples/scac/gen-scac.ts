@@ -11,6 +11,11 @@ async function main() {
     const dataStr = await fs.readFile(path.join(__dirname, 'scac-data.yaml'), 'utf-8');
     const data = yaml.load(dataStr) as any;
 
+    // Convert Base64 proof to Uint8Array for CBOR encoding
+    if (typeof data.identity_proof === 'string') {
+        data.identity_proof = new Uint8Array(Buffer.from(data.identity_proof, 'base64'));
+    }
+
     // 2. Generate Issuer Key (Mock)
     const keyPair = await crypto.subtle.generateKey(
         { name: "ECDSA", namedCurve: "P-384" },
