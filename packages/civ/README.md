@@ -1,25 +1,26 @@
 # civ (Citizen Identity Verification)
 
-**civ** is a universal Rust library for interacting with government-issued smart cards (National Designators, ePassports, etc.). It abstracts the complexity of ISO 7816-4 APDUs, PC/SC, and cryptographic protocols into a unified, high-level API.
+**civ** is a universal Rust library for interacting with government-issued smart cards (National Designators, ePassports, etc.). It abstracts the complexity of ISO 7816-4 APDUs, PC/SC, Secure Messaging (SM), and cryptographic verification into a unified, high-level API.
 
 It is designed to be the foundational "driver layer" for building Digital Identity Wallets, Authentication Services, and KYC tools.
 
 ## ✨ Features
 
-- **Unified API**: access different card types (JPKI, Driver's License, ePassport) through a consistent interface.
-- **Cross-Platform**: Built on pure Rust, works on `macOS`, `Linux`, `Windows` (PC/SC) and `Web` (WebUSB - WIP).
-- **Standards Compliant**: Implements ISO 7816-4, ICAO 9303 (BAC/PACE), and various national specifications.
-- **Type-Safe**: Leverages Rust's type system to prevent common errors in APDU construction and parsing.
+- **Unified Identity Model**: Access data from different card types (JPKI, Driver's License, Residence Card, ePassport) through a single, consistent `CitizenIdentity` interface.
+- **Secure Messaging**: Implements robust secure channels including **BAC** (Basic Access Control), **PACE** (Password Authenticated Connection Establishment), and card-specific protocols (e.g., JPKI, JPDL).
+- **Verification**: Built-in support for **Passive Authentication** (Integrity Check via Hash/Signature) to ensure data authenticity.
+- **Cross-Platform**: Built on pure Rust, works on `macOS`, `Linux`, `Windows` (PC/SC) and `Web` (WebAssembly/WebUSB - Experimental).
+- **Standards Compliant**: Implements ISO 7816-4, ICAO 9303, ISO/IEC 18013, and various national specifications.
 
 ## 💳 Supported Cards
 
-| Card Type | Region | Standard | Features |
-|---|---|---|---|
-| **JPKI (My Number Card)** | 🇯🇵 Japan | ISO 7816 | Auth, Sign, 4 attributes, Face Photo, MyNumber |
-| **Driver's License** | 🇯🇵 Japan | ISO 7816 | Data Reading, PIN Verify, PIN Unblock (WIP) |
-| **Residence Card** | 🇯🇵 Japan | ISO 7816 | Read Address, Period of Stay |
-| **ePassport** | 🌏 Global | ICAO 9303 | BAC (Basic Access Control), PACE (Planned) |
-| **PIV (Gov ID)** | 🇺🇸 USA | NIST FIPS 201 | Auth, Sign (Planned) |
+| Card Type | Region | Standard | Features | Verification |
+|---|---|---|---|---|
+| **JPKI (My Number Card)** | 🇯🇵 Japan | ISO 7816 | Auth, Sign, Face Photo, MyNumber | ✅ |
+| **Driver's License (JPDL)** | 🇯🇵 Japan | ISO 18013 | Common Data, PIN Verify, Photo | ✅ (Hash/Sig) |
+| **Residence Card** | 🇯🇵 Japan | ISO 7816 | Address, Period of Stay | ✅ |
+| **ePassport** | 🌏 Global | ICAO 9303 | BAC (Basic Access Control), PACE | ✅ (Passive Auth) |
+| **PIV (Gov ID)** | 🇺🇸 USA | FIPS 201 | Auth, Sign | 🚧 |
 
 ## 📦 Installation
 
@@ -32,25 +33,46 @@ civ = "0.1"
 
 ## 📖 Usage (Library)
 
-**Reading basic information from a Japanese My Number Card:**
+**Unified Identity Reading:**
+
+The core of `civ` is the `IdentityController` trait, which allows you to read identity information regardless of the underlying card technology.
 
 ```rust
-use civ::{CardReader, PcscReader, JpkiController};
+use civ::{PcscReader, CardReader, IdentityController};
+use civ::{JpkiController, DriversLicenseController, PassportController};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     // 1. Detect and connect to a reader
     let mut reader = PcscReader::new()?;
     reader.connect()?;
 
-    // 2. Initialize JPKI Controller
-    let mut jpki = JpkiController::new(reader);
+    // 2. Select Controller based on Card Type (Simplified detection)
+    // In a real app, you might auto-detect based on AID selection.
+    let mut controller: Box<dyn IdentityController> = if /* condition */ {
+        Box::new(JpkiController::new(reader))
+    } else {
+        Box::new(PassportController::new(reader))
+    };
 
-    // 3. Read specific data (e.g., My Number) with PIN
-    let pin = "1234"; // User input
-    let my_number = jpki.read_mynumber(pin).await?;
+    // 3. Provide Credentials (if needed)
+    // JPKI: 4-digit PIN for basic info
+    // Passport: MRZ or CAN for BAC/PACE
+    controller.provide_pin("auth", "1234").await?; 
+    // or
+    controller.provide_pin("mrz", "123456...").await?;
+
+    // 4. Verify (Passive Authentication)
+    if controller.verify().await? {
+        println!("Card Integrity Verified!");
+    }
+
+    // 5. Read Identity
+    let identity = controller.read_identity().await?;
     
-    println!("My Number: {}", my_number);
+    println!("Name: {}", identity.full_name);
+    println!("DOB:  {}", identity.birth_date);
+    println!("ID:   {}", identity.identity_number);
 
     Ok(())
 }
@@ -58,16 +80,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 🛠 Usage (CLI)
 
-`civ` comes with a handy CLI tool for testing and debugging cards.
+`civ` provides a powerful CLI for testing, debugging, and demonstrating card interactions. It includes a **Mock Mode** for development without physical cards.
+
+### Unified Identity Command
+
+Read identity from any supported card (auto-detected or forced):
 
 ```bash
-# Read My Number (requires 4-digit PIN)
-civ jpki num --pin 1234
+# Read from real card (JPKI, DL, Passport...)
+civ id --pin 1234
 
-# Read Face Photo to a file
-civ jpki attr --photo face.jp2
+# Read from Passport (using MRZ/CAN)
+civ id --type passport --mrz "123456..."
+```
 
-# Check ID Card PIN retry counter
+### Demo / Mock Mode
+
+You can try the library features without a card reader using the `--demo` flag.
+
+```bash
+# Demo JPKI (Mock)
+civ --demo id --type jpki
+# Output: Name: Taro, DOB: 1990-01-01...
+
+# Demo Driver's License (Mock) with Integrity Verification
+civ --demo id --type dl --verify
+# Output: ... Verified: YES
+
+# Demo Passport (Mock) using BAC
+civ --demo id --type passport
+```
+
+### Card-Specific Commands
+
+Low-level commands are also available for specific operations.
+
+```bash
+# JPKI: Read Certificate
+civ jpki cert --type sign --output sign_cert.der
+
+# JPKI: Check PIN Retry Counters
 civ jpki retries
 ```
 
@@ -76,6 +128,7 @@ civ jpki retries
 - **[Identity Scheme Analysis](docs/IDENTITY_SCHEME_ANALYSIS.md)**: Deep dive into global ID architectures (RSA vs ECC vs PQC).
 - **[JPKI Spec](docs/jpki.md)**: Details on Japanese Public Key Infrastructure.
 - **[JPDL Spec](docs/jpdl.md)**: Japanese Driver's License structure.
+- **[Passport Spec](docs/icao9303.md)**: ePassport (ICAO 9303) implementation details.
 
 ## 🤝 Contributing
 
