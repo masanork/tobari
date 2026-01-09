@@ -30,10 +30,10 @@ Refine the internal architecture for better maintainability and error reporting.
         - [x] `crypto/sm.rs` (Secure Messaging)
     - [ ] Explicitly handle card-specific errors (e.g., `IncorrectPin { remaining: u8 }`, `CardLocked`, `NotAuthenticated`).
     - [ ] Standardize error mapping from APDU Status Words (SW1/SW2).
-- [ ] **Passive Authentication (PA)**:
-    - [ ] Implement SOD (Security Object) verification for ICAO 9303.
-    - [ ] Implement data integrity checks for JPKI and JPDL (verifying digital signatures on EF files).
-    - [ ] Add a `verify()` method to each controller to validate the authenticity of the read data.
+- [x] **Passive Authentication (PA)**:
+    - [x] Implement SOD (Security Object) verification for ICAO 9303.
+    - [x] Implement data integrity checks for JPKI and JPDL (verifying digital signatures on EF files).
+    - [x] Add a `verify()` method to each controller to validate the authenticity of the read data.
 
 ## Phase 3: Usability & Developer Experience (Priority: Medium)
 Make the library intuitive and easy to integrate for external developers.

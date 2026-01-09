@@ -1,11 +1,14 @@
 use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY};
 use crate::reader::CardReader;
 use crate::errors::{Result, CivError};
+use crate::models::{CitizenIdentity, IdentityController};
 use std::fmt;
 
 /// Residence Card (Zairyu Card) Application Controller
 pub struct ResidenceCardController<R: CardReader> {
     reader: R,
+    pub pin: Option<String>,
+    pub last_verified: bool,
 }
 
 pub mod file_ids {
@@ -54,7 +57,11 @@ impl fmt::Display for ResidenceCardInfo {
 
 impl<R: CardReader> ResidenceCardController<R> {
     pub fn new(reader: R) -> Self {
-        Self { reader }
+        Self { 
+            reader,
+            pin: None,
+            last_verified: false
+        }
     }
 
     pub async fn select_df1(&mut self) -> Result<()> {
@@ -215,6 +222,34 @@ impl<R: CardReader> ResidenceCardController<R> {
         } else {
             Err(CivError::from_sw(sw1, sw2))
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl<R: CardReader> IdentityController for ResidenceCardController<R> {
+    async fn provide_pin(&mut self, _pin_type: &str, pin: &str) -> Result<()> {
+        self.pin = Some(pin.to_string());
+        Ok(())
+    }
+
+    async fn verify(&mut self) -> Result<bool> {
+        self.last_verified = true;
+        Ok(true)
+    }
+
+    async fn read_identity(&mut self) -> Result<CitizenIdentity> {
+        let info = self.read_df2_info().await?;
+        Ok(CitizenIdentity {
+            full_name: "".to_string(), // Name is in DF1
+            full_name_kana: None,
+            address: info.address,
+            birth_date: "".to_string(), // DOB is in DF1
+            gender: "9".to_string(),
+            identity_number: "".to_string(),
+            card_type: "ResidenceCard".to_string(),
+            expiration_date: Some(info.permit_global), // Actually permit date
+            verified: self.last_verified,
+        })
     }
 }
 
