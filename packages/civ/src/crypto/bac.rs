@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use sha1::{Sha1, Digest};
 use des::{Des, TdesEde3};
 use cipher::{BlockEncrypt, BlockDecrypt, KeyInit};
-use cipher::generic_array::GenericArray;
+use generic_array::GenericArray;
 
 pub struct BacSession {
     k_enc: [u8; 16], // 2-key 3DES keys

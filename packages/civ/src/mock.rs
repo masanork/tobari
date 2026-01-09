@@ -262,11 +262,47 @@ impl DriversLicenseBackend {
 
 
 
-        Self { files, current_ef: None }
+                Self { files, current_ef: None }
 
-    }
 
-}
+
+            }
+
+
+
+        
+
+
+
+            pub fn corrupt_data(&mut self) {
+
+
+
+                if let Some(data) = self.files.get_mut(&vec![0x00, 0x01]) {
+
+
+
+                    if !data.is_empty() {
+
+
+
+                        data[0] ^= 0xFF;
+
+
+
+                    }
+
+
+
+                }
+
+
+
+            }
+
+
+
+        }
 
 impl MockBackend for DriversLicenseBackend {
     fn handle_apdu(&mut self, cmd: &ApduCommand, _aid: &[u8]) -> (Vec<u8>, u16) {
@@ -313,6 +349,15 @@ impl ResidenceCardBackend {
         files.insert(vec![0x00, 0x02], ef_perm);
         files.insert(vec![0x00, 0x04], vec![0xD7, 0x01, b'0']);
         Self { files, current_ef: None }
+    }
+
+    pub fn corrupt_data(&mut self) {
+        // Change EF01 data without updating EF07 signature
+        if let Some(data) = self.files.get_mut(&vec![0x00, 0x01]) {
+            if !data.is_empty() {
+                data[0] ^= 0xFF; // Flip first byte
+            }
+        }
     }
 }
 
