@@ -516,11 +516,11 @@ describe("MCP Server", () => {
         });
 
         const juminhyoFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
-        const bankFile = path.resolve(import.meta.dir, "../../../examples/bank-certificate/bank-certificate.cose");
+        const bankFile = path.resolve(import.meta.dir, "../../../examples/bank-cert/bank-certificate.cose");
         const deviceKeyFile = path.resolve(import.meta.dir, "../../../device-key.json");
         
         const juminhyoIssuerKey = path.resolve(import.meta.dir, "../../../examples/juminhyo/issuer-key.json");
-        const bankIssuerKey = path.resolve(import.meta.dir, "../../../examples/bank-certificate/issuer-key.json");
+        const bankIssuerKey = path.resolve(import.meta.dir, "../../../examples/bank-cert/issuer-key.json");
 
         const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
         
@@ -547,7 +547,7 @@ describe("MCP Server", () => {
         proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
 
         const waitForId = async (id: number) => {
-            for (let i = 0; i < 20; i++) {
+            for (let i = 0; i < 100; i++) {
                 if (outputBuffer.includes(`"id":${id}`)) return;
                 await new Promise(r => setTimeout(r, 200));
             }

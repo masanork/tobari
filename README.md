@@ -23,6 +23,26 @@ PDF や紙の書類が持つ「完成された様式」への信頼感と、現�
 5. **Holder Binding (Device Signature)**:
    ISO 18013-5 (mdoc) および OID4VP に準拠したデバイス認証をサポート。提示されたデータが正当な所有者から来たものであることを暗号学的に保証します。
    [詳細ドキュメント: docs/HOLDER_BINDING.md](docs/HOLDER_BINDING.md)
+6. **Zero-Knowledge Proofs (ZKP)**:
+   BBS+ 署名による「非連結な証明（Unlinkability）」や、パスポートの生年月日を隠したまま「18歳以上であること」のみを証明する ZK 回路（Circom）をサポート。
+
+## Advanced Privacy & Web3 Compliance
+
+Tobari は、単なるデジタル証明書を超えて、Web3 や金融規制（FATF トラベルルール）に対応するための高度なプライバシー機能を備えています。
+
+### SCAC: Crypto Account Ownership Credential
+[FATF アンホステッド・ウォレット規制](docs/FATF_ANALYSIS.md)に対応するための証明書モデル。本人確認済みの個人と、自己管理型ウォレット（Ethereum, Solana 等）の紐付けを暗号学的に証明します。
+
+### ZKP Examples
+- **Passport Age Verification**: パスポート番号を秘匿したまま、年齢要件のみを証明する ZK 回路。
+- **BBS+ Unlinkability**: 同じ証明書を複数回提示しても、提示先が同一人物だと特定できない「追跡不可能な証明」。
+
+これらのデモは以下のコマンドで実行できます：
+```bash
+bun run demo:zkp:passport  # パスポート ZK 入力生成
+bun run demo:zkp:bbs       # BBS+ 非連結証明デモ
+bun run demo:scac          # SCAC 発行・検証デモ
+```
 
 ## Project Structure
 
