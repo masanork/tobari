@@ -35,3 +35,11 @@ fields:
     name:
       ja: 本人確認書類
       en: Identity Document
+  - id: identity_proof_type
+    name:
+      ja: 真正性証明方式
+      en: Identity Proof Type
+  - id: identity_proof
+    name:
+      ja: 真正性証明データ
+      en: Identity Proof Data

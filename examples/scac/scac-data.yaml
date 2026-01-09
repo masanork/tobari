@@ -24,4 +24,7 @@ given_name: "太郎"
 birth_date: "1980-01-01"
 nationality: "JP"
 document_type: "passport"
-# document_number_hash removed for privacy
+
+# Privacy-Preserving Proof (Base64 Encoded Dummy Data)
+identity_proof_type: "zkp_sod_verification_v1"
+identity_proof: "ZHVtbXlfemtwX3Byb29mX2RhdGFfdGhhdF92ZXJpZmllc19zb2Rfc2lnbmF0dXJlX3dpdGhvdXRfcmV2ZWFsaW5nX21Xeg=="
