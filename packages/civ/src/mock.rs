@@ -566,7 +566,8 @@ impl MockBackend for PassportBackend {
                         },
                         0x85 => {
                             if let Some(pace) = &mut self.pace_state {
-                                let server_token = pace.perform_token_exchange(&[]).unwrap();
+                                let pcd_token = extract_tlv_value(&cmd.data, 0x85).unwrap_or_default();
+                                let server_token = pace.perform_token_exchange(&pcd_token).unwrap();
                                 let session = pace.finalize_session().unwrap();
                                 self.new_secure_session = Some(MockSecureSession::Pace(AesSecureMessaging::new(&session.k_enc, &session.k_mac, session.ssc).unwrap()));
                                 (build_tlv(0x86, &server_token), 0x9000)

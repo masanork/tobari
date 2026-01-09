@@ -51,13 +51,19 @@ async function main() {
     ];
     const age_threshold = 18;
 
+    // 5. Generate Secret for Nullifier
+    const secret = new Uint8Array(32);
+    crypto.getRandomValues(secret);
+    const secretBits = bufferToBitArray(Buffer.from(secret));
+
     const input = {
         mrz_bits: stringToBitArray(MRZ),
         mrz_hash: hashBits,
         // birth_date_bits removed
         // expiry_date_bits removed
         current_date: current_date,
-        age_threshold: age_threshold
+        age_threshold: age_threshold,
+        secret: secretBits
     };
 
     fs.writeFileSync('input.json', JSON.stringify(input, null, 2));

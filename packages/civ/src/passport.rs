@@ -168,6 +168,9 @@ impl<R: CardReader> PassportController<R> {
         let res_auth = self.transmit(&gen_auth_3).await?;
         Self::check_sw(&res_auth)?;
         
+        let t_picc = parse_pace_response(&res_auth, 0x86)?;
+        pace.perform_token_exchange(&t_picc).map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
+        
         let session = pace.finalize_session().map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
         self.secure_session = Some(SecureSession::Pace(AesSecureMessaging::new(&session.k_enc, &session.k_mac, session.ssc).map_err(|e| CivError::SecureMessagingError(e.to_string()))?));
         Ok(())

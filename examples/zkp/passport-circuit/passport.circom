@@ -188,7 +188,28 @@ template PassportVerifier() {
     ageVerifier.current_d <== current_date[2];
     ageVerifier.threshold <== age_threshold;
 
-    is_older_than_threshold <== ageVerifier.is_older;
+    // --- 4. Generate Nullifier (Hash of Document Number + Secret) ---
+    // Document Number starts at line 2, char 1 (index 44)
+    // Length: 9 chars (72 bits)
+    var doc_num_offset = 44 * 8;
+    
+    // Secret input to prevent rainbow table attacks on nullifiers
+    signal input secret[256];
+    
+    // Output: Unique nullifier for this passport
+    signal output nullifier[256];
+
+    component nullifier_sha256 = Sha256(72 + 256); // doc_num + secret
+    for (var i = 0; i < 72; i++) {
+        nullifier_sha256.in[i] <== mrz_bits[doc_num_offset + i];
+    }
+    for (var i = 0; i < 256; i++) {
+        nullifier_sha256.in[72 + i] <== secret[i];
+    }
+
+    for (var i = 0; i < 256; i++) {
+        nullifier[i] <== nullifier_sha256.out[i];
+    }
 }
 
 component main {public [mrz_hash, current_date, age_threshold]} = PassportVerifier();

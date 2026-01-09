@@ -12,7 +12,8 @@ import {
     AssemblePresentationSchema,
     VerifyPresentationSchema,
     AnalyzeServiceRequestSchema,
-    ListAvailableDocumentsSchema
+    ListAvailableDocumentsSchema,
+    GeneratePassportZkpInputSchema
 } from "../schemas.js";
 
 export async function handleReadTobariFile(toolArgs: any) {
@@ -665,6 +666,94 @@ export async function handleListAvailableDocuments(toolArgs: any) {
     } catch (error: any) {
         return {
             content: [{ type: "text", text: `Error listing documents: ${error.message}` }],
+            isError: true,
+        };
+    }
+}
+
+export async function handleGeneratePassportZkpInput(toolArgs: any) {
+    try {
+        const args = GeneratePassportZkpInputSchema.parse(toolArgs);
+        const fileBuffer = await readTobariFileAsBuffer(args.path);
+        const cose = decode(fileBuffer);
+
+        let mrz = "";
+        if (cose.issuerSigned && cose.issuerSigned.nameSpaces) {
+            for (const ns of Object.keys(cose.issuerSigned.nameSpaces)) {
+                for (const itemBytes of cose.issuerSigned.nameSpaces[ns]) {
+                    const [_, __, key, value] = decode(itemBytes);
+                    if (key === "dg1") {
+                        mrz = value;
+                    }
+                }
+            }
+        }
+
+        if (!mrz) {
+            const payload = decode(fileBuffer);
+            for (const key of Object.keys(payload)) {
+                if (typeof payload[key] === 'string' && payload[key].length >= 88) {
+                    mrz = payload[key];
+                    break;
+                }
+            }
+        }
+
+        if (!mrz || mrz.length < 88) {
+            throw new Error("Could not find a valid MRZ (at least 88 chars) in the document.");
+        }
+
+        const mrzClean = mrz.replace(/[\r\n]/g, "").substring(0, 88);
+        
+        const bufferToBitArray = (buf: Buffer): number[] => {
+            const bits: number[] = [];
+            for (let i = 0; i < buf.length; i++) {
+                for (let j = 7; j >= 0; j--) {
+                    bits.push((buf[i] >> j) & 1);
+                }
+            }
+            return bits;
+        };
+
+        const mrzBuffer = Buffer.from(mrzClean, 'ascii');
+        const mrzBits = bufferToBitArray(mrzBuffer);
+        
+        const { createHash } = await import('crypto');
+        const hash = createHash('sha256').update(mrzClean).digest();
+        const hashBits = bufferToBitArray(hash);
+
+        const today = new Date();
+        const currentDate = args.currentDate || [
+            today.getFullYear(),
+            today.getMonth() + 1,
+            today.getDate()
+        ];
+
+        const cryptoMod = await import('crypto');
+        const secret = args.secret 
+            ? Buffer.from(args.secret, 'base64')
+            : cryptoMod.randomBytes(32);
+        const secretBits = bufferToBitArray(secret);
+
+        const input = {
+            mrz_bits: mrzBits,
+            mrz_hash: hashBits,
+            current_date: currentDate,
+            age_threshold: args.ageThreshold,
+            secret: secretBits
+        };
+
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify(input, null, 2),
+                },
+            ],
+        };
+    } catch (error: any) {
+        return {
+            content: [{ type: "text", text: `Error generating ZKP input: ${error.message}` }],
             isError: true,
         };
     }

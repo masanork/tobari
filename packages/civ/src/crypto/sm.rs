@@ -177,6 +177,8 @@ impl SecureMessagingSession for AesSecureMessaging {
 
         // DO8E: MAC
         let mut mac_input = Vec::new();
+        let ssc = self.get_ssc();
+        mac_input.extend_from_slice(&ssc.to_be_bytes());
         mac_input.push(apdu.cla | 0x0C); // Header with SM bits
         mac_input.push(apdu.ins);
         mac_input.push(apdu.p1);
@@ -236,6 +238,8 @@ impl SecureMessagingSession for AesSecureMessaging {
         if !self.is_null_session() {
             let do8e = do8e.ok_or_else(|| CivError::SecureMessagingError("Missing DO8E (MAC) in SM response".to_string()))?;
             let mut mac_input = Vec::new();
+            let ssc = self.get_ssc();
+            mac_input.extend_from_slice(&ssc.to_be_bytes());
             if let Some(ref val) = do87 {
                 mac_input.push(0x87);
                 mac_input.extend_from_slice(&encode_length(val.len()));
@@ -300,7 +304,10 @@ impl AesSecureMessaging {
         wrapped.push(sw2);
 
         // DO8E (MAC)
-        let mac_input = wrapped.clone();
+        let mut mac_input = Vec::new();
+        let ssc = self.get_ssc();
+        mac_input.extend_from_slice(&ssc.to_be_bytes());
+        mac_input.extend_from_slice(&wrapped);
         let mac = if self.is_null_session() {
             vec![0u8; 8]
         } else {
@@ -340,6 +347,8 @@ impl AesSecureMessaging {
         if !self.is_null_session() {
             let do8e = do8e.ok_or_else(|| CivError::SecureMessagingError("Missing DO8E (MAC)".to_string()))?;
             let mut mac_input = Vec::new();
+            let ssc = self.get_ssc();
+            mac_input.extend_from_slice(&ssc.to_be_bytes());
             // SM MAC uses the CLA with secure messaging bits set.
             mac_input.push(cmd.cla);
             mac_input.push(cmd.ins);
