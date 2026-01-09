@@ -36,22 +36,32 @@ async function main() {
     const birthDateBits = stringToBitArray(birthDate);
     console.log(`Birth Date: ${birthDate}`);
 
-    // 3. Extract Expiry Date (YYMMDD)
+    // 3. Extract Expiry Date (YYMMDD) - No longer used in ZKP explicitly but kept for ref
     // Line 2, char 22 (index 21 in line 2) -> "270101"
     const expiryDate = MRZ_LINE2.substring(21, 27);
-    const expiryDateBits = stringToBitArray(expiryDate);
     console.log(`Expiry Date: ${expiryDate}`);
 
     // 4. Create Input JSON
+    // New Inputs: current_date [YYYY, MM, DD], age_threshold
+    const today = new Date();
+    const current_date = [
+        today.getFullYear(),
+        today.getMonth() + 1, // 0-indexed in JS
+        today.getDate()
+    ];
+    const age_threshold = 18;
+
     const input = {
         mrz_bits: stringToBitArray(MRZ),
         mrz_hash: hashBits,
-        birth_date_bits: birthDateBits,
-        expiry_date_bits: expiryDateBits
+        // birth_date_bits removed
+        // expiry_date_bits removed
+        current_date: current_date,
+        age_threshold: age_threshold
     };
 
     fs.writeFileSync('input.json', JSON.stringify(input, null, 2));
-    console.log("Saved to input.json");
+    console.log(`Saved to input.json (Threshold: ${age_threshold}, Current: ${current_date.join('/')})`);
 }
 
 main().catch(console.error);

@@ -222,6 +222,7 @@ dependencies = [
  "der-parser",
  "des",
  "encoding_rs",
+ "generic-array",
  "getrandom",
  "hex",
  "js-sys",

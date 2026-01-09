@@ -13,7 +13,11 @@
         "verify:cli": "bun run packages/codec/src/verify-cli.ts",
         "present:cli": "bun run packages/codec/src/present-cli.ts",
         "build": "bun run build:examples && bun run build:verifier",
-        "ci": "bun run build && bun run test && npx playwright test"
+        "ci": "bun run build && bun run test && npx playwright test",
+        "demo:zkp:passport": "cd examples/zkp/passport-circuit && bun run index.js",
+        "demo:zkp:bbs": "cd examples/zkp/bbs-scenarios && bun run scenario-employee-discount.ts",
+        "demo:zkp:dating": "cd examples/zkp/bbs-scenarios && bun run scenario-dating-app.ts",
+        "demo:scac": "cd examples/scac && bun run gen-scac.ts"
     },
     "devDependencies": {
         "@playwright/test": "^1.57.0",
