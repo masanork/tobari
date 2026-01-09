@@ -1,0 +1,23 @@
+; Self-Hosted Crypto Account Ownership Credential (SCAC)
+; DocType: io.github.masanork.tobari.crypto_account_cert
+
+crypto_account_cert = {
+    "io.github.masanork.tobari.crypto_account" => {
+        "account_address" => tstr,
+        "chain_namespace" => tstr,
+        "chain_reference" => tstr,
+        "verification_level" => tstr,
+        "key_binding_method" => tstr,
+        "issuance_date" => tdate,
+        "expiry_date" => tdate,
+        ? "kyc_provider_id" => tstr
+    },
+    "io.github.masanork.tobari.person" => {
+        "family_name" => tstr,
+        "given_name" => tstr,
+        "birth_date" => full-date,
+        ? "nationality" => tstr,
+        "document_type" => "passport" / "jpki",
+        ? "document_number_hash" => bstr
+    }
+}
