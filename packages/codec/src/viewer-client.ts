@@ -511,22 +511,350 @@ function renderBankCertificate(data: any, mso: any): string {
     `;
 }
 
+
+function renderStatement(data: any, fieldsMeta: any[], mso: any): string {
+    const getValue = (key: string) => {
+        const val = data[key];
+        if (val && typeof val === 'object' && val.hasOwnProperty('@disclosed')) {
+            return val['@disclosed'] ? val['@value'] : '******';
+        }
+        return val !== undefined ? val : '-';
+    };
+
+    const formatMoney = (val: any) => {
+        if (typeof val === 'number') return val.toLocaleString() + '円';
+        if (typeof val === 'string' && !isNaN(Number(val))) return Number(val).toLocaleString() + '円';
+        return val;
+    };
+
+    // Extract sections
+    const headerFields = fieldsMeta.filter(f => f.section === 'header');
+    const footerFields = fieldsMeta.filter(f => f.section === 'footer');
+    // Primary field usually Subject Name
+    const primaryField = fieldsMeta.find(f => f.primary);
+
+    // Find the main list (array) field for the statement details
+    const listField = fieldsMeta.find(f =>
+        (f.id.includes('利用明細') || f.id.includes('明細') || f.type === 'array') &&
+        data[f.id] && Array.isArray(data[f.id])
+    ) || fieldsMeta.find(f => f.type === 'array');
+
+    const details = listField ? (
+        Array.isArray(getValue(listField.id)) ? getValue(listField.id) : []
+    ) : [];
+
+    // Other fields (Summary info)
+    const summaryFields = fieldsMeta.filter(f =>
+        !f.section && !f.primary && f !== listField && f.type !== 'array' && f.type !== 'group'
+    );
+
+    const logo = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#2b6cb0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>`;
+
+    // CSS for responsive design
+    const css = `
+    <style>
+        .stmt-container {
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            background: #fff;
+            color: #333;
+            overflow: hidden;
+            /* No shadow/border here as the parent container has it, but we can reset if needed */
+        }
+        .stmt-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #edf2f7;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .stmt-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .stmt-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c5282;
+            margin: 0;
+        }
+        .stmt-meta {
+            text-align: right;
+            font-size: 13px;
+            color: #718096;
+        }
+        .stmt-bill-to {
+            margin-bottom: 30px;
+        }
+        .stmt-recipient {
+            font-size: 22px;
+            font-weight: bold;
+            color: #1a202c;
+        }
+        
+        .stmt-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 40px;
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        .stmt-summary-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .stmt-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #a0aec0;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .stmt-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+        .stmt-value.highlight {
+            color: #2b6cb0;
+            font-size: 20px;
+        }
+
+        /* Responsive Table */
+        .stmt-table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            margin-bottom: 40px;
+        }
+        .stmt-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .stmt-table th {
+            text-align: left;
+            padding: 12px 15px;
+            border-bottom: 2px solid #e2e8f0;
+            color: #4a5568;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .stmt-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #edf2f7;
+            color: #2d3748;
+        }
+        .stmt-table tr:hover {
+            background-color: #f7fafc;
+        }
+        .stmt-amount {
+            text-align: right;
+            font-family: "Menlo", "Monaco", monospace;
+            font-weight: bold;
+        }
+
+        /* Mobile Card View for Table */
+        @media (max-width: 600px) {
+            .stmt-header {
+                flex-direction: column;
+                align-items: flex-start;
+                text-align: left;
+            }
+            .stmt-meta {
+                text-align: left;
+            }
+            .stmt-table thead {
+                display: none;
+            }
+            .stmt-table, .stmt-table tbody, .stmt-table tr, .stmt-table td {
+                display: block;
+                width: 100%;
+            }
+            .stmt-table tr {
+                margin-bottom: 15px;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 15px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .stmt-table td {
+                border-bottom: none;
+                padding: 5px 0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .stmt-table td::before {
+                content: attr(data-label);
+                font-size: 11px;
+                text-transform: uppercase;
+                font-weight: bold;
+                color: #a0aec0;
+                width: 40%;
+            }
+            .stmt-amount {
+                text-align: right;
+            }
+        }
+
+        .stmt-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #edf2f7;
+            font-size: 12px;
+            color: #718096;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 600px) {
+            .stmt-footer {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    `;
+
+    // Render HTML
+    let html = css + `<div class="stmt-container">`;
+
+    // Header
+    html += `
+        <div class="stmt-header">
+            <div class="stmt-brand">
+                ${logo}
+                <div>
+                    <h1 class="stmt-title">${formatValue(getValue("明細書タイトル") || "ご利用明細書")}</h1>
+                    <div style="font-size: 12px; color: #4a5568;">Web Statement</div>
+                </div>
+            </div>
+            <div class="stmt-meta">
+                ${headerFields.filter(f => f.id !== "明細書タイトル").map(f => `
+                    <div><strong>${f.label || f.id}:</strong> ${formatValue(getValue(f.id))}</div>
+                `).join('')}
+                <div><strong>発行ID:</strong> ${mso.docType.split('.').pop()}-${new Date(mso.validityInfo.signed).getTime().toString().slice(-6)}</div>
+            </div>
+        </div>
+    `;
+
+    // Bill To
+    if (primaryField) {
+        html += `
+            <div class="stmt-bill-to">
+                <div style="font-size: 12px; color: #718096; margin-bottom: 4px;">ご請求先</div>
+                <div class="stmt-recipient">${formatValue(getValue(primaryField.id))} 様</div>
+            </div>
+        `;
+    }
+
+    // Summary Grid
+    if (summaryFields.length > 0) {
+        html += `<div class="stmt-summary">`;
+        summaryFields.forEach(f => {
+            const val = getValue(f.id);
+            const isMoney = f.type === 'integer' || f.id.includes('金額') || f.id.includes('枠');
+            const displayVal = isMoney ? formatMoney(val) : formatValue(val);
+            const highlight = f.id.includes('請求金額') || f.id.includes('支払') ? 'highlight' : '';
+
+            html += `
+                <div class="stmt-summary-item">
+                    <div class="stmt-label">${f.label || f.id}</div>
+                    <div class="stmt-value ${highlight}">${displayVal}</div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    // Transaction Table
+    if (listField && details.length > 0) {
+        const columns = listField.items?.fields || [];
+
+        html += `<div class="stmt-table-wrapper"><table class="stmt-table">`;
+
+        // Table Header
+        html += `<thead><tr>`;
+        columns.forEach((col: any) => {
+            const align = col.type === 'integer' || col.id.includes('金額') ? 'text-align: right;' : '';
+            html += `<th style="${align}">${col.label || col.id}</th>`;
+        });
+        html += `</tr></thead>`;
+
+        // Table Body
+        html += `<tbody>`;
+        details.forEach((item: any) => {
+            html += `<tr>`;
+            columns.forEach((col: any) => {
+                let val = item[col.id];
+                // Handle selective disclosure in array items
+                if (val && typeof val === 'object' && val.hasOwnProperty('@disclosed')) {
+                    val = val['@disclosed'] ? val['@value'] : '******';
+                }
+
+                const isNum = col.type === 'integer' || col.id.includes('金額');
+                const displayVal = isNum ? formatMoney(val) : formatValue(val);
+                const className = isNum ? 'stmt-amount' : '';
+
+                html += `<td data-label="${col.label || col.id}" class="${className}">${displayVal}</td>`;
+            });
+            html += `</tr>`;
+        });
+        html += `</tbody></table></div>`;
+    } else if (listField) {
+        html += `<div style="padding: 20px; text-align: center; color: #a0aec0; background: #f7fafc; border-radius: 8px;">明細データはありません</div>`;
+    }
+
+    // Footer
+    if (footerFields.length > 0) {
+        html += `<div class="stmt-footer">`;
+        // Company Info
+        html += `<div>`;
+        footerFields.forEach(f => {
+            html += `<div style="margin-bottom: 4px;"><strong>${formatValue(getValue(f.id))}</strong></div>`;
+        });
+        html += `</div>`;
+
+        // System Info
+        html += `<div style="text-align: right;">
+            <div>Powered by Tobari (ISO 18013-5)</div>
+            <div>Signed: ${new Date(mso.validityInfo.signed).toLocaleString()}</div>
+        </div>`;
+
+        html += `</div>`;
+    }
+
+    html += `</div>`; // End container
+    return html;
+}
+
 function render(doc: any, data: any, mso: any) {
     const container = document.getElementById('viewer-root');
     if (!container) return;
 
-    if (data["証明書名称"]) {
-        const titleVal = data["証明書名称"]["@value"] || data["証明書名称"];
-        document.title = `${titleVal} - Tobari Verified`;
+    if (data["証明書名称"] || data["明細書タイトル"]) {
+        const titleVal = (data["証明書名称"] || data["明細書タイトル"]); // unwrapped already by chance or raw
+        const actualTitle = (titleVal && typeof titleVal === 'object' && titleVal['@value']) ? titleVal['@value'] : titleVal;
+        document.title = `${actualTitle} - Tobari Verified`;
     }
 
     if (mso.docType === 'io.github.masanork.tobari.bank_certificate.v1') {
         container.innerHTML = `<div class="">${renderBankCertificate(data, mso)}</div>`;
+    } else if (mso.docType === 'io.github.masanork.tobari.credit-card-statement.v1') {
+        container.innerHTML = `<div class="official-document">${renderStatement(data, doc.fields || [], mso)}</div>`;
     } else {
         // Always use auto-renderer for now with new mdoc structure
         container.innerHTML = `<div class="official-document">${autoRender(data, doc.fields || [], mso)}</div>`;
     }
 }
+
 
 // Expose globally
 (window as any).initTobari = initViewer;

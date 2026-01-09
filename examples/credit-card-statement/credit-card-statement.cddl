@@ -1,0 +1,46 @@
+start = credit-card-statement
+
+credit-card-statement = {
+  "明細書タイトル" => text,
+  "発行日" => tdate,
+  
+  ; 発行会社
+  "発行元名" => text,
+  "発行元住所" => text,
+  "登録番号" => text,
+
+  ; 会員情報
+  "会員氏名" => text,
+  
+  ; カード情報
+  "カード名称" => text,
+  "カード番号" => text, ; Masked
+
+  ; 請求概要
+  "ご請求金額" => int,
+  "お支払日" => tdate,
+  "金融機関名" => text,
+  "支店名" => text,
+  "口座科目" => text,
+  "口座番号" => text, ; Masked
+  "口座名義" => text,
+
+  ; 利用可能枠
+  "ショッピング利用可能枠" => int,
+  "キャッシング利用可能枠" => int,
+  
+  ; ポイント
+  ? "獲得ポイント" => int,
+  ? "累計ポイント" => int,
+
+  ; 利用明細
+  "利用明細" => [+ transaction-item]
+}
+
+transaction-item = {
+  "利用日" => tdate,
+  "利用店名・商品名" => text,
+  ? "支払区分" => text, ; 1回, リボ, etc.
+  "利用金額" => int,
+  ? "備考" => text
+}

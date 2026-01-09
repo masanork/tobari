@@ -1,6 +1,4 @@
 use anyhow::{Result, bail};
-use sha1::{Sha1, Digest};
-use sha2::Sha256;
 use encoding_rs::SHIFT_JIS;
 
 /// Decode Shift-JIS bytes to String, with lossy conversion for Gaiji.

@@ -81,3 +81,56 @@ export function rawEcdsaToDer(rawSignature: Uint8Array): Uint8Array {
     der.set(sInt, offset);
     return der;
 }
+
+export async function loadAllTrustedIssuers(): Promise<Record<string, CryptoKey>> {
+    const examplesDir = path.join(PROJECT_ROOT, "examples");
+    const issuerKeys: Record<string, CryptoKey> = {};
+
+    const entries = await fs.readdir(examplesDir, { withFileTypes: true });
+    for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const dir = path.join(examplesDir, entry.name);
+
+        // Look for issuer-key.json
+        const keyPath = path.join(dir, "issuer-key.json");
+        try {
+            await fs.access(keyPath);
+        } catch {
+            continue;
+        }
+
+        // Look for YAML to get docType
+        let docType: string | null = null;
+        const subEntries = await fs.readdir(dir);
+        for (const f of subEntries) {
+            if (f.endsWith(".yaml") && f !== "docker-compose.yaml") {
+                // Heuristic: read the yaml and look for "id: ..."
+                const content = await fs.readFile(path.join(dir, f), "utf-8");
+                const match = content.match(/^id:\s*["']?([^"'\n]+)["']?/m);
+                if (match) {
+                    docType = match[1];
+                    break;
+                }
+            }
+        }
+
+        if (docType) {
+            try {
+                const keyContent = await fs.readFile(keyPath, "utf-8");
+                const jwk = JSON.parse(keyContent);
+                const key = await crypto.subtle.importKey(
+                    "jwk",
+                    jwk,
+                    { name: "ECDSA", namedCurve: jwk.crv || "P-384" },
+                    true,
+                    ["verify"]
+                );
+                issuerKeys[docType] = key;
+                // Also support "io.github.masanork.tobari.credit-card-statement.v1" etc.
+            } catch (e) {
+                console.warn(`Failed to load key for ${docType}:`, e);
+            }
+        }
+    }
+    return issuerKeys;
+}

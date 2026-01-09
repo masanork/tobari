@@ -1,0 +1,113 @@
+title: "就労証明書"
+id: "io.github.masanork.tobari.work-cert.v1"
+version: "1.0.0"
+
+fields:
+  - id: "証明書名称"
+    type: "string"
+    section: "header"
+  - id: "証明日"
+    type: "string"
+    section: "footer"
+  - id: "事業所名"
+    type: "string"
+    section: "footer"
+  - id: "代表者名"
+    type: "string"
+    section: "footer"
+  - id: "所在地"
+    type: "string"
+    section: "footer"
+  - id: "電話番号"
+    type: "string"
+    section: "footer"
+  - id: "担当者名"
+    type: "string"
+    section: "footer"
+  - id: "記載者連絡先"
+    type: "string"
+    section: "footer"
+  - id: "本人氏名"
+    type: "string"
+    selective: true
+    primary: true
+  - id: "フリガナ"
+    type: "string"
+    selective: true
+  - id: "生年月日"
+    type: "string"
+    selective: true
+  - id: "業種"
+    type: "string"
+    selective: true
+  - id: "雇用形態"
+    type: "string"
+    selective: true
+  - id: "雇用期間開始"
+    type: "string"
+    selective: true
+  - id: "雇用期間終了"
+    type: "string"
+    selective: true
+  - id: "就労場所名称"
+    type: "string"
+    selective: true
+  - id: "就労場所住所"
+    type: "string"
+    selective: true
+  - id: "就労場所電話番号"
+    type: "string"
+    selective: true
+  - id: "就労時間合計"
+    type: "string"
+    selective: true
+  - id: "休憩時間"
+    type: "string"
+    selective: true
+  - id: "就労日数"
+    type: "string"
+    selective: true
+  - id: "就労時間帯"
+    type: "string"
+    selective: true
+  - id: "就労実績"
+    type: "array"
+    selective: true
+    items:
+      fields:
+        - id: "年月"
+          type: "string"
+        - id: "日数"
+          type: "integer"
+        - id: "時間数"
+          type: "integer"
+  - id: "産休期間"
+    type: "string"
+    selective: true
+  - id: "育休期間"
+    type: "string"
+    selective: true
+  - id: "復職予定日"
+    type: "string"
+    selective: true
+  - id: "短時間勤務制度"
+    type: "string"
+    selective: true
+  - id: "短時間勤務期間"
+    type: "string"
+    selective: true
+  - id: "保育士実態"
+    type: "string"
+    selective: true
+  - id: "契約更新有無"
+    type: "string"
+    selective: true
+  - id: "入所内定時育休短縮可否"
+    type: "string"
+    selective: true
+  - id: "単身赴任期間"
+    type: "string"
+    selective: true
+  - id: "備考"
+    type: "string"
+    selective: true

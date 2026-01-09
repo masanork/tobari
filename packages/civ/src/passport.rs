@@ -451,7 +451,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_perform_pace_flow() {
         let reader = TestReader::new();
         let _mock = setup_passport_mock(&reader);
