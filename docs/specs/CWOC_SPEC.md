@@ -1,6 +1,6 @@
 # JAOPP 暗号資産アカウント保有証明書 (SCAC) 仕様書案
 
-**Version:** 0.2.0 (Draft)
+**Version:** 0.3.0 (Draft)
 **Target:** Prototype for JAOPP (Japan Open Privacy Platform)
 **Standard:** ISO/IEC 18013-5 (mDoc)
 **Document Name:** Self-Hosted Crypto Account Ownership Credential (SCAC)
@@ -53,7 +53,16 @@
 
 ### 3.2 名前空間: `io.github.masanork.tobari.person`
 
-（変更なし。本人確認情報）
+元となる身分証から抽出・検証された個人情報。
+*注: パスポート番号やマイナンバーなどの識別子は、プライバシー保護およびトラッキング防止の観点から本証明書には含めない。*
+
+| Data Element Identifier | Type | Mandatory | Description | Source Mapping |
+| :--- | :--- | :--- | :--- | :--- |
+| `family_name` | tstr | Yes | 姓 | Passport DG1 / JPKI 4情報 |
+| `given_name` | tstr | Yes | 名 | Passport DG1 / JPKI 4情報 |
+| `birth_date` | full-date | Yes | 生年月日 | Passport DG1 / JPKI 4情報 |
+| `nationality` | tstr | No | 国籍 (ISO 3166-1 alpha-2) | Passport (JP) / JPKI (JP) |
+| `document_type` | tstr | Yes | 原自身分証の種類 | `passport`, `jpki` |
 
 ---
 
@@ -80,7 +89,13 @@ crypto_account_cert = {
         "verification_level" => tstr,
         ...
     },
-    ...
+    "io.github.masanork.tobari.person" => {
+        "family_name" => tstr,
+        "given_name" => tstr,
+        "birth_date" => full-date,
+        ? "nationality" => tstr,
+        "document_type" => "passport" / "jpki"
+    }
 }
 
 AccountEntry = {

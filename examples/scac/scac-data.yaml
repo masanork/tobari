@@ -24,4 +24,4 @@ given_name: "太郎"
 birth_date: "1980-01-01"
 nationality: "JP"
 document_type: "passport"
-document_number_hash: !!binary "YmFzZTY0ZGF0YWhlcmU="
+# document_number_hash removed for privacy
