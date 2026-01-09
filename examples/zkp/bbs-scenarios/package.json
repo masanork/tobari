@@ -1,0 +1,13 @@
+{
+  "name": "bbs-scenarios",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@docknetwork/crypto-wasm": "^0.35.0"
+  }
+}
