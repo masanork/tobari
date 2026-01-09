@@ -1,4 +1,4 @@
-import { generateSignedTobari } from '../../packages/codec/src/tobari-gen';
+import { generateSignedTobari } from '../../../packages/codec/src/tobari-gen';
 import fs from 'fs/promises';
 import path from 'path';
 import yaml from 'js-yaml';
@@ -37,7 +37,7 @@ async function main() {
     const bundleScript = path.resolve(__dirname, '../../packages/codec/src/bundle-viewer.ts');
     const proc = Bun.spawn(["bun", "run", bundleScript, outputCose], { stdout: "inherit" });
     await proc.exited;
-    
+
     console.log("View the result at examples/scac/scac.html");
 }
 

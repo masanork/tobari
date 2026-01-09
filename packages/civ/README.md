@@ -10,15 +10,15 @@ It is designed to be the foundational "driver layer" for building Digital Identi
 - **Secure Messaging**: Implements robust secure channels including **BAC** (Basic Access Control), **PACE** (Password Authenticated Connection Establishment), and card-specific protocols (e.g., JPKI, JPDL).
 - **Verification**: Built-in support for **Passive Authentication** (Integrity Check via Hash/Signature) to ensure data authenticity.
 - **Cross-Platform**: Built on pure Rust, works on `macOS`, `Linux`, `Windows` (PC/SC) and `Web` (WebAssembly/WebUSB - Experimental).
-- **Standards Compliant**: Implements ISO 7816-4, ICAO 9303, ISO/IEC 18013, and various national specifications.
+- **Standards Compliant**: Implements **ISO 7816-4 APDUs** over **ISO 14443** (NFC), ICAO 9303, and national specifications (e.g., NPA Japan).
 
 ## 💳 Supported Cards
 
 | Card Type | Region | Standard | Features | Verification |
 |---|---|---|---|---|
-| **JPKI (My Number Card)** | 🇯🇵 Japan | ISO 7816 | Auth, Sign, Face Photo, MyNumber | ✅ |
-| **Driver's License (JPDL)** | 🇯🇵 Japan | ISO 18013 | Common Data, PIN Verify, Photo | ✅ (Hash/Sig) |
-| **Residence Card** | 🇯🇵 Japan | ISO 7816 | Address, Period of Stay | ✅ |
+| **JPKI (My Number Card)** | 🇯🇵 Japan | ISO 7816-4 (APDU) | Auth, Sign, Face Photo, MyNumber | ✅ |
+| **Driver's License (JPDL)** | 🇯🇵 Japan | NPA Spec (ISO 7816-4) | Common Data, PIN Verify, Photo | ✅ (Hash/Sig) |
+| **Residence Card** | 🇯🇵 Japan | ISO 7816-4 (APDU) | Address, Period of Stay | ✅ |
 | **ePassport** | 🌏 Global | ICAO 9303 | BAC (Basic Access Control), PACE | ✅ (Passive Auth) |
 | **PIV (Gov ID)** | 🇺🇸 USA | FIPS 201 | Auth, Sign | 🚧 |
 
