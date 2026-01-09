@@ -1,0 +1,21 @@
+{
+  "name": "scac",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@digitalbazaar/bbs-2023-cryptosuite": "^2.0.1",
+    "@digitalbazaar/bls12-381-multikey": "^2.1.0",
+    "@digitalbazaar/credentials-context": "^3.2.0",
+    "@digitalbazaar/data-integrity": "^2.5.0",
+    "@digitalbazaar/data-integrity-context": "^2.0.1",
+    "@digitalbazaar/did-method-key": "^5.3.0",
+    "@digitalbazaar/multikey-context": "^2.0.1",
+    "@digitalbazaar/security-document-loader": "^3.1.0",
+    "@digitalbazaar/vc": "^7.2.0"
+  }
+}
