@@ -1,15 +1,19 @@
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 use crate::reader::CardReader;
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 
 /// Rust wrapper for JavaScript's WebUSB CardReader implementation.
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub struct WebUsbReader {
     js_transport: JsValue,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl WebUsbReader {
     #[wasm_bindgen(constructor)]
@@ -19,6 +23,7 @@ impl WebUsbReader {
 }
 
 // Define a structural type for the JS object to avoid extending JsValue directly
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 extern "C" {
     type JsCardReader;
@@ -27,6 +32,7 @@ extern "C" {
     async fn transmit(this: &JsCardReader, apdu: &[u8]) -> Result<JsValue, JsValue>;
 }
 
+#[cfg(target_arch = "wasm32")]
 #[async_trait(?Send)]
 impl CardReader for WebUsbReader {
     async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>> {
@@ -45,4 +51,3 @@ impl CardReader for WebUsbReader {
         Ok(resp_array.to_vec())
     }
 }
-

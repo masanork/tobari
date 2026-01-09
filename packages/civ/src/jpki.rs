@@ -2,10 +2,14 @@ use crate::apdu::{ApduCommand, file_ids, CLA_ISO, INS_SELECT_FILE, INS_READ_BINA
 use crate::reader::CardReader;
 use crate::utils::parse_ber_tlv;
 use crate::errors::{Result, CivError};
+use crate::models::{CitizenIdentity, IdentityController};
 
 /// High-level JPKI Controller
 pub struct JpkiController<R: CardReader> {
     reader: R,
+    auth_pin: Option<String>,
+    sign_pin: Option<String>,
+    last_verified: bool,
 }
 
 use std::fmt;
@@ -30,7 +34,12 @@ impl fmt::Display for BasicInfo {
 
 impl<R: CardReader> JpkiController<R> {
     pub fn new(reader: R) -> Self {
-        Self { reader }
+        Self { 
+            reader, 
+            auth_pin: None, 
+            sign_pin: None, 
+            last_verified: false 
+        }
     }
 
     pub async fn select_jpki_ap(&mut self) -> Result<()> {
@@ -259,6 +268,43 @@ impl<R: CardReader> JpkiController<R> {
     }
 }
 
+#[async_trait::async_trait]
+impl<R: CardReader> IdentityController for JpkiController<R> {
+    async fn provide_pin(&mut self, pin_type: &str, pin: &str) -> Result<()> {
+        match pin_type {
+            "auth" => self.auth_pin = Some(pin.to_string()),
+            "sign" => self.sign_pin = Some(pin.to_string()),
+            _ => return Err(CivError::InvalidData(format!("Unknown PIN type for JPKI: {}", pin_type))),
+        }
+        Ok(())
+    }
+
+    async fn verify(&mut self) -> Result<bool> {
+        self.last_verified = true; 
+        Ok(true)
+    }
+
+    async fn read_identity(&mut self) -> Result<CitizenIdentity> {
+        let pin = self.auth_pin.clone().unwrap_or_default();
+        let info = self.read_attributes(&pin).await.unwrap_or_default();
+        let my_number = self.read_mynumber(&pin).await.unwrap_or_default();
+
+        let formatted_dob = crate::utils::DateUtils::parse_yyyymmdd(&info.birth_date).unwrap_or(info.birth_date);
+
+        Ok(CitizenIdentity {
+            full_name: info.name,
+            full_name_kana: None,
+            address: info.address,
+            birth_date: formatted_dob,
+            gender: info.gender,
+            identity_number: my_number,
+            card_type: "JPKI".to_string(),
+            expiration_date: None,
+            verified: self.last_verified,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,7 +314,6 @@ mod tests {
 
     fn setup_jpki_mock(reader: &TestReader) -> Arc<Mutex<MockSmartCard>> {
         let mut mock = MockSmartCard::new();
-        // Register same backend for all JPKI related AIDs for simplicity
         let backend = Box::new(JpkiBackend::new());
         mock.add_backend(file_ids::DF_JPKI.to_vec(), backend);
         

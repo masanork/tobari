@@ -1,15 +1,15 @@
 #[cfg(not(target_arch = "wasm32"))]
 use clap::{Parser, Subcommand};
 #[cfg(not(target_arch = "wasm32"))]
-use civ::{JpkiController, PcscReader, CardReader};
-#[cfg(not(target_arch = "wasm32"))]
-use civ::demo_reader::DemoReader;
+use civ::{JpkiController, DriversLicenseController, ResidenceCardController, PassportController, PcscReader, CardReader, IdentityController};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
-use base64::Engine;
-#[cfg(not(target_arch = "wasm32"))]
 use rpassword::read_password;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Arc, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
+use async_trait::async_trait;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Parser)]
@@ -27,6 +27,25 @@ struct Cli {
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Subcommand)]
 enum Commands {
+    /// Read identity from any supported card (Unified Model)
+    #[command(name = "id")]
+    Id {
+        /// PIN (if required)
+        #[arg(short, long)]
+        pin: Option<String>,
+        /// MRZ (for Passports)
+        #[arg(short, long)]
+        mrz: Option<String>,
+        /// Verify authenticity (Passive Authentication)
+        #[arg(short, long)]
+        verify: bool,
+        /// Output format (json)
+        #[arg(long)]
+        json: bool,
+        /// Force card type (for demo mode: jpki, dl, rc, passport)
+        #[arg(short, long)]
+        type_: Option<String>,
+    },
     /// JPKI (My Number Card) Operations
     #[command(name = "jpki")]
     Jpki {
@@ -70,29 +89,47 @@ enum JpkiCommands {
         #[arg(short, long, env = "JPKI_PIN")]
         pin: Option<String>,
     },
-    /// Read My Number
-    #[command(name = "num")]
-    Mynumber {
-        /// PIN (4 digits)
-        #[arg(short, long, env = "JPKI_PIN")]
-        pin: Option<String>,
-        /// Output JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read Attributes and Photo
-    #[command(name = "attr")]
-    Card {
-        /// PIN (4 digits)
-        #[arg(short, long, env = "JPKI_PIN")]
-        pin: Option<String>,
-        /// Save photo
-        #[arg(long)]
-        photo: Option<String>,
-        /// Output JSON
-        #[arg(long)]
-        json: bool,
-    },
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone)]
+pub struct MockReader {
+    mock: Arc<Mutex<civ::mock::MockSmartCard>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl MockReader {
+    pub fn new() -> Self {
+        use civ::mock::*;
+        use civ::apdu::file_ids as f;
+        let mut mock = MockSmartCard::new();
+        
+        // JPKI
+        mock.add_backend(f::DF_JPKI.to_vec(), Box::new(JpkiBackend::new()));
+        mock.add_backend(f::DF_INPUT_SUPPORT.to_vec(), Box::new(JpkiBackend::new()));
+        mock.add_backend(f::DF_SURFACE.to_vec(), Box::new(JpkiBackend::new()));
+        
+        // DL
+        mock.add_backend(civ::jpdl::file_ids::DF_DL.to_vec(), Box::new(DriversLicenseBackend::new()));
+        mock.add_backend(civ::jpdl::file_ids::DF_DL_PHOTO.to_vec(), Box::new(DriversLicenseBackend::new()));
+        
+        // RC
+        mock.add_backend(civ::jprc::file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new()));
+        mock.add_backend(civ::jprc::file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new()));
+        
+        // Passport
+        mock.add_backend(civ::passport::file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("123456")));
+        
+        Self { mock: Arc::new(Mutex::new(mock)) }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait]
+impl CardReader for MockReader {
+    async fn transmit(&mut self, apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+        Ok(self.mock.lock().unwrap().handle_apdu(apdu))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -106,6 +143,91 @@ fn get_pin(provided: Option<String>, prompt: &str) -> anyhow::Result<String> {
         let pin = read_password()?;
         Ok(pin.trim().to_string())
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn run_unified_id<R: CardReader + 'static>(mut reader: R, pin: Option<String>, mrz: Option<String>, verify: bool, json: bool, forced_type: Option<String>) -> anyhow::Result<()> {
+    // Helper to check if selection succeeded
+    async fn is_selected<R: CardReader>(reader: &mut R, aid: &[u8]) -> bool {
+        let mut apdu = vec![0x00, 0xA4, 0x04, 0x0C];
+        apdu.push(aid.len() as u8);
+        apdu.extend_from_slice(aid);
+        if let Ok(res) = reader.transmit(&apdu).await {
+            res.len() >= 2 && res[res.len()-2] == 0x90 && res[res.len()-1] == 0x00
+        } else {
+            false
+        }
+    }
+
+    // 1. Detect Card Type and set default demo PIN
+    let mut controller: Box<dyn IdentityController>;
+    let mut detected_type = "";
+
+    if let Some(ref t) = forced_type {
+        match t.as_str() {
+            "jpki" => { controller = Box::new(JpkiController::new(reader)); detected_type = "jpki"; },
+            "dl" => { controller = Box::new(DriversLicenseController::new(reader)); detected_type = "dl"; },
+            "rc" => { controller = Box::new(ResidenceCardController::new(reader)); detected_type = "rc"; },
+            "passport" => { controller = Box::new(PassportController::new(reader)); detected_type = "passport"; },
+            _ => return Err(anyhow::anyhow!("Invalid forced card type")),
+        }
+    } else if is_selected(&mut reader, &civ::passport::file_ids::DF_ICAO).await {
+        controller = Box::new(PassportController::new(reader));
+        detected_type = "passport";
+    } else if is_selected(&mut reader, &civ::jpdl::file_ids::DF_DL).await {
+        controller = Box::new(DriversLicenseController::new(reader));
+        detected_type = "dl";
+    } else if is_selected(&mut reader, &civ::apdu::file_ids::DF_JPKI).await {
+        controller = Box::new(JpkiController::new(reader));
+        detected_type = "jpki";
+    } else if is_selected(&mut reader, &civ::jprc::file_ids::DF1).await {
+        controller = Box::new(ResidenceCardController::new(reader));
+        detected_type = "rc";
+    } else {
+        return Err(anyhow::anyhow!("Unknown or unsupported card type"));
+    }
+
+    // 2. Setup Credentials
+    // JPKI uses 4-digit PIN for auth/input, 6-16 for sign.
+    // Others use what they use. Mock defaults to 1234 for JPKI numeric, 123456 for others/sign.
+    let default_pin = if detected_type == "jpki" { "1234" } else { "123456" };
+    // For Passport, we prefer BAC (MRZ) in demo mode as PACE mock crypto is flaky
+    if detected_type == "passport" {
+         if mrz.is_some() {
+             let _ = controller.provide_pin("mrz", mrz.as_ref().unwrap()).await;
+         } else {
+             // Default to 123456 as MRZ
+             let _ = controller.provide_pin("mrz", "123456").await;
+         }
+         // Do NOT provide CAN by default, so it falls back to BAC
+    } else {
+         let p = pin.unwrap_or_else(|| default_pin.to_string());
+         let _ = controller.provide_pin("auth", &p).await;
+         let _ = controller.provide_pin("pin1", &p).await;
+         let _ = controller.provide_pin("can", &p).await;
+    }
+
+    if verify {
+        let _ = controller.verify().await?;
+    }
+
+    let identity = controller.read_identity().await?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&identity)?);
+    } else {
+        println!("--- Identity Information ---");
+        println!("Card Type: {}", identity.card_type);
+        println!("Name:      {}", identity.full_name);
+        if let Some(kana) = identity.full_name_kana { println!("Kana:      {}", kana); }
+        println!("DOB:       {}", identity.birth_date);
+        println!("Address:   {}", identity.address);
+        println!("ID Number: {}", identity.identity_number);
+        if let Some(exp) = identity.expiration_date { println!("Expires:   {}", exp); }
+        println!("Verified:  {}", if identity.verified { "YES" } else { "NO" });
+    }
+
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -146,65 +268,6 @@ async fn run_jpki<R: CardReader>(mut controller: JpkiController<R>, command: Jpk
                 println!("Signature: {}", hex::encode(sig));
             }
         }
-        JpkiCommands::Mynumber { pin, json } => {
-            let p = get_pin(pin, "PIN: ")?;
-            let num = controller.read_mynumber(&p).await?;
-            if json {
-                println!("{}", serde_json::json!({ "mynumber": num }));
-            } else {
-                println!("MyNumber: {}", num);
-            }
-        }
-        JpkiCommands::Card { pin, photo, json } => {
-            let p = get_pin(pin, "Enter Input Support PIN (4 digits): ")?;
-            let mut info = controller.read_attributes(&p).await?;
-            
-            // Try to get photo if requested or if json output (to serialize it)
-            // Wait, getting photo requires My Number (Surface PIN).
-            // BasicInfo has `face_photo` field.
-            if photo.is_some() || json {
-                // We need My Number to get photo
-                 match controller.read_mynumber(&p).await {
-                    Ok(num) => {
-                         // Check retries first? JpkiController.read_face_photo checks PIN.
-                         // But we should be careful about retries.
-                         match controller.get_surface_pin_retries().await {
-                             Ok(retries) => {
-                                 if retries > 3 || retries == 255 {
-                                     // println!("Retrieving photo..."); // Quiet for JSON?
-                                     // For JSON we want to suppress logs?
-                                     // But error logs are important.
-                                     match controller.read_face_photo(&num).await {
-                                         Ok(data) => {
-                                             info.face_photo = Some(base64::engine::general_purpose::STANDARD.encode(data));
-                                         }
-                                         Err(e) => {
-                                             if !json { eprintln!("Warning: Photo extraction failed: {}", e); }
-                                         }
-                                     }
-                                 } else {
-                                     if !json { eprintln!("Warning: Surface PIN constrained. Skipping photo."); }
-                                 }
-                             }
-                             Err(_) => {}
-                         }
-                    }
-                    Err(_) => {
-                        // Ignore if we can't get my number
-                    }
-                 }
-            }
-
-            if json {
-                println!("{}", serde_json::to_string_pretty(&info)?);
-            } else {
-                println!("\n{}", info);
-            }
-
-            if let (Some(path), Some(b64)) = (photo, info.face_photo) {
-                fs::write(path, base64::engine::general_purpose::STANDARD.decode(b64)?)?;
-            }
-        }
     }
     Ok(())
 }
@@ -215,10 +278,18 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Id { pin, mrz, verify, json, type_ } => {
+            if cli.demo {
+                run_unified_id(MockReader::new(), pin, mrz, verify, json, type_).await?;
+            } else {
+                let mut reader = PcscReader::new()?;
+                let _ = reader.connect()?;
+                run_unified_id(reader, pin, mrz, verify, json, type_).await?;
+            }
+        }
         Commands::Jpki { command } => {
             if cli.demo {
-                let reader = DemoReader::new();
-                let controller = JpkiController::new(reader);
+                let controller = JpkiController::new(MockReader::new());
                 run_jpki(controller, command).await?;
             } else {
                 let mut reader = PcscReader::new()?;

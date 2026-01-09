@@ -1,11 +1,15 @@
 use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_VERIFY};
 use crate::reader::CardReader;
 use crate::errors::{Result, CivError};
+use crate::models::{CitizenIdentity, IdentityController};
 use std::fmt;
 
 /// Driver's License Application Controller
 pub struct DriversLicenseController<R: CardReader> {
     reader: R,
+    pin1: Option<String>,
+    pin2: Option<String>,
+    last_verified: bool,
 }
 
 #[derive(Debug, Default)]
@@ -44,6 +48,7 @@ pub mod file_ids {
     pub const EF_COMMON_DATA: [u8; 2] = [0x00, 0x01]; // EF01: Main Info
     pub const EF_HONSEKI: [u8; 2] = [0x00, 0x02];     // EF02: Registered Domicile
     pub const EF_GAIJI: [u8; 2] = [0x00, 0x03];       // EF03: External Chars
+    pub const EF_PIN_SETTING: [u8; 2] = [0x00, 0x04]; // EF04: PIN Setting
     pub const EF_CONDITIONS: [u8; 2] = [0x00, 0x04];  // EF04: Condition Changes
     pub const EF_SIGNATURE: [u8; 2] = [0x00, 0x07];   // EF07: Digital Signature
     
@@ -53,7 +58,12 @@ pub mod file_ids {
 
 impl<R: CardReader> DriversLicenseController<R> {
     pub fn new(reader: R) -> Self {
-        Self { reader }
+        Self { 
+            reader, 
+            pin1: None, 
+            pin2: None, 
+            last_verified: false 
+        }
     }
 
     /// Select Driver's License Application
@@ -151,6 +161,26 @@ impl<R: CardReader> DriversLicenseController<R> {
         self.read_file(&file_ids::EF_SIGNATURE).await
     }
 
+    /// Verify integrity of EF01 and EF02 using EF07 signature.
+    pub async fn verify_integrity(&mut self) -> Result<bool> {
+        use sha2::{Sha256, Digest};
+        
+        let sig_data = self.read_signature().await?;
+        if sig_data.is_empty() { return Ok(false); }
+
+        let ef01 = self.read_file(&file_ids::EF_COMMON_DATA).await?;
+        let ef02 = self.read_file(&file_ids::EF_HONSEKI).await?;
+        
+        let hash01 = Sha256::digest(&ef01);
+        let hash02 = Sha256::digest(&ef02);
+        
+        // Simple containment check
+        let found01 = sig_data.windows(32).any(|w| w == hash01.as_slice());
+        let found02 = sig_data.windows(32).any(|w| w == hash02.as_slice());
+        
+        Ok(found01 && found02)
+    }
+
     /// Read Face Photo (DF2/EF01) - JPEG2000
     /// Requires PIN 1 & PIN 2. Must select DF2 first.
     pub async fn read_photo(&mut self) -> Result<Vec<u8>> {
@@ -240,6 +270,51 @@ impl<R: CardReader> DriversLicenseController<R> {
     }
 }
 
+#[async_trait::async_trait]
+impl<R: CardReader> IdentityController for DriversLicenseController<R> {
+    async fn provide_pin(&mut self, pin_type: &str, pin: &str) -> Result<()> {
+        match pin_type {
+            "pin1" => self.pin1 = Some(pin.to_string()),
+            "pin2" => self.pin2 = Some(pin.to_string()),
+            _ => return Err(CivError::InvalidData(format!("Unknown PIN type for JPDL: {}", pin_type))),
+        }
+        Ok(())
+    }
+
+    async fn verify(&mut self) -> Result<bool> {
+        self.select_dl_ap().await?;
+        if let Some(pin) = self.pin1.clone() {
+            self.verify_pin1(&pin).await?;
+        }
+        let res = self.verify_integrity().await?;
+        self.last_verified = res;
+        Ok(res)
+    }
+
+    async fn read_identity(&mut self) -> Result<CitizenIdentity> {
+        if let Some(pin) = self.pin1.clone() {
+            self.select_dl_ap().await?;
+            self.verify_pin1(&pin).await?;
+        }
+
+        let info = self.read_common_data().await?;
+        let formatted_dob = crate::utils::DateUtils::parse_japanese_era(&info.birth_date).unwrap_or(info.birth_date);
+        let formatted_expire = crate::utils::DateUtils::parse_japanese_era(&info.expire_date).unwrap_or(info.expire_date);
+
+        Ok(CitizenIdentity {
+            full_name: info.name,
+            full_name_kana: Some(info.name_kana),
+            address: info.address,
+            birth_date: formatted_dob,
+            gender: "9".to_string(), 
+            identity_number: info.license_number,
+            card_type: "DriverLicense".to_string(),
+            expiration_date: Some(formatted_expire),
+            verified: self.last_verified,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,7 +349,7 @@ mod tests {
         let mut controller = DriversLicenseController::new(reader.clone());
         
         assert!(controller.select_dl_ap().await.is_ok());
-        assert!(controller.verify_pin1("0101").await.is_ok());
+        assert!(controller.verify_pin1("123456").await.is_ok());
 
         let res = controller.read_common_data().await;
         assert!(res.is_ok());
@@ -293,14 +368,11 @@ mod tests {
         let mut controller = DriversLicenseController::new(reader.clone());
 
         assert!(controller.select_dl_photo_ap().await.is_ok());
-        assert!(controller.verify_pin2("0202").await.is_ok());
+        assert!(controller.verify_pin2("123456").await.is_ok());
 
         let res = controller.read_photo().await;
         assert!(res.is_ok());
-        let photo = res.unwrap();
-        
-        // DriversLicenseBackend provides photo in EF01 of DF_DL_PHOTO
-        // The mock.rs implementation should have it.
+        let _photo = res.unwrap();
     }
 
     #[tokio::test]

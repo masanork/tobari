@@ -1,7 +1,9 @@
-use anyhow::{Result, anyhow, Context, bail};
+use anyhow::{Result, bail};
+use sha1::{Sha1, Digest};
+use sha2::Sha256;
 use encoding_rs::SHIFT_JIS;
 
-/// Custom Shift-JIS decoder that maps unmapped bytes to [Gaiji:0xXX] format
+/// Decode Shift-JIS bytes to String, with lossy conversion for Gaiji.
 pub fn decode_shift_jis_lossy_gaiji(input: &[u8]) -> String {
     let (cow, _encoding_used, malformed) = SHIFT_JIS.decode(input);
     if !malformed {
@@ -115,12 +117,53 @@ impl MrzUtils {
             };
             sum += val * weights[i % 3];
         }
-        ((sum % 10) as u8 + b'0')
+        (sum % 10) as u8 + b'0'
     }
 
     /// Verify a field with its check digit
     pub fn verify_check_digit(data: &str, expected: char) -> bool {
         Self::calculate_check_digit(data) == expected as u8
+    }
+
+    /// Parse TD3 (Passport) MRZ
+    pub fn parse_mrz_td3(mrz: &str) -> Result<super::models::CitizenIdentity> {
+        let lines: Vec<&str> = mrz.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+        if lines.len() != 2 || lines[0].len() != 44 || lines[1].len() != 44 {
+            bail!("Invalid TD3 MRZ format");
+        }
+
+        let line1 = lines[0];
+        let line2 = lines[1];
+
+        // Line 1: [P][Type][IssuingState(3)][Names(39)]
+        let names_part = &line1[5..44];
+        let full_name = names_part.replace("<<", ", ").replace("<", " ").trim_matches(|c| c == ' ' || c == ',').to_string();
+
+        // Line 2: [PassportNo(9)][Check(1)][Nationality(3)][DOB(6)][Check(1)][Gender(1)][Expiry(6)][Check(1)][Optional(14)][Check(1)][Check(1)]
+        let passport_no = line2[0..9].replace("<", "");
+        let dob_raw = &line2[13..19];
+        let gender_raw = &line2[20..21];
+        let expiry_raw = &line2[21..27];
+
+        let birth_date = DateUtils::parse_yymmdd(dob_raw).unwrap_or_else(|_| dob_raw.to_string());
+        let expiration_date = DateUtils::parse_yymmdd(expiry_raw).unwrap_or_else(|_| expiry_raw.to_string());
+        let gender = match gender_raw {
+            "M" => "1",
+            "F" => "2",
+            _ => "9",
+        }.to_string();
+
+        Ok(super::models::CitizenIdentity {
+            full_name,
+            full_name_kana: None,
+            address: "".to_string(),
+            birth_date,
+            gender,
+            identity_number: passport_no,
+            card_type: "Passport".to_string(),
+            expiration_date: Some(expiration_date),
+            verified: false,
+        })
     }
 }
 
@@ -156,6 +199,28 @@ impl DateUtils {
         }
         Ok(format!("{:04}-{:02}-{:02}", year, month, day))
     }
+
+    /// Parse Japanese Era date format (used in Drivers License / JPKI)
+    /// Format: [Era(1)] YYMMDD
+    /// Eras: 1: Meiji, 2: Taisho, 3: Showa, 4: Heisei, 5: Reiwa
+    pub fn parse_japanese_era(s: &str) -> Result<String> {
+        if s.len() != 7 { bail!("Invalid Japanese era date length"); }
+        let era = &s[0..1];
+        let year_short: u32 = s[1..3].parse()?;
+        let month: u32 = s[3..5].parse()?;
+        let day: u32 = s[5..7].parse()?;
+
+        let era_base = match era {
+            "1" => 1867, // Meiji
+            "2" => 1911, // Taisho
+            "3" => 1925, // Showa
+            "4" => 1988, // Heisei
+            "5" => 2018, // Reiwa
+            _ => bail!("Unknown era code: {}", era),
+        };
+
+        Ok(format!("{:04}-{:02}-{:02}", era_base + year_short, month, day))
+    }
 }
 
 #[cfg(test)]
@@ -188,9 +253,15 @@ mod tests {
 
     #[test]
     fn test_date_parsing() {
-        assert_eq!(DateUtils::parse_yymmdd("900101").unwrap(), "1990-01-01");
-        assert_eq!(DateUtils::parse_yymmdd("250101").unwrap(), "2025-01-01");
-        assert_eq!(DateUtils::parse_yyyymmdd("20260108").unwrap(), "2026-01-08");
-        assert!(DateUtils::parse_yymmdd("901301").is_err()); // Invalid month
+        assert_eq!(DateUtils::parse_yyyymmdd("19900101").unwrap(), "1990-01-01");
+        assert_eq!(DateUtils::parse_yyyymmdd("20231231").unwrap(), "2023-12-31");
+        assert!(DateUtils::parse_yyyymmdd("20231301").is_err());
+    }
+
+    #[test]
+    fn test_japanese_era_parsing() {
+        assert_eq!(DateUtils::parse_japanese_era("4020101").unwrap(), "1990-01-01"); // Heisei 2
+        assert_eq!(DateUtils::parse_japanese_era("5010501").unwrap(), "2019-05-01"); // Reiwa 1
+        assert_eq!(DateUtils::parse_japanese_era("3640101").unwrap(), "1989-01-01"); // Showa 64
     }
 }

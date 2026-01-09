@@ -114,7 +114,7 @@ impl PaceP256 {
                 let mut s_bytes = [0u8; 32];
                 let copy_len = std::cmp::min(nonce_s.len(), 32);
                 s_bytes[32-copy_len..].copy_from_slice(&nonce_s[0..copy_len]);
-                let ga = GenericArray::clone_from_slice(&s_bytes);
+                let ga = *GenericArray::from_slice(&s_bytes);
                 let s_scalar = Scalar::from_repr(ga).unwrap_or(Scalar::ONE);
                 
                 // 2. Map(s) -> T
