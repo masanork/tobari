@@ -385,4 +385,41 @@ mod tests {
         let res = controller.verify_pin("0000").await;
         assert!(res.is_err());
     }
+
+    #[tokio::test]
+    async fn test_verify_integrity() {
+        let reader = TestReader::new();
+        let _mock = setup_dl_mock(&reader);
+        let mut controller = DriversLicenseController::new(reader.clone());
+        assert!(controller.select_dl_ap().await.is_ok());
+        assert!(controller.verify_pin1("123456").await.is_ok());
+        
+        let res = controller.verify_integrity().await;
+        assert!(res.is_ok());
+        assert!(res.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_verify_integrity_failure() {
+        let reader = TestReader::new();
+        
+        // Manual setup to access backend
+        let mut backend = DriversLicenseBackend::new();
+        backend.corrupt_data(); // Corrupt EF01
+        
+        let mut mock = MockSmartCard::new();
+        mock.add_backend(file_ids::DF_DL.to_vec(), Box::new(backend));
+        
+        let mock_arc = Arc::new(Mutex::new(mock));
+        let mock_clone = mock_arc.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+
+        let mut controller = DriversLicenseController::new(reader.clone());
+        assert!(controller.select_dl_ap().await.is_ok());
+        assert!(controller.verify_pin1("123456").await.is_ok());
+        
+        let res = controller.verify_integrity().await;
+        assert!(res.is_ok());
+        assert!(!res.unwrap()); // Should be false
+    }
 }

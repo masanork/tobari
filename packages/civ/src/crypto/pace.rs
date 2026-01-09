@@ -14,7 +14,7 @@ use cbc::Decryptor;
 use aes::Aes128;
 use cmac::{Cmac, Mac};
 use rand_core::OsRng;
-use cipher::generic_array::GenericArray;
+use generic_array::GenericArray;
 
 // Type aliases
 type Aes128CbcDec = Decryptor<Aes128>;
