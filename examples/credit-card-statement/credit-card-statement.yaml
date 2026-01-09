@@ -1,0 +1,85 @@
+title: "クレジットカード利用明細書"
+id: "io.github.masanork.tobari.credit-card-statement.v1"
+version: "1.0.0"
+
+fields:
+  - id: "明細書タイトル"
+    type: "string"
+    section: "header"
+  - id: "発行日"
+    type: "string"
+    section: "header"
+    
+  - id: "発行元名"
+    type: "string"
+    section: "footer"
+  - id: "発行元住所"
+    type: "string"
+    section: "footer"
+  - id: "登録番号"
+    type: "string"
+    section: "footer"
+
+  - id: "会員氏名"
+    type: "string"
+    selective: true
+    primary: true
+
+  - id: "カード名称"
+    type: "string"
+    selective: true
+  - id: "カード番号"
+    type: "string"
+    selective: true
+
+  - id: "ご請求金額"
+    type: "integer"
+    selective: true
+  - id: "お支払日"
+    type: "string"
+    selective: true
+  - id: "金融機関名"
+    type: "string"
+    selective: true
+  - id: "支店名"
+    type: "string"
+    selective: true
+  - id: "口座科目"
+    type: "string"
+    selective: true
+  - id: "口座番号"
+    type: "string"
+    selective: true
+  - id: "口座名義"
+    type: "string"
+    selective: true
+
+  - id: "ショッピング利用可能枠"
+    type: "integer"
+    selective: true
+  - id: "キャッシング利用可能枠"
+    type: "integer"
+    selective: true
+
+  - id: "獲得ポイント"
+    type: "integer"
+    selective: true
+  - id: "累計ポイント"
+    type: "integer"
+    selective: true
+
+  - id: "利用明細"
+    type: "array"
+    selective: true
+    items:
+      fields:
+        - id: "利用日"
+          type: "string"
+        - id: "利用店名・商品名"
+          type: "string"
+        - id: "支払区分"
+          type: "string"
+        - id: "利用金額"
+          type: "integer"
+        - id: "備考"
+          type: "string"

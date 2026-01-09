@@ -340,7 +340,8 @@ impl AesSecureMessaging {
         if !self.is_null_session() {
             let do8e = do8e.ok_or_else(|| CivError::SecureMessagingError("Missing DO8E (MAC)".to_string()))?;
             let mut mac_input = Vec::new();
-            mac_input.push(cmd.cla & !0x0C);
+            // SM MAC uses the CLA with secure messaging bits set.
+            mac_input.push(cmd.cla);
             mac_input.push(cmd.ins);
             mac_input.push(cmd.p1);
             mac_input.push(cmd.p2);
@@ -397,6 +398,79 @@ impl AesSecureMessaging {
             new_cmd
         };
         Ok(new_cmd)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::apdu::ApduCommand;
+
+    #[test]
+    fn test_sm_command_roundtrip() {
+        let k_enc = [0x10u8; 16];
+        let k_mac = [0x20u8; 16];
+        let mut reader_sm = AesSecureMessaging::new(&k_enc, &k_mac, 0).unwrap();
+        let mut card_sm = AesSecureMessaging::new(&k_enc, &k_mac, 0).unwrap();
+
+        let apdu = ApduCommand::new(0x00, 0xB0, 0x00, 0x10)
+            .with_data(&[0x01, 0x02, 0x03])
+            .with_le(0x10);
+        let wrapped = reader_sm.wrap_command(&apdu).unwrap();
+        let wrapped_cmd = ApduCommand::from_bytes(&wrapped).unwrap();
+        let plain = card_sm.unwrap_command_from_reader(&wrapped_cmd).unwrap();
+
+        assert_eq!(plain.to_bytes(), apdu.to_bytes());
+    }
+
+    #[test]
+    fn test_sm_response_roundtrip() {
+        let k_enc = [0x10u8; 16];
+        let k_mac = [0x20u8; 16];
+        let mut reader_sm = AesSecureMessaging::new(&k_enc, &k_mac, 0).unwrap();
+        let mut card_sm = AesSecureMessaging::new(&k_enc, &k_mac, 0).unwrap();
+
+        // Keep SSC in sync with a single command roundtrip.
+        let apdu = ApduCommand::new(0x00, 0xB0, 0x00, 0x00).with_le(0x10);
+        let wrapped = reader_sm.wrap_command(&apdu).unwrap();
+        let wrapped_cmd = ApduCommand::from_bytes(&wrapped).unwrap();
+        let _ = card_sm.unwrap_command_from_reader(&wrapped_cmd).unwrap();
+
+        let payload = vec![0xAA, 0xBB];
+        let wrapped_resp = card_sm.wrap_response_from_card(&payload, 0x90, 0x00).unwrap();
+        let (data, sw1, sw2) = reader_sm.unwrap_response(&wrapped_resp).unwrap();
+
+        assert_eq!(data, payload);
+        assert_eq!((sw1, sw2), (0x90, 0x00));
+    }
+
+    #[test]
+    fn test_sm_command_mac_mismatch() {
+        let k_enc = [0x10u8; 16];
+        let k_mac = [0x20u8; 16];
+        let k_mac_bad = [0x21u8; 16];
+        let mut reader_sm = AesSecureMessaging::new(&k_enc, &k_mac, 0).unwrap();
+        let mut card_sm = AesSecureMessaging::new(&k_enc, &k_mac_bad, 0).unwrap();
+
+        let apdu = ApduCommand::new(0x00, 0xB0, 0x00, 0x10).with_le(0x10);
+        let wrapped = reader_sm.wrap_command(&apdu).unwrap();
+        let wrapped_cmd = ApduCommand::from_bytes(&wrapped).unwrap();
+        let err = card_sm.unwrap_command_from_reader(&wrapped_cmd).unwrap_err();
+
+        assert!(matches!(err, CivError::SecureMessagingError(_)));
+    }
+
+    #[test]
+    fn test_sm_command_missing_mac() {
+        let k_enc = [0x10u8; 16];
+        let k_mac = [0x20u8; 16];
+        let mut card_sm = AesSecureMessaging::new(&k_enc, &k_mac, 0).unwrap();
+
+        let data = vec![0x87, 0x03, 0x01, 0xAA, 0xBB];
+        let cmd = ApduCommand::new(0x0C, 0xB0, 0x00, 0x00).with_data(&data);
+        let err = card_sm.unwrap_command_from_reader(&cmd).unwrap_err();
+
+        assert!(matches!(err, CivError::SecureMessagingError(_)));
     }
 }
 

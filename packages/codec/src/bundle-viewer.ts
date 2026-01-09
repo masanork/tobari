@@ -126,10 +126,6 @@ async function buildViewer() {
     const templatePath = path.resolve('packages/codec/src/viewer-template.html');
     let html = fs.readFileSync(templatePath, 'utf-8');
 
-    html = html.replace('/* BUNDLED_FONT_PLACEHOLDER */', fontCss);
-
-    const base64Data = tobariBinary.toString('base64');
-    const dataUri = `data:application/cbor;base64,${base64Data}`;
 
     const buildResult = await Bun.build({
         entrypoints: [path.resolve('packages/codec/src/viewer-client.ts')],
@@ -137,6 +133,15 @@ async function buildViewer() {
         target: 'browser',
     });
     const bundledJs = await buildResult.outputs[0].text();
+
+    // Gzip Compression Helper
+    const gzipAndBase64 = (text: string) => {
+        const compressed = Bun.gzipSync(new TextEncoder().encode(text));
+        return Buffer.from(compressed).toString('base64');
+    };
+
+    const compressedCss = gzipAndBase64(fontCss);
+    const compressedJs = gzipAndBase64(bundledJs);
 
     // Try to load issuer-key.json from the same directory as the input file
     const keyPath = path.resolve(path.dirname(tobariBinaryPath), 'issuer-key.json');
@@ -149,20 +154,55 @@ async function buildViewer() {
         console.warn("No issuer-key.json found. Signature verification will be skipped in viewer.");
     }
 
+    // Create Data URI for the CBOR payload
+    const base64Data = tobariBinary.toString('base64');
+    const dataUri = `data:application/cbor;base64,${base64Data}`;
+
+    // Bootstrap script that inflates and executes
     const scriptBlock = `<script type="module">
-${bundledJs}
-window.__TOBARI_DATA__ = "${dataUri}";
-window.__ISSUER_KEY__ = ${issuerKeyJson};
-if (window.initTobari) {
-    window.initTobari(window.__TOBARI_DATA__, window.__ISSUER_KEY__);
+async function inflate(b64) {
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const stream = new ReadableStream({
+        start(controller) { controller.enqueue(bin); controller.close(); }
+    }).pipeThrough(new DecompressionStream("gzip"));
+    const text = await new Response(stream).text();
+    return text;
 }
+
+(async () => {
+    // 1. Inflate CSS and inject
+    const css = await inflate("${compressedCss}");
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+
+    // 2. Inflate JS and execute
+    const js = await inflate("${compressedJs}");
+    const script = document.createElement("script");
+    script.type = "module";
+    script.textContent = js;
+    document.body.appendChild(script);
+
+    // 3. Init Tobari
+    window.__TOBARI_DATA__ = "${dataUri}";
+    window.__ISSUER_KEY__ = ${issuerKeyJson};
+    
+    // Wait for module execution
+    const checkInit = setInterval(() => {
+        if (window.initTobari) {
+            clearInterval(checkInit);
+            window.initTobari(window.__TOBARI_DATA__, window.__ISSUER_KEY__);
+        }
+    }, 10);
+})();
 </script>`;
 
-    const finalHtml = html.replace(/<script type="module">[\s\S]*?<\/script>/, () => scriptBlock);
+    const finalHtml = html
+        .replace('/* BUNDLED_FONT_PLACEHOLDER */', '/* CSS Loaded dynamically via JS inflation */')
+        .replace(/<script type="module">[\s\S]*?<\/script>/, () => scriptBlock);
 
-    // const outPath defined above
     fs.writeFileSync(outPath, finalHtml);
-    console.log(`Successfully generated verifiable viewer: ${outPath}`);
+    console.log(`Successfully generated verifiable viewer: ${outPath} (Gzipped & Embedded)`);
 }
 
 function collectAllText(obj: any): string {
