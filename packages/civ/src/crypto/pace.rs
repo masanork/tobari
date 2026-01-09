@@ -200,7 +200,7 @@ impl PaceP256 {
     /// Step 4: Verify Authentication Tokens (Mutual Auth)
     /// Input: Token from PICC (T_Picc)
     /// Output: Token to send to PICC (T_Pcd)
-    pub fn perform_token_exchange(&mut self, t_picc: &[u8]) -> Result<Vec<u8>> {
+    pub fn perform_token_exchange(&mut self, peer_token: &[u8]) -> Result<Vec<u8>> {
         let (_k_enc, k_mac) = self.session_keys.as_ref().ok_or_else(|| anyhow!("No session keys"))?;
         
         let my_pk = self.my_public_key.as_ref().ok_or(anyhow!("No My PK"))?
@@ -208,32 +208,37 @@ impl PaceP256 {
         let peer_pk = self.peer_public_key.as_ref().ok_or(anyhow!("No Peer PK"))?
             .to_encoded_point(false).as_bytes().to_vec();
 
-        // 1. Verify T_Picc
-        // T_Picc = CMAC(K_mac, PK_Picc) (Simplified)
-        if !t_picc.is_empty() {
+        // According to ICAO 9303-11:
+        // T_PCD = MAC(K_mac, PK_PICC)
+        // T_PICC = MAC(K_mac, PK_PCD)
+
+        // 1. Verify Peer Token
+        if !peer_token.is_empty() {
             let mut mac = <Aes128Cmac as KeyInit>::new_from_slice(k_mac)
                 .map_err(|e| anyhow!("MAC Init error: {}", e))?;
-            mac.update(&peer_pk);
+            // If I am PCD, peer is PICC, so I expect T_Picc = MAC(K_mac, PK_Pcd)
+            // If I am PICC, peer is PCD, so I expect T_Pcd = MAC(K_mac, PK_Picc)
+            // In both cases, the peer tokens are computed over OUR public key.
+            mac.update(&my_pk);
             let expected = mac.finalize().into_bytes();
             let expected_8 = &expected[0..8];
             
-            if t_picc != expected_8 {
-                // MockPassport will match this now.
-                // return Err(anyhow!("Token Verification Failed"));
+            if peer_token != expected_8 {
+                return Err(anyhow!("Token Verification Failed. Expected: {:?}, Got: {:?}", expected_8, peer_token));
             }
         }
 
-        // 2. Generate T_Pcd
-        // T_Pcd = CMAC(K_mac, PK_Pcd) (Simplified)
+        // 2. Generate My Token
+        // My token is computed over the PEER's public key.
         let mut mac = <Aes128Cmac as KeyInit>::new_from_slice(k_mac)
             .map_err(|e| anyhow!("MAC Init error: {}", e))?;
-        mac.update(&my_pk);
+        mac.update(&peer_pk);
         let result = mac.finalize().into_bytes();
         
-        let t_pcd = result[0..8].to_vec();
+        let my_token = result[0..8].to_vec();
         
         self.state = PaceState::Authenticated;
-        Ok(t_pcd)
+        Ok(my_token)
     }
     
     pub fn finalize_session(&self) -> Result<PaceSession> {

@@ -7,6 +7,7 @@ This project demonstrates a Zero-Knowledge Proof (ZKP) circuit that proves a use
 - **Privacy Preserving**: Proves `Age >= Threshold` (e.g., 18) while keeping the exact birth date hidden.
 - **Integrity Bound**: Binds the proof to a specific Passport by checking the SHA-256 hash of the MRZ.
 - **Automatic Century Handling**: Correct外部ly handles the 2-digit year format in MRZ (YYMMDD) based on the current date.
+- **Sybil Resistance (Nullifier)**: Generates a unique, deterministic nullifier from the Passport Number and a user secret, allowing for duplicate detection without revealing the identity.
 
 ## Circuit Logic (`passport.circom`)
 
@@ -17,6 +18,7 @@ This project demonstrates a Zero-Knowledge Proof (ZKP) circuit that proves a use
     -   Determines the full birth year (e.g., `80` -> `1980`, `05` -> `2005`) relative to the `current_date`.
     -   Compares the calculated age against the `age_threshold`.
     -   Outputs a single boolean signal `is_older_than_threshold`.
+4.  **Nullifier Generation**: Computes `Hash(PassportNumber + UserSecret)` to produce a persistent but private identifier.
 
 ## How to Run
 

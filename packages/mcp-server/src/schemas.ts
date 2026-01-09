@@ -56,6 +56,13 @@ export const ListAvailableDocumentsSchema = z.object({
     rootPath: z.string().optional().describe("Optional path to scan. Defaults to the Tobari examples directory."),
 });
 
+export const GeneratePassportZkpInputSchema = z.object({
+    path: z.string().describe("Path to the Passport Tobari file"),
+    ageThreshold: z.number().default(18).describe("Age threshold to prove (default: 18)"),
+    currentDate: z.array(z.number()).length(3).optional().describe("Reference date [YYYY, MM, DD]. Defaults to today."),
+    secret: z.string().optional().describe("Base64 encoded secret for nullifier. If not provided, a random one will be generated."),
+});
+
 export const SignWithWebAuthnSchema = z.object({
     challenge: z.string().describe("Base64URL encoded challenge to sign"),
     rpId: z.string().optional().describe("Relying Party ID (domain) for the signature scope"),

@@ -23,14 +23,12 @@
 
 ## 2. Identified Issues & Technical Debt
 
-### ⚠️ ZKP / WASM Integration (BBS+)
-*   **Issue**: `@docknetwork/crypto-wasm` のAPIにおいて、JSオブジェクト（Set/Map）とWASMメモリレイアウト間のマーシャリング（データ変換）に不整合があり、選択的開示（Selective Disclosure）の証明生成フェーズでエラーが発生する。
-*   **Impact**: 「Unlinkability（連結不可能性）」の完全なデモが未達。
-*   **Action**: ライブラリのバージョン固定、パッチ適用、または `mattr/node-bbs-signatures` への移行検討。
+### ✅ ZKP / WASM Integration (BBS+)
+*   **Status**: Resolved. Found that `@mattrglobal/bbs-signatures` provides a stable WASM-based implementation. Also verified that `@docknetwork/crypto-wasm` works correctly when using the proper API arguments (handling `Set` and `Map` correctly).
+*   **Recommendation**: Use `@mattrglobal/bbs-signatures` for new implementations due to its simpler API.
 
-### ⚠️ Passport PACE Stability
-*   **Issue**: Mock環境における PACE (Password Authenticated Connection Establishment) の鍵交換ロジックに不整合があり、`Access Denied` が発生するため BAC にフォールバック中。
-*   **Action**: 実機パスポートを用いた検証、および PACE プロトコルスタック（`pace.rs`）の再実装。
+### ✅ Passport PACE Stability
+*   **Status**: Resolved. Fixed PACE key exchange logic in `pace.rs` and mutual authentication token handling in `mock.rs` and `passport.rs`. Corrected Secure Messaging to include `SSC` in MAC calculation as per ICAO 9303. Verified with integrated mock tests.
 
 ### ⚠️ Performance
 *   **Issue**: RSA署名検証（Passport/JPKI）や ZKP 生成は計算コストが高い。

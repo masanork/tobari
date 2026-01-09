@@ -12,7 +12,8 @@ import {
     handleAssemblePresentation,
     handleVerifyPresentation,
     handleAnalyzeServiceRequest,
-    handleListAvailableDocuments
+    handleListAvailableDocuments,
+    handleGeneratePassportZkpInput
 } from "./tools/tobari.js";
 import {
     handleSignWithJpki,
@@ -182,6 +183,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 }
             },
             {
+                name: "generate_passport_zkp_input",
+                description: "Generates JSON input for the Passport ZK circuit (age verification + nullifier) from a Tobari Passport document.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        path: { type: "string", description: "Path to the Passport Tobari file" },
+                        ageThreshold: { type: "number", default: 18, description: "Age threshold to prove (default: 18)" },
+                        currentDate: { type: "array", items: { type: "number" }, description: "Reference date [YYYY, MM, DD]. Defaults to today." },
+                        secret: { type: "string", description: "Base64 encoded secret for nullifier (optional)" }
+                    },
+                    required: ["path"]
+                }
+            },
+            {
                 name: "sign_with_webauthn",
                 description: "Signs a challenge using the system's WebAuthn authenticator (Touch ID, Face ID, YubiKey) by opening a browser window. Useful for holder binding signatures.",
                 inputSchema: {
@@ -297,6 +312,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleAnalyzeServiceRequest(request.params.arguments);
         case "list_available_documents":
             return handleListAvailableDocuments(request.params.arguments);
+        case "generate_passport_zkp_input":
+            return handleGeneratePassportZkpInput(request.params.arguments);
         case "sign_with_webauthn":
             return handleSignWithWebAuthn(request.params.arguments);
         case "register_webauthn":
