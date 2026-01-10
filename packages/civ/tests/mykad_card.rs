@@ -28,10 +28,31 @@ async fn test_mykad_identity_full() {
 }
 
 #[tokio::test]
-async fn test_mykad_invalid_ic() {
-    let mut mock = MockSmartCard::new();
+async fn test_mykad_invalid_ic_format() {
     let mut backend = civ::mock::MyKadBackend::new();
-    // No easy way to set short IC currently, but let's test what happens if it's missing.
+    // 13 bytes, but not numeric date format
+    backend.records.insert((0x0111, 0x001A), b"ABCDEFGHIJKLM".to_vec());
+    
+    let mut card = MockSmartCard::new();
+    card.add_backend(civ::mykad::file_ids::DF_JPN.to_vec(), Box::new(backend));
+    
+    let mut controller = MyKadController::new(MockRelay { card: Arc::new(Mutex::new(card)) });
+    let identity = controller.read_identity().await.unwrap();
+    // birth_date derivation should use raw strings if parse fails
+    assert_eq!(identity.birth_date, "20AB-CD-EF");
+}
+
+#[tokio::test]
+async fn test_mykad_gender_variants() {
+    let mut backend = civ::mock::MyKadBackend::new();
+    backend.records.insert((0x0111, 0x011C), b"F".to_vec());
+    
+    let mut card = MockSmartCard::new();
+    card.add_backend(civ::mykad::file_ids::DF_JPN.to_vec(), Box::new(backend));
+    
+    let mut controller = MyKadController::new(MockRelay { card: Arc::new(Mutex::new(card)) });
+    let identity = controller.read_identity().await.unwrap();
+    assert_eq!(identity.gender, "Female");
 }
 
 #[test]

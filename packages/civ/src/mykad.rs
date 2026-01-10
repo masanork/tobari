@@ -67,6 +67,35 @@ impl<R: CardReader> MyKadController<R> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::TestReader;
+
+    #[tokio::test]
+    async fn test_read_info_steps() {
+        let reader = TestReader::new();
+        let mut controller = MyKadController::new(reader.clone());
+
+        // 1. Failure at Step 1 (SET LENGTH)
+        reader.set_failure(0x67, 0x00);
+        assert!(controller.read_info(0x01, 0x02, 10).await.is_err());
+
+        // 2. Failure at Step 2 (SELECT INFO)
+        reader.force_failure.lock().unwrap().take();
+        reader.push_response(&[0x90, 0x00]); // Step 1 OK
+        reader.set_failure(0x6A, 0x82);      // Step 2 FAIL
+        assert!(controller.read_info(0x01, 0x02, 10).await.is_err());
+
+        // 3. Failure at Step 3 (READ INFO)
+        reader.force_failure.lock().unwrap().take();
+        reader.push_response(&[0x90, 0x00]); // Step 1 OK
+        reader.push_response(&[0x90, 0x00]); // Step 2 OK
+        reader.set_failure(0x69, 0x85);      // Step 3 FAIL
+        assert!(controller.read_info(0x01, 0x02, 10).await.is_err());
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<R: CardReader> IdentityController for MyKadController<R> {

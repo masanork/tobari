@@ -30,3 +30,7 @@ pkg/
 *_vp.cose
 vp-*.cose
 packages/civ/docs/*.pdf
+
+# VitePress
+docs/.vitepress/dist
+docs/.vitepress/cache

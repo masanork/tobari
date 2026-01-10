@@ -84,3 +84,36 @@ pub fn decode_gaiji_string(bytes: &[u8]) -> String {
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_gaiji_basic() {
+        // Standard ASCII
+        assert_eq!(decode_gaiji_string(b"ABC"), "ABC");
+        // Half-width Katakana
+        assert_eq!(decode_gaiji_string(&[0xB1]), "ｱ");
+    }
+
+    #[test]
+    fn test_decode_gaiji_mapped() {
+        // F0 40 is our example gaiji
+        let data = vec![0xF0, 0x40];
+        assert_eq!(decode_gaiji_string(&data), "☹");
+    }
+
+    #[test]
+    fn test_decode_gaiji_fallback() {
+        // Double byte non-gaiji (SJIS 'あ' is 82 A0)
+        let data = vec![0x82, 0xA0];
+        assert_eq!(decode_gaiji_string(&data), "あ");
+    }
+
+    #[test]
+    fn test_decode_invalid() {
+        // Single 0x82 without b2
+        assert_eq!(decode_gaiji_string(&[0x82]), "");
+    }
+}
