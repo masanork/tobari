@@ -8,23 +8,19 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
     try {
         let rawContent = base64Data;
 
-        // 0. Priority: Load from URL Fragment (Stateless Redirection)
         const hash = window.location.hash.substring(1);
         if (hash) {
             const dataPrefix = "data=";
             if (hash.startsWith(dataPrefix)) {
-                console.log("🔗 Loading data from URL fragment...");
                 rawContent = decodeURIComponent(hash.substring(dataPrefix.length));
             }
         }
         
-        // If still empty, show Welcome/Drop UI
         if (!rawContent || rawContent === "") {
             renderWelcome();
             return;
         }
 
-        // 1. Detect if the content is an encrypted JSON wrapper
         let isEncrypted = false;
         try {
             const b64Part = rawContent.includes(',') ? rawContent.split(',')[1] : rawContent;
@@ -34,9 +30,7 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
                 isEncrypted = true;
                 rawContent = await unlockEncryptedPayload(json);
             }
-        } catch (e) {
-            // Not a JSON wrapper, proceed as raw CBOR
-        }
+        } catch (e) {}
 
         const b64ToBinary = (b64: string) => {
             const s = b64.includes(',') ? b64.split(',')[1] : b64;
@@ -58,7 +52,6 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         const coseArray = decode(issuerAuthToken);
         const mso = decode(coseArray[2]);
 
-        // Cryptographic Verification
         let isSignatureValid = false;
         if (issuerPublicKeyJwk) {
             try {
@@ -80,27 +73,16 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         currentDebugData = { doc, mso, revealed: disclosedData, isSignatureValid, coseArray };
         (window as any).currentDebugData = currentDebugData;
 
-        // 2. Inject Decrypted Font if present (Raw Binary Support)
         if (doc.visuals && doc.visuals.font) {
-            console.log("🎨 Applying embedded font from document visuals...");
+            console.log("🎨 Applying embedded font...");
             const fontBytes = doc.visuals.font;
             const blob = new Blob([fontBytes], { type: 'font/woff2' });
             const fontUrl = URL.createObjectURL(blob);
-            
             const style = document.createElement('style');
-            style.textContent = `
-@font-face {
-    font-family: 'TobariSubset';
-    src: url('${fontUrl}') format('woff2');
-    font-style: normal;
-    font-weight: normal;
-    font-display: block;
-}
-`;
+            style.textContent = `@font-face { font-family: 'TobariSubset'; src: url('${fontUrl}') format('woff2'); font-style: normal; font-weight: normal; font-display: block; }`;
             document.head.appendChild(style);
         }
 
-        // Render document
         render(doc, disclosedData, mso);
 
         if (issuerPublicKeyJwk && !isSignatureValid) {
@@ -109,179 +91,223 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         setupDebugUI();
     } catch (e) {
         console.error("Viewer Initialization Error:", e);
-        document.body.innerHTML = `
-            <div style="padding:40px; font-family:sans-serif; text-align:center;">
-                <h2 style="color:#e53e3e;">Failed to Load Document</h2>
-                <p style="color:#718096;">The data might be corrupted or in an invalid format.</p>
-                <button onclick="location.href=location.pathname" style="margin-top:20px; padding:10px 20px; cursor:pointer;">Back to Home</button>
-            </div>
-        `;
+        renderError(e);
     }
 }
 
 function renderWelcome() {
+    injectGlobalStyles();
     document.body.innerHTML = `
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; background: #f7fafc; text-align: center; padding: 20px;">
-            <div id="drop-zone" style="background: white; padding: 60px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.05); border: 2px dashed #cbd5e0; max-width: 500px; width: 100%; cursor: pointer;">
-                <div style="font-size: 64px; margin-bottom: 20px;">帳</div>
-                <h2 style="margin-bottom: 10px; color: #2d3748;">Tobari Secure Viewer</h2>
-                <p style="color: #718096; margin-bottom: 30px;">Drag and drop a <b>.cose</b> or <b>.wbn</b> file here to verify.</p>
+        <div class="welcome-screen">
+            <div id="drop-zone" class="drop-card">
+                <div class="logo">帳</div>
+                <h2>Tobari Secure Viewer</h2>
+                <p>検証したい証明書ファイル（.cose / .wbn）を<br>ここにドロップしてください</p>
                 <input type="file" id="file-input" style="display:none">
-                <button onclick="document.getElementById('file-input').click()" style="background: #3182ce; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;">
-                    Select File
-                </button>
+                <button class="primary-btn" onclick="document.getElementById('file-input').click()">ファイルを選択</button>
             </div>
-            <p style="margin-top: 20px; color: #a0aec0; font-size: 12px;">Files are processed locally and never uploaded to any server.</p>
+            <p class="footer-note">データはブラウザ内でのみ処理され、サーバーに送信されることはありません。</p>
         </div>
     `;
+    setupDropZone();
+}
 
+function renderError(err: any) {
+    document.body.innerHTML = `
+        <div class="welcome-screen">
+            <div class="drop-card error">
+                <div class="logo">⚠️</div>
+                <h2>Failed to Load</h2>
+                <p>${err}</p>
+                <button class="primary-btn" onclick="location.href=location.pathname">再読み込み</button>
+            </div>
+        </div>
+    `;
+}
+
+function setupDropZone() {
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input') as HTMLInputElement;
-
     const handleFile = (file: File) => {
         const reader = new FileReader();
-        reader.onload = async (e) => {
-            const buf = e.target?.result as ArrayBuffer;
-            const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        reader.onload = (e) => {
+            const b64 = btoa(String.fromCharCode(...new Uint8Array(e.target?.result as ArrayBuffer)));
             window.location.hash = "data=" + encodeURIComponent(b64);
             location.reload();
         };
         reader.readAsArrayBuffer(file);
     };
-
-    dropZone?.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropZone.style.borderColor = '#3182ce';
-    });
-    dropZone?.addEventListener('dragleave', () => {
-        dropZone.style.borderColor = '#cbd5e0';
-    });
-    dropZone?.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const file = e.dataTransfer?.files[0];
-        if (file) handleFile(file);
-    });
-    fileInput?.addEventListener('change', () => {
-        if (fileInput.files?.[0]) handleFile(fileInput.files[0]);
-    });
+    dropZone?.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('active'); });
+    dropZone?.addEventListener('dragleave', () => { dropZone.classList.remove('active'); });
+    dropZone?.addEventListener('drop', (e) => { e.preventDefault(); const file = e.dataTransfer?.files[0]; if (file) handleFile(file); });
+    fileInput?.addEventListener('change', () => { if (fileInput.files?.[0]) handleFile(fileInput.files[0]); });
 }
 
-function showWarning(msg: string) {
-    const warning = document.createElement('div');
-    Object.assign(warning.style, {
-        position: 'fixed', top: '0', left: '0', width: '100%', background: '#e53e3e',
-        color: 'white', padding: '12px', textAlign: 'center', fontWeight: 'bold', zIndex: '9999'
-    });
-    warning.textContent = msg;
-    document.body.prepend(warning);
-}
+function injectGlobalStyles() {
+    if (document.getElementById('tobari-global-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'tobari-global-styles';
+    style.textContent = `
+        body { margin: 0; background: #f4f7f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #2d3748; }
+        .welcome-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
+        .drop-card { background: white; padding: 60px 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.04); border: 2px dashed #e2e8f0; max-width: 480px; width: 100%; text-align: center; transition: all 0.3s ease; }
+        .drop-card.active { border-color: #3182ce; background: #ebf8ff; transform: scale(1.02); }
+        .drop-card.error { border-color: #feb2b2; }
+        .logo { font-size: 64px; margin-bottom: 24px; font-family: 'TobariSubset', serif; color: #1a202c; }
+        h2 { margin: 0 0 12px 0; font-size: 24px; color: #1a202c; }
+        p { color: #718096; line-height: 1.6; margin-bottom: 32px; }
+        .primary-btn { background: #1a202c; color: white; border: none; padding: 14px 28px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .primary-btn:hover { background: #2d3748; transform: translateY(-1px); }
+        .footer-note { margin-top: 24px; color: #a0aec0; font-size: 13px; }
+        
+        @media (max-width: 640px) {
+            .drop-card { padding: 40px 20px; }
+        }
 
-function cleanData(v: any): any {
-    if (v === null || v === undefined) return v;
-    if (typeof v === 'object') {
-        if (v["@value"] !== undefined) return cleanData(v["@value"]);
-        if (Array.isArray(v)) return v.map(cleanData);
-        const res: any = {};
-        for (const key in v) res[key] = cleanData(v[key]);
-        return res;
-    }
-    return v;
+        .official-doc-container { padding: 40px 20px; display: flex; justify-content: center; }
+        .official-doc { 
+            background: white; width: 100%; max-width: 840px; padding: 80px 100px; 
+            box-shadow: 0 40px 100px rgba(0,0,0,0.08), 0 10px 20px rgba(0,0,0,0.02); 
+            border-radius: 4px; font-family: 'TobariSubset', serif; position: relative;
+            background-image: linear-gradient(#f9f9f9 1px, transparent 1px);
+            background-size: 100% 3em;
+        }
+        .verified-badge { 
+            position: absolute; top: 40px; right: 40px; 
+            display: flex; align-items: center; gap: 8px;
+            color: #2f855a; font-weight: bold; font-size: 12px; 
+            letter-spacing: 0.1em; background: #f0fff4; padding: 6px 12px; 
+            border-radius: 4px; border: 1px solid #c6f6d5; font-family: sans-serif;
+        }
+        .doc-header { margin-bottom: 60px; border-bottom: 1px solid #1a202c; padding-bottom: 15px; }
+        .doc-title { font-size: 32px; font-weight: normal; margin: 0; color: #1a202c; }
+        .field-section { margin-bottom: 40px; }
+        .field-label { font-family: sans-serif; font-size: 12px; color: #718096; margin-bottom: 8px; display: block; }
+        .field-value-lg { font-size: 36px; color: #000; line-height: 1.2; }
+        .field-value-md { font-size: 20px; color: #1a202c; }
+        .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 40px; }
+        .issuer-footer { margin-top: 80px; padding-top: 30px; border-top: 1px solid #1a202c; display: flex; justify-content: space-between; align-items: flex-end; }
+        .hankyo { width: 60px; height: 60px; border: 2px solid #e53e3e; color: #e53e3e; text-align: center; line-height: 60px; font-size: 24px; font-weight: bold; border-radius: 2px; transform: rotate(-5deg); user-select: none; }
+    `;
+    document.head.appendChild(style);
 }
 
 function render(doc: any, rawData: any, mso: MSO) {
+    injectGlobalStyles();
     const data = cleanData(rawData);
-    document.body.style.background = '#f0f4f8';
-    document.body.style.margin = '0';
-    document.body.style.display = 'block';
-
     const safeStr = (v: any): string => (v === null || v === undefined) ? "" : String(v);
-    const primaryFieldNames = ["氏名", "世帯主氏名", "証明書名称", "Title", "Name"];
-    const issuerFieldNames = ["発行者役職", "発行者氏名"];
-    const footerFieldNames = ["交付年月日"];
-    const wideFieldNames = ["世帯住所", "住所", "前住所", "本籍", "備考"];
-    const entries = Object.entries(data);
-    const primaryEntries = entries.filter(([k, v]) => primaryFieldNames.includes(k) && typeof v !== 'object');
-    const issuerEntries = entries.filter(([k]) => issuerFieldNames.includes(k));
-    const footerEntries = entries.filter(([k]) => footerFieldNames.includes(k));
-    const wideEntries = entries.filter(([k, v]) => wideFieldNames.includes(k) && typeof v !== 'object');
-    const secondaryEntries = entries.filter(([k, v]) => 
-        !primaryFieldNames.includes(k) && !issuerFieldNames.includes(k) && 
-        !footerFieldNames.includes(k) && !wideFieldNames.includes(k) && typeof v !== 'object'
-    );
-    const complexEntries = entries.filter(([k, v]) => typeof v === 'object');
 
-    const html = `
-        <div class="official-container" style="padding: 20px; min-height: 100vh; display: flex; flex-direction: column; align-items: center;">
-            <div class="official-document" style="
-                background: white; width: 100%; max-width: 800px; padding: 60px; box-shadow: 0 20px 50px rgba(0,0,0,0.1); 
-                border-radius: 12px; font-family: 'TobariSubset', serif; color: #1a202c; line-height: 1.7;
-            ">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 40px;">
-                    <div style="color: #2f855a; font-weight: bold; background: #f0fff4; padding: 4px 12px; border-radius: 4px; border: 1px solid #c6f6d5;">VERIFIED</div>
-                    <div style="font-size: 11px; color: #a0aec0;">ISO 18013-5 mdoc</div>
+    const primaryKeys = ["氏名", "世帯主氏名", "証明書名称", "Name", "Title"];
+    const wideKeys = ["住所", "世帯住所", "本籍", "前住所", "備考"];
+    const issuerKeys = ["発行者役職", "発行者氏名"];
+
+    const title = safeStr(data["証明書名称"] || mso.docType.split('.').pop());
+    const mainFields = Object.entries(data).filter(([k, v]) => primaryKeys.includes(k) && k !== "証明書名称");
+    const wideFields = Object.entries(data).filter(([k, v]) => wideKeys.includes(k));
+    const otherFields = Object.entries(data).filter(([k, v]) => !primaryKeys.includes(k) && !wideKeys.includes(k) && !issuerKeys.includes(k) && typeof v !== 'object');
+    const listFields = Object.entries(data).filter(([k, v]) => Array.isArray(v));
+
+    document.body.innerHTML = `
+        <div class="official-doc-container">
+            <div class="official-doc">
+                <div class="verified-badge">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l5-5z"/></svg>
+                    VERIFIED
                 </div>
-                <header style="margin-bottom: 40px; border-bottom: 2px solid #3182ce; padding-bottom: 10px;">
-                    <h1 style="font-size: 28px; margin: 0;">${safeStr(data["証明書名称"] || mso.docType.split('.').pop())}</h1>
-                </header>
-                <div style="display: flex; flex-direction: column; gap: 20px;">
-                    ${primaryEntries.filter(([k]) => k !== "証明書名称").map(([k, v]) => `
-                        <div><label style="color:#718096; font-size:12px;">${k}</label><div style="font-size:24px; font-weight:500;">${v}</div></div>
+                
+                <div class="doc-header">
+                    <h1 class="doc-title">${title}</h1>
+                </div>
+
+                <div class="doc-body">
+                    ${mainFields.map(([k, v]) => `
+                        <div class="field-section">
+                            <span class="field-label">${k}</span>
+                            <div class="field-value-lg">${v}</div>
+                        </div>
                     `).join('')}
-                    ${wideEntries.map(([k, v]) => `
-                        <div style="border-top:1px solid #edf2f7; padding-top:10px;"><label style="color:#718096; font-size:12px;">${k}</label><div style="font-size:18px;">${v}</div></div>
+
+                    ${wideFields.map(([k, v]) => `
+                        <div class="field-section" style="border-top: 1px solid #edf2f7; padding-top: 20px;">
+                            <span class="field-label">${k}</span>
+                            <div class="field-value-md">${v}</div>
+                        </div>
                     `).join('')}
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; background:#f7fafc; padding:20px; border-radius:8px;">
-                        ${secondaryEntries.map(([k, v]) => `
-                            <div><label style="color:#a0aec0; font-size:11px;">${k}</label><div>${v}</div></div>
+
+                    <div class="field-grid">
+                        ${otherFields.map(([k, v]) => `
+                            <div>
+                                <span class="field-label">${k}</span>
+                                <div class="field-value-md" style="font-size: 17px;">${v}</div>
+                            </div>
                         `).join('')}
                     </div>
-                    ${complexEntries.map(([k, v]) => `
-                        <div style="margin-top:20px;"><h3 style="font-size:16px; border-left:4px solid #3182ce; padding-left:10px;">${k}</h3>
-                        ${Array.isArray(v) ? renderModernCardList(v) : `<pre>${JSON.stringify(v, null, 2)}</pre>`}</div>
+
+                    ${listFields.map(([k, v]) => `
+                        <div style="margin-top: 50px;">
+                            <h3 style="font-family:sans-serif; font-size:14px; color:#718096; border-bottom:1px solid #edf2f7; padding-bottom:10px;">${k}</h3>
+                            ${renderList(v as any[])}
+                        </div>
                     `).join('')}
                 </div>
-                <div style="margin-top: 60px; text-align: right; border-top: 1px solid #1a202c; padding-top: 20px;">
-                    ${footerEntries.map(([k, v]) => `<div>${v}</div>`).join('')}
-                    ${issuerEntries.map(([k, v]) => `<div>${k}: ${v}</div>`).join('')}
-                    <div style="margin-top:10px; display:inline-block; width:50px; height:50px; border:2px solid #000; text-align:center; line-height:50px; font-size:20px;">印</div>
+
+                <div class="issuer-footer">
+                    <div style="text-align: left;">
+                        <div style="font-size: 14px; margin-bottom: 10px;">${safeStr(data["交付年月日"] || "")}</div>
+                        ${issuerKeys.map(([k, v]) => `
+                            <div style="font-size: 13px; color: #4a5568;">${k}: <span style="font-size: 18px; color: #000; margin-left: 10px;">${v}</span></div>
+                        `).join('')}
+                    </div>
+                    <div class="hankyo">印</div>
+                </div>
+                
+                <div style="margin-top: 40px; font-family: sans-serif; font-size: 10px; color: #cbd5e0; display: flex; justify-content: space-between;">
+                    <span>Verification: ECDSA P-384 / SHA-256</span>
+                    <span>Tobari Verifiable Document v1.0</span>
                 </div>
             </div>
         </div>
     `;
-    const root = document.getElementById('viewer-root') || document.body;
-    root.innerHTML = html;
 }
 
-function renderModernCardList(array: any[]): string {
+function renderList(array: any[]): string {
     return array.map(item => `
-        <div style="background:#fff; border:1px solid #edf2f7; padding:15px; border-radius:8px; margin-bottom:10px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
-            ${Object.entries(item).map(([k, v]) => `<div><span style="font-size:10px; color:#a0aec0;">${k}: </span><span>${v}</span></div>`).join('')}
+        <div style="padding: 20px 0; border-bottom: 1px solid #f7fafc; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
+            ${Object.entries(item).map(([k, v]) => `
+                <div>
+                    <span style="font-size: 9px; color: #a0aec0; display: block; font-family: sans-serif; text-transform: uppercase;">${k}</span>
+                    <span style="font-size: 15px;">${v}</span>
+                </div>
+            `).join('')}
         </div>
     `).join('');
 }
 
 async function unlockEncryptedPayload(wrapper: any): Promise<string> {
+    injectGlobalStyles();
     document.body.innerHTML = `
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; background: #f7fafc; margin:0;">
-            <div style="background: white; padding: 60px; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.1); text-align: center; max-width: 450px;">
-                <div style="font-size: 64px; margin-bottom: 30px;">🔒</div>
-                <h2 style="margin-bottom: 15px;">Encrypted Record</h2>
-                <p style="color: #718096; margin-bottom: 40px;">This document is encrypted. Please authorize with your Passkey.</p>
-                <button id="unlock-btn" style="background: #3182ce; color: white; border: none; padding: 16px 32px; border-radius: 10px; font-size: 18px; cursor: pointer; font-weight: bold; width: 100%;">
-                    Unlock with Passkey
-                </button>
+        <div class="welcome-screen">
+            <div class="drop-card">
+                <div class="logo">🔒</div>
+                <h2>Encrypted Document</h2>
+                <p>この書類は暗号化されています。<br>閲覧するにはパスキーによる承認が必要です。</p>
+                <button id="unlock-btn" class="primary-btn" style="width: 100%;">パスキーで復号</button>
             </div>
         </div>
     `;
 
     return new Promise((resolve) => {
         document.getElementById('unlock-btn')?.addEventListener('click', async () => {
-            const secret = await deriveHmacSecret();
-            const ciphertext = Uint8Array.from(atob(wrapper.data), c => c.charCodeAt(0));
-            const info = new TextEncoder().encode("tobari-storage-v1");
-            const { decryptHPKE } = await import("@tobari/crypto/hpke");
-            const plaintext = await decryptHPKE(secret.slice(0, 32), ciphertext, info);
-            resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
+            try {
+                const secret = await deriveHmacSecret();
+                const ciphertext = Uint8Array.from(atob(wrapper.data), c => c.charCodeAt(0));
+                const info = new TextEncoder().encode("tobari-storage-v1");
+                const { decryptHPKE } = await import("@tobari/crypto/hpke");
+                const plaintext = await decryptHPKE(secret.slice(0, 32), ciphertext, info);
+                resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
+            } catch (e) {
+                alert("復号に失敗しました。正しいパスキーを使用しているか確認してください。");
+            }
         });
     });
 }
@@ -298,16 +324,26 @@ async function deriveHmacSecret(): Promise<Uint8Array> {
     return new TextEncoder().encode("tobari-demo-secret-key-32-bytes-long!!");
 }
 
+function showWarning(msg: string) {
+    const warning = document.createElement('div');
+    Object.assign(warning.style, {
+        position: 'fixed', top: '0', left: '0', width: '100%', background: '#e53e3e',
+        color: 'white', padding: '12px', textAlign: 'center', fontWeight: 'bold', zIndex: '9999', fontFamily: 'sans-serif'
+    });
+    warning.textContent = msg;
+    document.body.prepend(warning);
+}
+
 function setupDebugUI() {
     const isDebug = new URLSearchParams(window.location.search).get('debug') === '1';
     if (!isDebug) return;
     const btn = document.createElement('div');
     btn.innerHTML = 'DEBUG';
-    Object.assign(btn.style, { position: 'fixed', bottom: '20px', right: '20px', background: '#2d3748', color: 'white', padding: '8px 16px', borderRadius: '100px', cursor: 'pointer', zIndex: '10000' });
+    Object.assign(btn.style, { position: 'fixed', bottom: '20px', right: '20px', background: '#1a202c', color: 'white', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', zIndex: '10000', fontSize: '12px' });
     document.body.appendChild(btn);
     btn.onclick = () => {
         const panel = document.createElement('pre');
-        Object.assign(panel.style, { position: 'fixed', top: '0', right: '0', width: '400px', height: '100%', background: '#1a202c', color: '#ccc', padding: '20px', overflow: 'auto', zIndex: '10001' });
+        Object.assign(panel.style, { position: 'fixed', top: '0', right: '0', width: '400px', height: '100%', background: '#1a202c', color: '#ccc', padding: '20px', overflow: 'auto', zIndex: '10001', margin: 0, fontSize: '11px' });
         panel.textContent = JSON.stringify(currentDebugData, (k, v) => v instanceof Uint8Array ? Array.from(v) : v, 2);
         document.body.appendChild(panel);
         panel.onclick = () => panel.remove();
