@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
     title: "Tobari",
-    description: "Trust Infrastructure Toolkit for the AI Agent era",
+    description: "A lightweight veil for verifiable documents and digital trust",
     base: '/tobari/',
     ignoreDeadLinks: true,
     themeConfig: {

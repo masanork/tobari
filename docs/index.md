@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "Tobari (帳)"
-  text: "Trust Infrastructure Toolkit"
-  tagline: Designing trust in the agentic era. Connecting people, data, and silos.
+  text: "A Lightweight Veil for Verifiable Documents"
+  tagline: Providing a thin, verifiable layer between data and agents. Simple, silent, and secure.
   actions:
     - theme: brand
       text: Get Started
