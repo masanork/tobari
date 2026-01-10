@@ -1,9 +1,9 @@
 # Tobari (帳)
 
-> **Designing trust in the agentic era. Connecting people, data, and silos.**
-> *Building silent trust in every digital document.*
+> **A Lightweight Veil for Verifiable Documents.**
+> *Providing a thin, secure screen between data and agents.*
 
-Tobari is a comprehensive **Trust Infrastructure Toolkit** for the AI Agent era. It bridges the gap between legacy identity systems (Physical ID cards, Paper documents) and the future of autonomous agents (ZKP, Verifiable Credentials, mdoc).
+Tobari is a set of minimal tools for the AI Agent era. It provides a simple way to add authenticity and machine-readability to digital documents, acting like a thin "veil" (Tobari) that protects privacy while ensuring integrity.
 
 Tobari is a digital certificate framework that imparts strong authenticity and machine readability while maintaining the "human-readable" experience of existing documents. It reconciles the trust placed in "completed forms" (like PDF or paper) with the engineering need for "programmatic verification and parsing" within a single, self-contained HTML file.
 
