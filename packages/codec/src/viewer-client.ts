@@ -11,7 +11,6 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         // 0. Priority: Load from URL Fragment (Stateless Redirection)
         const hash = window.location.hash.substring(1);
         if (hash) {
-            // URLSearchParams can be strict, so we try manual split first
             const dataPrefix = "data=";
             if (hash.startsWith(dataPrefix)) {
                 console.log("🔗 Loading data from URL fragment...");
@@ -81,12 +80,27 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         currentDebugData = { doc, mso, revealed: disclosedData, isSignatureValid, coseArray };
         (window as any).currentDebugData = currentDebugData;
 
+        // 2. Inject Decrypted Font if present (Raw Binary Support)
         if (doc.visuals && doc.visuals.font) {
+            console.log("🎨 Applying embedded font from document visuals...");
+            const fontBytes = doc.visuals.font;
+            const blob = new Blob([fontBytes], { type: 'font/woff2' });
+            const fontUrl = URL.createObjectURL(blob);
+            
             const style = document.createElement('style');
-            style.textContent = doc.visuals.font;
+            style.textContent = `
+@font-face {
+    font-family: 'TobariSubset';
+    src: url('${fontUrl}') format('woff2');
+    font-style: normal;
+    font-weight: normal;
+    font-display: block;
+}
+`;
             document.head.appendChild(style);
         }
 
+        // Render document
         render(doc, disclosedData, mso);
 
         if (issuerPublicKeyJwk && !isSignatureValid) {
@@ -129,7 +143,7 @@ function renderWelcome() {
         reader.onload = async (e) => {
             const buf = e.target?.result as ArrayBuffer;
             const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-            window.location.hash = "data=" + b64;
+            window.location.hash = "data=" + encodeURIComponent(b64);
             location.reload();
         };
         reader.readAsArrayBuffer(file);

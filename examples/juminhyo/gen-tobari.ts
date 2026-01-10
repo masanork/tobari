@@ -37,11 +37,11 @@ async function main() {
 
     const encrypt = process.argv.includes('--encrypt');
     let encryptionPublicKey: Uint8Array | undefined;
-    let embeddedFont: string | undefined;
+    let embeddedFont: Uint8Array | undefined;
 
     // --- Font Subsetting (Privacy Protection) ---
     // Extract all characters from sampleData to create an encrypted font subset
-    const { subsetFont, bufferToDataUrl } = await import('../../packages/codec/src/font-engine');
+    const { subsetFont } = await import('../../packages/codec/src/font-engine');
     const fontPath = path.resolve(process.cwd(), 'shared/fonts/ipamjm.ttf');
     
     if (fs.existsSync(fontPath)) {
@@ -50,18 +50,9 @@ async function main() {
         const segmenter = new Intl.Segmenter("ja", { granularity: "grapheme" });
         const uniqueChars = Array.from(new Set(Array.from(segmenter.segment(allText)).map(s => s.segment))).join('');
         
-        const { buffer, mimeType } = await subsetFont(fontPath, uniqueChars);
-        const fontDataUrl = bufferToDataUrl(buffer, mimeType);
-        embeddedFont = `
-@font-face {
-    font-family: 'TobariSubset';
-    src: url('${fontDataUrl}') format('woff2');
-    font-style: normal;
-    font-weight: normal;
-    font-display: block;
-}
-`;
-        console.log(`Font subsetted: ${buffer.length} bytes`);
+        const { buffer } = await subsetFont(fontPath, uniqueChars);
+        embeddedFont = new Uint8Array(buffer);
+        console.log(`Font subsetted: ${embeddedFont.length} bytes`);
     }
 
     if (encrypt) {
