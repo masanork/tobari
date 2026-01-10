@@ -42,6 +42,17 @@ async fn test_passport_unified_photo() {
     
     let identity = controller.read_identity().await.unwrap();
     assert!(identity.photo_data.is_some());
-    // Mock Passport DG2 content is defined in generate_mock_sod? No, read_dg2 uses read_file.
-    // Let's check PassportBackend::new in mock/passport.rs
+}
+
+#[tokio::test]
+async fn test_thai_unified() {
+    let card = Arc::new(Mutex::new(MockSmartCard::new()));
+    let mut controller = civ::ThaiController::new(MockRelay { card });
+
+    let identity = controller.read_identity().await.unwrap();
+    assert_eq!(identity.card_type, "ThaiID");
+    assert_eq!(identity.identity_number, "1234567890123");
+    assert!(identity.full_name.contains("สม"));
+    assert_eq!(identity.attributes.get("full_name_en").unwrap(), "Somchai Mankong");
+    assert_eq!(identity.birth_date, "1990-01-01");
 }
