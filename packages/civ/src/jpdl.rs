@@ -161,7 +161,45 @@ impl<R: CardReader> DriversLicenseController<R> {
         self.read_file(&file_ids::EF_SIGNATURE).await
     }
 
-    /// Verify integrity of EF01 and EF02 using EF07 signature.
+    /// Verify integrity AND authenticity using external Public Key.
+    /// This verifies that EF07 contains a valid ECDSA signature over Hash(EF01)||Hash(EF02).
+    pub async fn verify_signature(&mut self, pub_key_bytes: &[u8]) -> Result<bool> {
+        use sha2::{Sha256, Digest};
+        use crate::crypto::verify_signature;
+
+        let sig_data = self.read_signature().await?;
+        if sig_data.len() < 64 + 32 + 32 { 
+            // Expecting Hash(32) + Hash(32) + Sig(64) at least
+            return Ok(false); 
+        }
+
+        // Parse EF07 structure (Mock: Hash01 || Hash02 || Sig)
+        let hash01_stored = &sig_data[0..32];
+        let hash02_stored = &sig_data[32..64];
+        let signature = &sig_data[64..];
+
+        // 1. Verify Hashes match actual data
+        let ef01 = self.read_file(&file_ids::EF_COMMON_DATA).await?;
+        let ef02 = self.read_file(&file_ids::EF_HONSEKI).await?;
+        
+        let hash01_calc = Sha256::digest(&ef01);
+        let hash02_calc = Sha256::digest(&ef02);
+
+        if hash01_stored != hash01_calc.as_slice() || hash02_stored != hash02_calc.as_slice() {
+            return Ok(false);
+        }
+
+        // 2. Verify Signature
+        let mut signed_data = Vec::new();
+        signed_data.extend_from_slice(hash01_stored);
+        signed_data.extend_from_slice(hash02_stored);
+
+        verify_signature(pub_key_bytes, &signed_data, signature)
+            .map(|_| true)
+            .map_err(|e| CivError::CryptoError(e.to_string()))
+    }
+
+    /// Verify integrity of EF01 and EF02 using EF07 signature (Hash check only).
     pub async fn verify_integrity(&mut self) -> Result<bool> {
         use sha2::{Sha256, Digest};
         
