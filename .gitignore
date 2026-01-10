@@ -1,12 +1,16 @@
 # Build artifacts
-node_modules
-dist
-target
-pkg
+target/
+pkg/
+iwa-key.*
+.tmp_iwa_*
 .DS_Store
 *.cose
 *.html
 *.wbn
+*.swbn
+dist/
+node_modules/
+bun.lockb
 tsconfig.tsbuildinfo
 
 # Fonts
