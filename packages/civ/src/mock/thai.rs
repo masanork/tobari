@@ -3,6 +3,7 @@ use crate::mock::common::MockBackend;
 
 pub struct ThaiBackend {
     data: Vec<u8>,
+    pub fail_once: bool,
 }
 
 impl ThaiBackend {
@@ -26,7 +27,7 @@ impl ThaiBackend {
         // Gender (00E1): 1 (Male)
         data[0x00E1] = b'1';
 
-        Self { data }
+        Self { data, fail_once: false }
     }
 }
 
@@ -41,14 +42,27 @@ impl MockBackend for ThaiBackend {
         match cmd.ins {
             0xA4 => (vec![], 0x9000), // SELECT
             0xB0 => { // READ BINARY
-                let offset = ((cmd.p1 as usize) << 8) | (cmd.p2 as usize);
-                let len = cmd.le.unwrap_or(0);
-                
-                if offset + len > self.data.len() {
-                    return (vec![], 0x6B00);
+                if self.fail_once {
+                    self.fail_once = false;
+                    return (vec![0x00; 1], 0x9000); // Return too short data
                 }
-                
-                (self.data[offset..offset+len].to_vec(), 0x9000)
+                let offset = ((cmd.p1 as usize) << 8) | (cmd.p2 as usize);
+                // Simulate quirky Thai ID behavior: 
+                // If data is provided (extra params), it's the [02 00] case.
+                let len = if cmd.data == [0x02, 0x00] {
+                    cmd.le.unwrap_or(0)
+                } else if !cmd.data.is_empty() {
+                    // Unexpected data
+                    return (vec![], 0x6700);
+                } else {
+                    cmd.le.unwrap_or(0)
+                };
+
+                if offset + len > self.data.len() {
+                    (vec![], 0x6B00)
+                } else {
+                    (self.data[offset..offset+len].to_vec(), 0x9000)
+                }
             },
             _ => (vec![], 0x6D00),
         }

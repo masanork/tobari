@@ -42,8 +42,11 @@ impl<R: CardReader> ThaiController<R> {
         
         if res.len() < len + 2 {
              // Try the alternative format if response too short
-             let cmd_bytes = vec![0x80, 0xB0, (offset >> 8) as u8, (offset & 0xFF) as u8, 0x02, 0x00, len as u8];
-             let res2 = self.reader.transmit(&cmd_bytes).await?;
+             // Alternative format: [0x02, 0x00] as data, and Le
+             let apdu2 = ApduCommand::new(0x80, INS_READ_BINARY, (offset >> 8) as u8, (offset & 0xFF) as u8)
+                 .with_data(&[0x02, 0x00])
+                 .with_le(len);
+             let res2 = self.reader.transmit(&apdu2.to_bytes()).await?;
              Self::check_sw(&res2)?;
              return Ok(res2[0..res2.len()-2].to_vec());
         }
