@@ -975,6 +975,84 @@ function renderIninjo(data: any, mso: any): string {
                <br>Signed at: ${safeDateString(mso.validityInfo.signed)}
             </footer>
 
+            <!-- Machine Readable Demo Section -->
+            <div style="margin-top: 50px; border-top: 2px dashed #cbd5e0; padding-top: 30px;">
+                <details style="background: #f7fafc; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden;">
+                    <summary style="padding: 15px 20px; font-weight: bold; cursor: pointer; background: #edf2f7; color: #4a5568; font-family: sans-serif; display: flex; align-items: center; justify-content: space-between;">
+                        <span>🤖 システム解析データ (Machine Readable Layer)</span>
+                        <span style="font-size: 12px; font-weight: normal; color: #718096">Click to expand</span>
+                    </summary>
+                    <div style="padding: 20px; font-family: 'Courier New', monospace; font-size: 13px;">
+                        
+                        <!-- 1. Automated Logic Check -->
+                        <div style="margin-bottom: 25px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #2d3748; border-bottom: 1px solid #cbd5e0; padding-bottom: 5px;">1. 自動有効性判定 (Automated Validity Check)</h3>
+                            <div style="display: flex; gap: 20px; align-items: center;">
+                                ${(() => {
+            const now = new Date();
+            const start = validity?.startDate ? new Date(validity.startDate) : null;
+            const end = validity?.endDate ? new Date(validity.endDate) : null;
+            let status = "ACTIVE";
+            let color = "#38a169"; // green
+            let msg = "この委任状は現在有効です。";
+
+            if (start && now < start) {
+                status = "FUTURE"; color = "#d69e2e"; msg = "有効期間開始前です。";
+            } else if (end && now > end) {
+                status = "EXPIRED"; color = "#e53e3e"; msg = "有効期間を経過しています。";
+            }
+
+            return `
+                                        <div style="background: ${color}; color: white; padding: 5px 15px; border-radius: 4px; font-weight: bold; font-size: 16px;">${status}</div>
+                                        <div style="color: #4a5568;">${msg} <br><span style="font-size: 11px; color: #718096">(Checked at: ${now.toISOString()})</span></div>
+                                    `;
+        })()}
+                            </div>
+                        </div>
+
+                        <!-- 2. Structured Authority Data -->
+                        <div style="margin-bottom: 25px;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #2d3748; border-bottom: 1px solid #cbd5e0; padding-bottom: 5px;">2. 権限構造解析 (Authority Parsing)</h3>
+                            <table style="width: 100%; border-collapse: collapse; background: white;">
+                                <thead style="background: #edf2f7; text-align: left;">
+                                    <tr>
+                                        <th style="padding: 8px; border: 1px solid #cbd5e0;">Index</th>
+                                        <th style="padding: 8px; border: 1px solid #cbd5e0;">Act Name (Value)</th>
+                                        <th style="padding: 8px; border: 1px solid #cbd5e0;">Metadata</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${Array.isArray(acts) ? acts.map((act: any, i: number) => `
+                                        <tr>
+                                            <td style="padding: 8px; border: 1px solid #cbd5e0; text-align: center;">${i}</td>
+                                            <td style="padding: 8px; border: 1px solid #cbd5e0; font-weight: bold; color: #2b6cb0;">${typeof act === 'string' ? act : act.actName}</td>
+                                            <td style="padding: 8px; border: 1px solid #cbd5e0; color: #718096;">${typeof act === 'object' && act.note ? `Note: ${act.note}` : '-'}</td>
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="3" style="padding: 8px;">No acts found</td></tr>'}
+                                </tbody>
+                            </table>
+                            <div style="margin-top: 5px; color: #718096; font-size: 11px;">※ OCR処理を経ることなく、システムは正確な権限内容を取得・照合可能です。</div>
+                        </div>
+
+                        <!-- 3. Raw Data Structure -->
+                        <div>
+                            <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #2d3748; border-bottom: 1px solid #cbd5e0; padding-bottom: 5px;">3. 構造化データツリー (Unified Graph)</h3>
+                            <div style="background: #1a202c; color: #a0aec0; padding: 15px; border-radius: 4px; overflow-x: auto;">
+                                <pre style="margin: 0;">${JSON.stringify({
+            id: getValue('id'),
+            docType: mso.docType,
+            mandator: mandator,
+            mandatary: mandatary,
+            authority: authority
+        }, null, 2)}</pre>
+                            </div>
+                        </div>
+
+                    </div>
+                </details>
+            </div>
+
+
         </div>
     `;
 }
