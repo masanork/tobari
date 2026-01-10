@@ -35,6 +35,7 @@ async function buildViewer() {
     
     let dataText = "";
     let fields: any[] = [];
+    let skipPlaintextFont = false;
 
     // Check if it's an encrypted JSON wrapper
     let isEncrypted = false;
@@ -42,7 +43,8 @@ async function buildViewer() {
         const json = JSON.parse(tobariBinary.toString());
         if (json.tobari_enc === true) {
             isEncrypted = true;
-            console.log("Encrypted payload detected. Skipping content subsetting.");
+            skipPlaintextFont = true; // Protect privacy
+            console.log("Encrypted payload detected. Skipping content subsetting to prevent leaks.");
         }
     } catch (e) {
         // Assume raw CBOR
@@ -51,7 +53,13 @@ async function buildViewer() {
     if (!isEncrypted) {
         try {
             const doc = decode(tobariBinary);
+            // If the document already has a font (even if plain CBOR), we can skip subsetting here
+            if (doc.visuals && doc.visuals.font) {
+                skipPlaintextFont = true;
+                console.log("Document already contains embedded visuals. Skipping plain subsetting.");
+            }
             fields = doc.fields;
+// ... (rest of text extraction)
             const { issuerSigned } = doc;
             const issuerAuth = decode(issuerSigned.issuerAuth);
             const mso = decode(issuerAuth[2]);
@@ -122,7 +130,7 @@ async function buildViewer() {
     // 2. Subset Font (IPA MJ Mincho)
     const fontPath = path.resolve('shared/fonts/ipamjm.ttf');
     let fontCss = "";
-    if (fs.existsSync(fontPath)) {
+    if (fs.existsSync(fontPath) && !skipPlaintextFont) {
         console.log("Subsetting IPA MJ Mincho font...");
         const { buffer, mimeType } = await subsetFont(fontPath, uniqueChars);
         const fontDataUrl = bufferToDataUrl(buffer, mimeType);
@@ -138,9 +146,8 @@ async function buildViewer() {
 }
 `;
         console.log(`Font subsetted: ${buffer.length} bytes`);
-    } else {
-        console.error(`FATAL: IPA Font not found at ${fontPath}`);
-        process.exit(1);
+    } else if (!skipPlaintextFont) {
+        console.warn(`WARNING: IPA Font not found at ${fontPath}. Generic serif will be used.`);
     }
 
     // 3. Assemble HTML

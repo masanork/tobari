@@ -37,6 +37,32 @@ async function main() {
 
     const encrypt = process.argv.includes('--encrypt');
     let encryptionPublicKey: Uint8Array | undefined;
+    let embeddedFont: string | undefined;
+
+    // --- Font Subsetting (Privacy Protection) ---
+    // Extract all characters from sampleData to create an encrypted font subset
+    const { subsetFont, bufferToDataUrl } = await import('../../packages/codec/src/font-engine');
+    const fontPath = path.resolve(process.cwd(), 'shared/fonts/ipamjm.ttf');
+    
+    if (fs.existsSync(fontPath)) {
+        console.log("Subsetting font for encrypted embedding...");
+        const allText = JSON.stringify(sampleData) + "（非開示）Digital Certificate Signature ES384 Verified 氏名住所交付年月日印";
+        const segmenter = new Intl.Segmenter("ja", { granularity: "grapheme" });
+        const uniqueChars = Array.from(new Set(Array.from(segmenter.segment(allText)).map(s => s.segment))).join('');
+        
+        const { buffer, mimeType } = await subsetFont(fontPath, uniqueChars);
+        const fontDataUrl = bufferToDataUrl(buffer, mimeType);
+        embeddedFont = `
+@font-face {
+    font-family: 'TobariSubset';
+    src: url('${fontDataUrl}') format('woff2');
+    font-style: normal;
+    font-weight: normal;
+    font-display: block;
+}
+`;
+        console.log(`Font subsetted: ${buffer.length} bytes`);
+    }
 
     if (encrypt) {
         console.log("Encryption enabled. Generating PoC Demo Key (Salt: 'tobari')...");
@@ -54,7 +80,8 @@ async function main() {
 
     const binary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
         kid: "iss-local-p384",
-        encryptionPublicKey
+        encryptionPublicKey,
+        embeddedFont
     });
 
     const outputPath = path.resolve(__dirname, 'juminhyo.cose');
