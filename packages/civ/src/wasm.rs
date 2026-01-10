@@ -4,6 +4,7 @@ use crate::jpdl::DriversLicenseController;
 use crate::jprc::ResidenceCardController;
 use crate::passport::PassportController;
 use crate::piv::PivController;
+use crate::mynamenkyo::MynaMenkyoController;
 use crate::transport::WebUsbReader;
 use crate::mock::MockSmartCard;
 use crate::reader::CardReader;
@@ -63,6 +64,7 @@ impl CivContext {
             "rc" => Box::new(ResidenceCardController::new(self.reader.clone())),
             "passport" => Box::new(PassportController::new(self.reader.clone())),
             "piv" => Box::new(PivController::new(self.reader.clone())),
+            "mynamenkyo" => Box::new(MynaMenkyoController::new(self.reader.clone())),
             _ => return Err(JsValue::from_str("Unknown card type")),
         };
 
@@ -70,7 +72,7 @@ impl CivContext {
         // TODO: More granular PIN types support in Wasm
         if card_type == "passport" {
             controller.provide_pin("mrz", pin).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
-        } else if card_type == "dl" {
+        } else if card_type == "dl" || card_type == "mynamenkyo" {
             controller.provide_pin("pin1", pin).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
         } else if card_type == "jpki" {
             controller.provide_pin("auth", pin).await.map_err(|e| JsValue::from_str(&e.to_string()))?;

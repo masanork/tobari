@@ -6,17 +6,19 @@ pub mod jprc;
 pub mod piv;
 pub mod thai;
 pub mod mykad;
+pub mod mynamenkyo;
 
 use std::collections::HashMap;
 use crate::apdu::{file_ids, ApduCommand};
-use self::common::{MockBackend, MockSecureSession};
-use self::jpki::JpkiBackend;
-use self::passport::PassportBackend;
-use self::jpdl::DriversLicenseBackend;
-use self::jprc::ResidenceCardBackend;
-use self::piv::PivBackend;
-use self::thai::ThaiBackend;
-use self::mykad::MyKadBackend;
+pub use self::common::{MockBackend, MockSecureSession};
+pub use self::jpki::JpkiBackend;
+pub use self::passport::PassportBackend;
+pub use self::jpdl::DriversLicenseBackend;
+pub use self::jprc::ResidenceCardBackend;
+pub use self::piv::PivBackend;
+pub use self::thai::ThaiBackend;
+pub use self::mykad::MyKadBackend;
+pub use self::mynamenkyo::MynaMenkyoBackend;
 
 pub struct MockSmartCard {
     current_ap_aid: Option<Vec<u8>>,
@@ -44,6 +46,7 @@ impl MockSmartCard {
         card.add_backend(crate::passport::file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("123456")));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01], Box::new(ThaiBackend::new()));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x74, 0x4A, 0x50, 0x4E, 0x00, 0x10], Box::new(MyKadBackend::new()));
+        card.add_backend(vec![0xA0, 0x00, 0x00, 0x02, 0x31, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00], Box::new(MynaMenkyoBackend::new()));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x00, 0x01], Box::new(LargeDataBackend::new()));
         card
     }

@@ -1,4 +1,4 @@
-# EstEID (Estonian ID Card) APDU specs
+# Estonian ID Card (EstEID) Specification
 
 ## 1. System Overview
 - **Standards:** ISO/IEC 7816-4, EstEID Spec v3.5/v3.6

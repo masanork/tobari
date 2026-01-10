@@ -1,4 +1,4 @@
-# Thai National ID Card APDU specs
+# Thai National ID Card Specification
 
 ## 1. System Overview
 - **Standards:** ISO/IEC 7816-4

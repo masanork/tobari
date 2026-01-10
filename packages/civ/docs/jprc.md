@@ -1,4 +1,4 @@
-# Residence Card (Zairyu Card) & Special Permanent Resident Certificate APDU specs
+# Residence Card / Special Permanent Resident Certificate Specification
 
 ## 1. System Overview
 - **Standards:** ISO/IEC 14443 Type B (NFC), ISO/IEC 7816-4 (APDU)
