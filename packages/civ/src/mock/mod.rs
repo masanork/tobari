@@ -4,6 +4,7 @@ pub mod passport;
 pub mod jpdl;
 pub mod jprc;
 pub mod piv;
+pub mod thai;
 
 use std::collections::HashMap;
 use crate::apdu::{file_ids, ApduCommand};
@@ -13,6 +14,7 @@ use self::passport::PassportBackend;
 use self::jpdl::DriversLicenseBackend;
 use self::jprc::ResidenceCardBackend;
 use self::piv::PivBackend;
+use self::thai::ThaiBackend;
 
 pub struct MockSmartCard {
     current_ap_aid: Option<Vec<u8>>,
@@ -38,6 +40,7 @@ impl MockSmartCard {
         card.add_backend(crate::jprc::file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new()));
         card.add_backend(crate::jprc::file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new()));
         card.add_backend(crate::passport::file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("123456")));
+        card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01], Box::new(ThaiBackend::new()));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x00, 0x01], Box::new(LargeDataBackend::new()));
         card
     }
