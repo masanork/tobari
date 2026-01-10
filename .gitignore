@@ -1,29 +1,21 @@
-# Dependencies
-node_modules/
-bun.lockb
-
-# Generated Files
-*.cose
-examples/juminhyo/juminhyo.html
-examples/verifier.html
-
-# Fonts (IPAmj Mincho has distribution restrictions)
-shared/fonts/ipamjm.ttf
-
-# Binary / Build Artifacts
-dist/
+# Build artifacts
+node_modules
+dist
 .DS_Store
-# Rust / WASM
-target/
-**/target/
-pkg/
-**/pkg/
+*.cose
+*.html
+*.wbn
+tscofig.tsbuildinfo
 
-# Secrets
+# Personal encryption keys and locked documents
+recipient-pubkey.json
+*.locked.wbn
+*.locked.html
+*.locked.cose
+
+# Local keys for development
 *-key.json
-*.pem
-*.key
-.tobari-credentials.json
+
 
 # Generated VP files
 *-vp.cose

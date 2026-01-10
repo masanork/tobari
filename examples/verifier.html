@@ -160,7 +160,7 @@
 `)+`
 `+Z+"}"}return JSON.stringify($)}export{n6 as setupUI,X6 as handleFile};
 
-        const pubKeyJwk = {"crv":"P-384","ext":true,"key_ops":["verify"],"kty":"EC","x":"5iJ87TTdAp-qpLXj3rfOkrFipXd5HhfuWYigFrHlu8gfars72F361vCww6e4MzN3","y":"ZzhBnQPAkHVkRtJvIWl566WWdStvI-gjfztLFo0TyzpBV75obavOwdntGtN5BAOp"};
+        const pubKeyJwk = {"crv":"P-384","ext":true,"key_ops":["verify"],"kty":"EC","x":"hQLKj4cuQWfxxvnwMOcuoa-cXjL1rqiWAUZq90J_tSxySSK29Pb4FWHTvjm1NHtE","y":"A1lAdMUo6sjT8cvC9a0qdAMMNITqDhNhnCE1goBAuLyHqcUN0mOA7TSQfnO1jcwc"};
         crypto.subtle.importKey('jwk', pubKeyJwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["verify"])
             .then(key => {
                 // verifier-ui logic is now available
