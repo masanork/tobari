@@ -5,6 +5,7 @@ import fs from 'fs';
 const EXAMPLES_DIR = 'examples';
 const BUNDLE_VIEWER_SCRIPT = 'packages/codec/src/bundle-viewer.ts';
 const BUNDLE_WBN_SCRIPT = 'packages/codec/src/bundle-webbundle.ts';
+const BUNDLE_SWBN_SCRIPT = 'packages/codec/src/bundle-swbn.ts';
 
 async function main() {
     console.log("🏗️  Building all examples...");
@@ -31,7 +32,7 @@ async function main() {
             await runCommand("bun", ["run", genScriptPath, "--locked"]);
         }
 
-        // 3. Post-process (HTML and WBN) for all generated .cose files
+        // 3. Post-process (HTML, WBN, SWBN) for all generated .cose files
         const filesAfter = await readdir(dirPath);
         const coseFiles = filesAfter.filter(f => f.endsWith('.cose'));
 
@@ -41,6 +42,11 @@ async function main() {
             
             await runCommand("bun", ["run", BUNDLE_VIEWER_SCRIPT, cosePath, htmlPath]);
             await runCommand("bun", ["run", BUNDLE_WBN_SCRIPT, htmlPath]);
+            
+            // Only generate SWBN for the main demo files to keep build fast
+            if (!cose.includes('.locked')) {
+                await runCommand("bun", ["run", BUNDLE_SWBN_SCRIPT, htmlPath]);
+            }
         }
     }
 }
