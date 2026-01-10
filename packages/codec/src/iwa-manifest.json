@@ -1,0 +1,14 @@
+{
+  "name": "Tobari Secure Viewer PoC",
+  "short_name": "Tobari",
+  "start_url": "/",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "isolated_web_app": true
+}
