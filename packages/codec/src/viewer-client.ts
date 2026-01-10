@@ -29,29 +29,39 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
     }
 }
 
+// Safe conversion for large Uint8Arrays to Base64
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+
+// Safe conversion for Base64 to Uint8Array
+function base64ToUint8Array(b64: string): Uint8Array {
+    const s = b64.includes(',') ? b64.split(',')[1] : b64;
+    const binStr = atob(s.trim());
+    const len = binStr.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
+    return bytes;
+}
+
 async function processAndRender(rawContent: string, issuerPublicKeyJwk?: any) {
     let content = rawContent;
     
-    // 1. Detect if the content is an encrypted JSON wrapper
     try {
-        const b64Part = content.includes(',') ? content.split(',')[1] : content;
-        const decodedStr = atob(b64Part.trim());
-        const json = JSON.parse(decodedStr);
-        if (json.tobari_enc === true) {
-            content = await unlockEncryptedPayload(json);
+        const bytes = base64ToUint8Array(content);
+        const jsonStr = new TextDecoder().decode(bytes.slice(0, 1000)); // Peek for JSON
+        if (jsonStr.includes('"tobari_enc":true')) {
+            const fullJson = JSON.parse(new TextDecoder().decode(bytes));
+            content = await unlockEncryptedPayload(fullJson);
         }
     } catch (e) {}
 
-    const b64ToBinary = (b64: string) => {
-        const s = b64.includes(',') ? b64.split(',')[1] : b64;
-        const binStr = atob(s.trim());
-        const len = binStr.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) bytes[i] = binStr.charCodeAt(i);
-        return bytes;
-    };
-
-    const binary = b64ToBinary(content);
+    const binary = base64ToUint8Array(content);
     const doc = decode(binary);
     
     const issuerAuthToken = doc.issuerSigned.issuerAuth;
@@ -78,7 +88,8 @@ async function processAndRender(rawContent: string, issuerPublicKeyJwk?: any) {
     (window as any).currentDebugData = currentDebugData;
 
     if (doc.visuals && doc.visuals.font) {
-        const blob = new Blob([doc.visuals.font], { type: 'font/woff2' });
+        const fontBytes = doc.visuals.font;
+        const blob = new Blob([fontBytes], { type: 'font/woff2' });
         const fontUrl = URL.createObjectURL(blob);
         const style = document.createElement('style');
         style.textContent = `@font-face { font-family: 'TobariSubset'; src: url('${fontUrl}') format('woff2'); font-style: normal; font-weight: normal; font-display: block; }`;
@@ -99,9 +110,7 @@ function renderWelcome() {
                 <p>証明書ファイル（.cose / .wbn）を<br>ここにドロップして検証・閲覧</p>
                 <input type="file" id="file-input" style="display:none" accept=".cose,.wbn">
                 <button class="primary-btn" onclick="document.getElementById('file-input').click()">ファイルを選択</button>
-                
                 <hr style="margin: 30px 0; border: none; border-top: 1px solid #edf2f7;">
-                
                 <div id="key-gen-section">
                     <p style="font-size: 13px; margin-bottom: 15px;">あなた専用のロックされた証明書を発行するために<br>必要な「受取人公開鍵」を生成します。</p>
                     <button id="gen-key-btn" class="secondary-btn" style="margin-top:0;">受取人公開鍵を生成</button>
@@ -117,24 +126,20 @@ function renderWelcome() {
 function setupKeyGen() {
     const btn = document.getElementById('gen-key-btn');
     const section = document.getElementById('key-gen-section');
-
     btn?.addEventListener('click', async () => {
         try {
             btn.textContent = "パスキーを認証中...";
             const secret = await deriveHmacSecret(false);
             const { deriveHPKEKeyPair } = await import("@tobari/crypto/hpke");
             const keyPair = await deriveHPKEKeyPair(secret);
-            
             if (keyPair) {
-                const pubkeyB64 = btoa(String.fromCharCode(...keyPair.publicKey));
+                const pubkeyB64 = uint8ArrayToBase64(keyPair.publicKey);
                 const keyJson = JSON.stringify({ pubkey: pubkeyB64 }, null, 2);
-                
                 section!.innerHTML = `
                     <p style="font-size: 12px; color: #2f855a; font-weight: bold; margin-bottom: 10px;">✅ 公開鍵が生成されました</p>
                     <textarea readonly style="width: 100%; height: 80px; font-family: monospace; font-size: 11px; padding: 10px; border: 1px solid #cbd5e0; border-radius: 8px; margin-bottom: 10px;">${keyJson}</textarea>
                     <button id="copy-key-btn" class="secondary-btn" style="margin-top:0; font-size: 12px;">クリップボードにコピー</button>
                 `;
-                
                 document.getElementById('copy-key-btn')?.addEventListener('click', () => {
                     navigator.clipboard.writeText(keyJson);
                     alert("コピーしました。これを 'recipient-pubkey.json' として保存してください。");
@@ -151,11 +156,9 @@ function setupKeyGen() {
 function setupDropZone() {
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input') as HTMLInputElement;
-
     const handleFile = async (file: File) => {
         const buffer = await file.arrayBuffer();
         const bytes = new Uint8Array(buffer);
-
         if (bytes[0] === 0x00 && bytes[1] === 0x8a && bytes[2] === 0x0b) {
             const text = new TextDecoder().decode(bytes);
             const match = text.match(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/);
@@ -164,12 +167,10 @@ function setupDropZone() {
                 return;
             }
         }
-
-        const b64 = btoa(String.fromCharCode(...bytes));
+        const b64 = uint8ArrayToBase64(bytes);
         window.location.hash = "data=" + encodeURIComponent(b64);
         location.reload();
     };
-
     dropZone?.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('active'); });
     dropZone?.addEventListener('dragleave', () => { dropZone.classList.remove('active'); });
     dropZone?.addEventListener('drop', (e) => { e.preventDefault(); const file = e.dataTransfer?.files[0]; if (file) handleFile(file); });
@@ -192,17 +193,14 @@ function render(doc: any, rawData: any, mso: MSO) {
     injectGlobalStyles();
     const data = cleanData(rawData);
     const safeStr = (v: any): string => (v === null || v === undefined) ? "" : String(v);
-
     const primaryKeys = ["氏名", "世帯主氏名", "証明書名称", "Name", "Title"];
     const wideKeys = ["住所", "世帯住所", "本籍", "前住所", "備考"];
     const issuerKeys = ["発行者役職", "発行者氏名"];
-
     const title = safeStr(data["証明書名称"] || mso.docType.split('.').pop());
     const mainFields = Object.entries(data).filter(([k, v]) => primaryKeys.includes(k) && k !== "証明書名称");
     const wideFields = Object.entries(data).filter(([k, v]) => wideKeys.includes(k));
     const otherFields = Object.entries(data).filter(([k, v]) => !primaryKeys.includes(k) && !wideKeys.includes(k) && !issuerKeys.includes(k) && typeof v !== 'object');
     const listFields = Object.entries(data).filter(([k, v]) => Array.isArray(v));
-
     document.body.innerHTML = `
         <div class="official-doc-container">
             <div class="official-doc">
@@ -240,7 +238,7 @@ function renderList(array: any[]): string {
 async function unlockEncryptedPayload(wrapper: any): Promise<string> {
     injectGlobalStyles();
     document.body.innerHTML = `<div class="welcome-screen"><div class="drop-card"><div class="logo">🔒</div><h2>Encrypted Document</h2><p>この書類は暗号化されています。閲覧するには発行時に指定したパスキーが必要です。</p><button id="unlock-btn" class="primary-btn" style="width: 100%;">パスキーで復号</button><button id="demo-unlock-btn" class="secondary-btn">デモ用共有鍵で試行</button></div></div>`;
-    const ciphertext = Uint8Array.from(atob(wrapper.data), c => c.charCodeAt(0));
+    const ciphertext = base64ToUint8Array(wrapper.data);
     const info = new TextEncoder().encode("tobari-storage-v1");
     const { decryptHPKE, deriveHPKEKeyPair } = await import("@tobari/crypto/hpke");
     return new Promise((resolve) => {
@@ -249,14 +247,14 @@ async function unlockEncryptedPayload(wrapper: any): Promise<string> {
                 const secret = await deriveHmacSecret(false);
                 const keyPair = await deriveHPKEKeyPair(secret);
                 const plaintext = await decryptHPKE(keyPair!.privateKey, ciphertext, info);
-                resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
+                resolve(uint8ArrayToBase64(new Uint8Array(plaintext)));
             } catch (e) { alert("復号に失敗しました。"); }
         });
         document.getElementById('demo-unlock-btn')?.addEventListener('click', async () => {
             const secret = await deriveHmacSecret(true);
             const keyPair = await deriveHPKEKeyPair(secret);
             const plaintext = await decryptHPKE(keyPair!.privateKey, ciphertext, info);
-            resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
+            resolve(uint8ArrayToBase64(new Uint8Array(plaintext)));
         });
     });
 }
