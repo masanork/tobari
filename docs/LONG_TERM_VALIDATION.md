@@ -77,7 +77,7 @@ The Subscriber (Viewer/Verifier) needs updated logic:
 1.  **Phase 1 (Proof of Concept)**:
     - Implement fetching a dummy/free RFC 3161 TST during `tobari-gen`.
     - Embed TST into `issuerAuth` unprotected header.
-    - Update `viewer-client.ts` to display "Timestamped at: <Time>" if present.
+    - Update `viewer-client.ts` to display "Timestamped at: `<Time>`" if present.
 
 2.  **Phase 2 (Standardization)**:
     - Align with upcoming COSE / ISO 18013 extensions regarding LTV.
