@@ -4,7 +4,7 @@ use crate::jpdl::DriversLicenseController;
 use crate::jprc::ResidenceCardController;
 use crate::passport::PassportController;
 use crate::piv::PivController;
-use crate::mynamenkyo::MynaMenkyoController;
+use crate::jpdlmnc::MynaMenkyoController;
 use crate::transport::WebUsbReader;
 use crate::mock::MockSmartCard;
 use crate::reader::CardReader;

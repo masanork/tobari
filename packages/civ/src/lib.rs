@@ -11,7 +11,7 @@ pub mod passport_verify;
 pub mod piv;
 pub mod thai;
 pub mod mykad;
-pub mod mynamenkyo;
+pub mod jpdlmnc;
 pub mod eu_eid;
 pub mod reader;
 pub mod native_reader;
@@ -31,7 +31,7 @@ pub use jprc::ResidenceCardController;
 pub use passport::PassportController;
 pub use thai::ThaiController;
 pub use mykad::MyKadController;
-pub use mynamenkyo::MynaMenkyoController;
+pub use jpdlmnc::MynaMenkyoController;
 pub use reader::CardReader;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_reader::PcscReader;
