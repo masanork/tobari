@@ -6,7 +6,7 @@ pub mod jprc;
 pub mod piv;
 pub mod thai;
 pub mod mykad;
-pub mod mynamenkyo;
+pub mod jpdlmnc;
 
 use std::collections::HashMap;
 use crate::apdu::{file_ids, ApduCommand};
@@ -18,7 +18,7 @@ pub use self::jprc::ResidenceCardBackend;
 pub use self::piv::PivBackend;
 pub use self::thai::ThaiBackend;
 pub use self::mykad::MyKadBackend;
-pub use self::mynamenkyo::MynaMenkyoBackend;
+pub use self::jpdlmnc::MynaMenkyoBackend;
 
 pub struct MockSmartCard {
     current_ap_aid: Option<Vec<u8>>,
