@@ -233,6 +233,24 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_ber_tlv_truncated() {
+        assert!(parse_ber_tlv(&[0x1F]).is_err()); // Multibyte tag prefix but no data
+        assert!(parse_ber_tlv(&[0x01, 0x81]).is_err()); // Multi-length but no data
+    }
+
+    #[test]
+    fn test_parse_ber_tlv_recursive() {
+        // Tag 0x30 (Sequence), Len 5, Value [Tag 0x01, Len 1, Val 0xAA, Tag 0x02, Len 0]
+        let data = [0x30, 0x05, 0x01, 0x01, 0xAA, 0x02, 0x00];
+        let tlvs = parse_ber_tlv(&data).unwrap();
+        assert_eq!(tlvs.len(), 1);
+        assert_eq!(tlvs[0].tag, 0x30);
+        assert_eq!(tlvs[0].children.len(), 2);
+        assert_eq!(tlvs[0].children[0].tag, 0x01);
+        assert_eq!(tlvs[0].children[1].tag, 0x02);
+    }
+
+    #[test]
     fn test_mrz_check_digit() {
         assert_eq!(MrzUtils::calculate_check_digit("12345678"), b'8');
     }

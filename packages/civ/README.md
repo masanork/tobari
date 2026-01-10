@@ -17,10 +17,15 @@ It is designed to be the foundational "driver layer" for building Digital Identi
 | Card Type | Region | Standard | Features | Verification |
 |---|---|---|---|---|
 | **JPKI (My Number Card)** | 🇯🇵 Japan | ISO 7816-4 (APDU) | Auth, Sign, Face Photo, MyNumber | ✅ |
-| **Driver's License (JPDL)** | 🇯🇵 Japan | NPA Spec (ISO 7816-4) | Common Data, PIN Verify, Photo | ✅ (Hash/Sig) |
-| **Residence Card** | 🇯🇵 Japan | ISO 7816-4 (APDU) | Address, Period of Stay | ✅ |
-| **ePassport** | 🌏 Global | ICAO 9303 | BAC (Basic Access Control), PACE | ✅ (Passive Auth) |
+| **Driver's License (JPDL)** | 🇯🇵 Japan | NPA Spec (ISO 7816-4) | Common Data, PIN Verify, Photo | ⚠️ *(Partial)* |
+| **MyNa-Menkyo** | 🇯🇵 Japan | NPA Spec (Modified) | License Info on MyNumber Card | ⚠️ *(Untested)* |
+| **Residence Card** | 🇯🇵 Japan | ISO 7816-4 (APDU) | Address, Period of Stay | ⚠️ *(Partial)* |
+| **ePassport** | 🌏 Global | ICAO 9303 | BAC (Basic Access Control), PACE | ⚠️ *(Partial)* |
+| **Thai National ID** | 🇹🇭 Thailand | Custom APDU | Personal Info, Photo | ⚠️ *(Untested)* |
+| **MyKad** | 🇲🇾 Malaysia | Custom APDU | Personal Info, Photo, Fingerprint | ⚠️ *(Untested)* |
 | **PIV (Gov ID)** | 🇺🇸 USA | FIPS 201 | Auth, Sign | 🚧 |
+
+> **Note**: Currently, only **JPKI (My Number Card)** has been extensively verified with physical cards. Other card types (Driver's Licenses, Passports, etc.) are implemented based on specifications and tested against **Mock Cards**, but real hardware verification is still in progress or insufficient. Contributions and testing reports are welcome!
 
 ## 📦 Installation
 
@@ -128,7 +133,11 @@ civ jpki retries
 - **[Identity Scheme Analysis](docs/IDENTITY_SCHEME_ANALYSIS.md)**: Deep dive into global ID architectures (RSA vs ECC vs PQC).
 - **[JPKI Spec](docs/jpki.md)**: Details on Japanese Public Key Infrastructure.
 - **[JPDL Spec](docs/jpdl.md)**: Japanese Driver's License structure.
+- **[MyNa-Menkyo Spec](docs/jpdlmnc.md)**: My Number Driver's License structure.
+- **[JPRC Spec](docs/jprc.md)**: Japanese Residence Card structure.
 - **[Passport Spec](docs/icao9303.md)**: ePassport (ICAO 9303) implementation details.
+- **[Thai ID Spec](docs/thai.md)**: Thai National ID Card structure.
+- **[MyKad Spec](docs/mykad.md)**: Malaysian Identity Card structure.
 
 ## 🤝 Contributing
 

@@ -481,6 +481,23 @@ mod tests {
 
         assert!(matches!(err, CivError::SecureMessagingError(_)));
     }
+
+    #[test]
+    fn test_sm_unpad_error() {
+        let bad_data = vec![0x00, 0x00, 0x00]; // No 0x80
+        assert!(unpad_iso9797_m2(&bad_data).is_err());
+    }
+
+    #[test]
+    fn test_sm_parse_tlv_error() {
+        let bad_tlv = vec![0x87, 0x82, 0xFF, 0xFF, 0x00]; // Length claims massive but data short
+        assert!(parse_tlv(&bad_tlv).is_err());
+    }
+
+    #[test]
+    fn test_sm_invalid_key_len() {
+        assert!(AesSecureMessaging::new(&[0u8; 10], &[0u8; 10], 0).is_err());
+    }
 }
 
 // Internal Helper Functions
