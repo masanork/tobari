@@ -93,6 +93,19 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
     }
 }
 
+// Utility to recursively unwrap Tobari @value metadata
+function cleanData(v: any): any {
+    if (v === null || v === undefined) return v;
+    if (typeof v === 'object') {
+        if (v["@value"] !== undefined) return cleanData(v["@value"]);
+        if (Array.isArray(v)) return v.map(cleanData);
+        const res: any = {};
+        for (const key in v) res[key] = cleanData(v[key]);
+        return res;
+    }
+    return v;
+}
+
 function renderWelcome() {
     injectGlobalStyles();
     document.body.innerHTML = `
