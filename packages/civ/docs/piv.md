@@ -72,3 +72,14 @@ Used for SSH / mTLS.
 3. **GEN AUTH** (`00 87 <Alg> 9A`) with Dynamic Auth Template (`7C`).
    - Input: Challenge / Hash.
    - Output: Signature.
+
+## 7. Verification Implementation (Rust)
+The `PivController` now supports high-level user authentication:
+- **`authenticate_user(pin)`**:
+  1. Selects PIV App.
+  2. Verifies PIN.
+  3. Reads Authentication Certificate (Tag `5F C1 05`).
+  4. Parses the X.509 certificate to extract the Public Key (RSA or ECC P-256).
+  5. Generates a random 32-byte challenge.
+  6. Signs the challenge using the card's private key (`GEN AUTH`).
+  7. Verifies the signature against the extracted public key.

@@ -1,27 +1,49 @@
 use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CitizenIdentity {
-    /// Full Name
+    /// Full Name (Display Name)
     pub full_name: String,
+    /// Surname / Family Name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surname: Option<String>,
+    /// Given Names
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub given_names: Option<String>,
     /// Name in Kana (Japanese specific)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub full_name_kana: Option<String>,
+    
     /// Standardized Address
-    pub address: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
     /// Birth Date (ISO 8601: YYYY-MM-DD)
     pub birth_date: String,
-    /// Gender (1: Male, 2: Female, 9: Not specified)
+    /// Gender (1: Male, 2: Female, 9: Not specified, or ICAO "M"/"F"/"<")
     pub gender: String,
+    
     /// Identity Number (My Number, License No, Passport No, etc.)
     pub identity_number: String,
     /// Card Type (JPKI, DriverLicense, Passport, etc.)
     pub card_type: String,
+    /// Issuing Authority (Country Code or Agency)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issuing_authority: Option<String>,
     /// Expiration Date
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expiration_date: Option<String>,
+    
+    /// Face Photo Data (JPEG/JP2/PNG)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photo_data: Option<Vec<u8>>,
+
     /// Result of Passive Authentication (PA)
     pub verified: bool,
+
+    /// Extended Attributes (Country/Card specific)
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub attributes: HashMap<String, String>,
 }
 
 #[async_trait::async_trait]

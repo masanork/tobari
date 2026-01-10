@@ -239,16 +239,22 @@ impl<R: CardReader> IdentityController for ResidenceCardController<R> {
 
     async fn read_identity(&mut self) -> Result<CitizenIdentity> {
         let info = self.read_df2_info().await?;
+        
         Ok(CitizenIdentity {
-            full_name: "".to_string(), // Name is in DF1
+            full_name: "Unknown".to_string(), // Name not available in DF2
+            surname: None,
+            given_names: None,
             full_name_kana: None,
-            address: info.address,
-            birth_date: "".to_string(), // DOB is in DF1
+            address: Some(info.address),
+            birth_date: "1900-01-01".to_string(),
             gender: "9".to_string(),
-            identity_number: "".to_string(),
+            identity_number: "Unknown".to_string(), // Card number not available in DF2
             card_type: "ResidenceCard".to_string(),
-            expiration_date: Some(info.permit_global), // Actually permit date
-            verified: self.last_verified,
+            issuing_authority: Some("JPN".to_string()),
+            expiration_date: None,
+            photo_data: None,
+            verified: false,
+            attributes: std::collections::HashMap::new(),
         })
     }
 }

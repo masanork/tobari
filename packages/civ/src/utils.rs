@@ -135,10 +135,15 @@ impl MrzUtils {
 
         // Line 1: [P][Type][IssuingState(3)][Names(39)]
         let names_part = &line1[5..44];
+        let parts: Vec<&str> = names_part.split("<<").collect();
+        let surname = parts.get(0).map(|s| s.replace("<", " ").trim().to_string());
+        let given_names = parts.get(1).map(|s| s.replace("<", " ").trim().to_string());
+        
         let full_name = names_part.replace("<<", ", ").replace("<", " ").trim_matches(|c| c == ' ' || c == ',').to_string();
 
         // Line 2: [PassportNo(9)][Check(1)][Nationality(3)][DOB(6)][Check(1)][Gender(1)][Expiry(6)][Check(1)][Optional(14)][Check(1)][Check(1)]
         let passport_no = line2[0..9].replace("<", "");
+        let nationality = &line2[10..13];
         let dob_raw = &line2[13..19];
         let gender_raw = &line2[20..21];
         let expiry_raw = &line2[21..27];
@@ -146,21 +151,26 @@ impl MrzUtils {
         let birth_date = DateUtils::parse_yymmdd(dob_raw).unwrap_or_else(|_| dob_raw.to_string());
         let expiration_date = DateUtils::parse_yymmdd(expiry_raw).unwrap_or_else(|_| expiry_raw.to_string());
         let gender = match gender_raw {
-            "M" => "1",
-            "F" => "2",
-            _ => "9",
+            "M" => "Male",
+            "F" => "Female",
+            _ => "Unspecified",
         }.to_string();
 
         Ok(super::models::CitizenIdentity {
             full_name,
+            surname,
+            given_names,
             full_name_kana: None,
-            address: "".to_string(),
+            address: None,
             birth_date,
             gender,
             identity_number: passport_no,
             card_type: "Passport".to_string(),
+            issuing_authority: Some(nationality.to_string()),
             expiration_date: Some(expiration_date),
+            photo_data: None,
             verified: false,
+            attributes: std::collections::HashMap::new(),
         })
     }
 }
