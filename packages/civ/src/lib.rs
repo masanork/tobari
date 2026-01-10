@@ -8,6 +8,8 @@ pub mod jpdl;
 pub mod jprc;
 pub mod passport;
 pub mod passport_verify;
+pub mod piv;
+pub mod eu_eid;
 pub mod reader;
 pub mod native_reader;
 pub mod demo_reader;

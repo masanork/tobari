@@ -297,24 +297,27 @@ impl<R: CardReader> IdentityController for DriversLicenseController<R> {
             self.verify_pin1(&pin).await?;
         }
 
-        let info = self.read_common_data().await?;
-        let formatted_dob = crate::utils::DateUtils::parse_japanese_era(&info.birth_date).unwrap_or(info.birth_date);
-        let formatted_expire = crate::utils::DateUtils::parse_japanese_era(&info.expire_date).unwrap_or(info.expire_date);
-
-        Ok(CitizenIdentity {
-            full_name: info.name,
-            full_name_kana: Some(info.name_kana),
-            address: info.address,
-            birth_date: formatted_dob,
-            gender: "9".to_string(), 
-            identity_number: info.license_number,
-            card_type: "DriverLicense".to_string(),
-            expiration_date: Some(formatted_expire),
-            verified: self.last_verified,
-        })
-    }
-}
-
+                let info = self.read_common_data().await?;
+        
+                Ok(CitizenIdentity {
+                    full_name: info.name,
+                    surname: None,
+                    given_names: None,
+                    full_name_kana: Some(info.name_kana),
+                    address: Some(info.address),
+                    birth_date: info.birth_date,
+                    gender: "9".to_string(), // Gender not available in EF01 Common Data
+                    identity_number: info.license_number,
+                                card_type: "DriversLicense".to_string(),
+                                issuing_authority: Some("JPN".to_string()),
+                                expiration_date: Some(info.expire_date),
+                                photo_data: None, // Requires PIN2
+                                verified: false,
+                    
+                    attributes: std::collections::HashMap::new(),
+                })
+            }
+        }
 #[cfg(test)]
 mod tests {
     use super::*;

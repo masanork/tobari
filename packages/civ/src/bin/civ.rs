@@ -219,12 +219,19 @@ async fn run_unified_id<R: CardReader + 'static>(mut reader: R, pin: Option<Stri
         println!("--- Identity Information ---");
         println!("Card Type: {}", identity.card_type);
         println!("Name:      {}", identity.full_name);
+        if let Some(surname) = identity.surname { println!("Surname:   {}", surname); }
+        if let Some(given) = identity.given_names { println!("Given:     {}", given); }
         if let Some(kana) = identity.full_name_kana { println!("Kana:      {}", kana); }
         println!("DOB:       {}", identity.birth_date);
-        println!("Address:   {}", identity.address);
+        if let Some(addr) = identity.address { println!("Address:   {}", addr); }
+        println!("Gender:    {}", identity.gender);
         println!("ID Number: {}", identity.identity_number);
+        if let Some(iss) = identity.issuing_authority { println!("Issuer:    {}", iss); }
         if let Some(exp) = identity.expiration_date { println!("Expires:   {}", exp); }
         println!("Verified:  {}", if identity.verified { "YES" } else { "NO" });
+        if !identity.attributes.is_empty() {
+            println!("Attributes: {:?}", identity.attributes);
+        }
     }
 
     Ok(())

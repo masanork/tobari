@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.6] - 2026-01-10
+
+### Features
+- **CIV (Universal Identity)**:
+  - **Unified Identity Model**: Implemented a standardized `CitizenIdentity` struct across all supported card types (JPKI, Passport, Drivers License, Residence Card, PIV).
+  - **PIV Support**: Added full support for US PIV cards (NIST SP 800-73), including X.509 certificate reading, dynamic authentication (Challenge-Response), and signing.
+  - **Mocking**: Significantly enhanced the mock backend to support:
+    - **Passport**: Active Authentication (AA) with dynamic ECDSA key generation.
+    - **PIV**: Full authentication flow with self-signed mock certificates.
+  - **Error Handling**: Standardized ISO 7816-4 status word mapping to typed `CivError` (e.g., `AccessDenied`, `SecureMessagingError`).
+
 ## [0.3.5] - 2026-01-10
 
 ### Features

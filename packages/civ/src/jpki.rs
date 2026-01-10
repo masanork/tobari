@@ -293,14 +293,19 @@ impl<R: CardReader> IdentityController for JpkiController<R> {
 
         Ok(CitizenIdentity {
             full_name: info.name,
-            full_name_kana: None,
-            address: info.address,
+            surname: None, // JPKI doesn't explicitly separate them in basic 4 info
+            given_names: None,
+            full_name_kana: None, // Available in Attributes AP but not Basic 4 AP
+            address: Some(info.address),
             birth_date: formatted_dob,
             gender: info.gender,
             identity_number: my_number,
-            card_type: "JPKI".to_string(),
+            card_type: "MyNumberCard".to_string(),
+            issuing_authority: Some("JPN".to_string()),
             expiration_date: None,
-            verified: self.last_verified,
+            photo_data: None, // Requires PIN B and separate reading
+            verified: false, // Updated by verify()
+            attributes: std::collections::HashMap::new(),
         })
     }
 }
