@@ -1,11 +1,17 @@
 # Build artifacts
 node_modules
 dist
+target
+pkg
 .DS_Store
 *.cose
 *.html
 *.wbn
-tscofig.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Fonts
+shared/fonts/*.ttf
+shared/fonts/*.woff2
 
 # Personal encryption keys and locked documents
 recipient-pubkey.json
