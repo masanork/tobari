@@ -35,8 +35,26 @@ async function main() {
     fs.writeFileSync(path.resolve(__dirname, 'issuer-key.json'), JSON.stringify(pubKeyJwk, null, 2));
     console.log("Saved Issuer Public Key to issuer-key.json");
 
+    const encrypt = process.argv.includes('--encrypt');
+    let encryptionPublicKey: Uint8Array | undefined;
+
+    if (encrypt) {
+        console.log("Encryption enabled. Generating PoC Demo Key (Salt: 'tobari')...");
+        const { deriveHPKEKeyPair } = await import("../../packages/crypto/src/hpke");
+        
+        const demoSecret = new TextEncoder().encode("tobari-demo-secret-key-32-bytes-long!!");
+        const keyPair = await deriveHPKEKeyPair(demoSecret);
+        
+        if (!keyPair || !keyPair.publicKey) {
+            throw new Error("Failed to derive HPKE KeyPair from WASM");
+        }
+        
+        encryptionPublicKey = keyPair.publicKey;
+    }
+
     const binary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
-        kid: "iss-local-p384"
+        kid: "iss-local-p384",
+        encryptionPublicKey
     });
 
     const outputPath = path.resolve(__dirname, 'juminhyo.cose');

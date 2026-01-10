@@ -32,26 +32,47 @@ async function buildViewer() {
 
     // 1. Extract ALL text for total font subsetting
     console.log("Extracting all possible text characters for subsetting...");
-    const doc = decode(tobariBinary);
-    const { issuerSigned, fields } = doc;
-    const issuerAuth = decode(issuerSigned.issuerAuth);
-    const mso = decode(issuerAuth[2]);
-
-    const namespace = mso.docType;
-    const items = issuerSigned.nameSpaces[namespace] || [];
-
-    // Collect text from data, exposures (disclosures), and the embedded layout template
+    
     let dataText = "";
-    const { decode: decodeCbor } = await import('@tobari/crypto/cbor');
+    let fields: any[] = [];
 
-    // Extract text from all IssuerSignedItems
-    for (const itemBytes of items) {
+    // Check if it's an encrypted JSON wrapper
+    let isEncrypted = false;
+    try {
+        const json = JSON.parse(tobariBinary.toString());
+        if (json.tobari_enc === true) {
+            isEncrypted = true;
+            console.log("Encrypted payload detected. Skipping content subsetting.");
+        }
+    } catch (e) {
+        // Assume raw CBOR
+    }
+
+    if (!isEncrypted) {
         try {
-            const item = decodeCbor(itemBytes);
-            // [digestID, random, key, value]
-            dataText += collectAllText(item[3]);
+            const doc = decode(tobariBinary);
+            fields = doc.fields;
+            const { issuerSigned } = doc;
+            const issuerAuth = decode(issuerSigned.issuerAuth);
+            const mso = decode(issuerAuth[2]);
+
+            const namespace = mso.docType;
+            const items = issuerSigned.nameSpaces[namespace] || [];
+
+            const { decode: decodeCbor } = await import('@tobari/crypto/cbor');
+
+            // Extract text from all IssuerSignedItems
+            for (const itemBytes of items) {
+                try {
+                    const item = decodeCbor(itemBytes);
+                    // [digestID, random, key, value]
+                    dataText += collectAllText(item[3]);
+                } catch (e) {
+                    console.warn("Failed to parse item during subsetting:", e);
+                }
+            }
         } catch (e) {
-            console.warn("Failed to parse item during subsetting:", e);
+            console.warn("Failed to parse CBOR for subsetting:", e);
         }
     }
 
@@ -131,6 +152,8 @@ async function buildViewer() {
         entrypoints: [path.resolve('packages/codec/src/viewer-client.ts')],
         minify: true,
         target: 'browser',
+        naming: '[name].[ext]',
+        // Inline all dependencies
     });
     const bundledJs = await buildResult.outputs[0].text();
 
@@ -140,8 +163,25 @@ async function buildViewer() {
         return Buffer.from(compressed).toString('base64');
     };
 
-    const compressedCss = gzipAndBase64(fontCss);
-    const compressedJs = gzipAndBase64(bundledJs);
+        const compressedCss = gzipAndBase64(fontCss);
+
+        const compressedJs = gzipAndBase64(bundledJs);
+
+    
+
+        // Read and Inline WASM binary
+
+        const wasmPath = path.resolve('packages/crypto-wasm/pkg/tobari_crypto_wasm_bg.wasm');
+
+        let wasmBase64 = "";
+
+        if (fs.existsSync(wasmPath)) {
+
+            wasmBase64 = fs.readFileSync(wasmPath).toString('base64');
+
+        }
+
+    
 
     // Try to load issuer-key.json from the same directory as the input file
     const keyPath = path.resolve(path.dirname(tobariBinaryPath), 'issuer-key.json');
@@ -154,9 +194,10 @@ async function buildViewer() {
         console.warn("No issuer-key.json found. Signature verification will be skipped in viewer.");
     }
 
-    // Create Data URI for the CBOR payload
+    // Create Data URI for the payload
     const base64Data = tobariBinary.toString('base64');
-    const dataUri = `data:application/cbor;base64,${base64Data}`;
+    const mimeType = isEncrypted ? 'application/json' : 'application/cbor';
+    const dataUri = `data:${mimeType};base64,${base64Data}`;
 
     // Bootstrap script that inflates and executes
     const scriptBlock = `<script type="module">
@@ -186,12 +227,21 @@ async function inflate(b64) {
     // 3. Init Tobari
     window.__TOBARI_DATA__ = "${dataUri}";
     window.__ISSUER_KEY__ = ${issuerKeyJson};
+    window.__TOBARI_WASM__ = "${wasmBase64}";
     
-    // Wait for module execution
+    let attempts = 0;
     const checkInit = setInterval(() => {
+        attempts++;
         if (window.initTobari) {
             clearInterval(checkInit);
-            window.initTobari(window.__TOBARI_DATA__, window.__ISSUER_KEY__);
+            window.initTobari(window.__TOBARI_DATA__, window.__ISSUER_KEY__).catch(err => {
+                console.error("Tobari Init Error:", err);
+                document.body.innerHTML = '<div style="color:red; padding:20px;">Init Error: ' + err + '</div>';
+            });
+        }
+        if (attempts > 500) {
+            clearInterval(checkInit);
+            document.body.innerHTML = '<div style="color:red; padding:20px;">Fatal: Tobari initialization timed out.</div>';
         }
     }, 10);
 })();

@@ -28,13 +28,20 @@ export async function generateSignedTobari(
     schemaYaml: string,
     data: any,
     privateKey: CryptoKey,
-    options: { kid?: string; alg?: number; devicePublicKey?: CryptoKey; useLtvMock?: boolean } = {}
+    options: {
+        kid?: string;
+        alg?: number;
+        devicePublicKey?: CryptoKey;
+        useLtvMock?: boolean;
+        encryptionPublicKey?: Uint8Array; // HPKE Public Key
+    } = {}
 ): Promise<Uint8Array> {
     const schema = yaml.load(schemaYaml) as any;
     // Use the schema ID itself as the mdoc Namespace
     const namespace = schema.id;
 
     let devicePublicKey = options.devicePublicKey;
+    // ... (rest of device key logic remains same)
 
     if (!devicePublicKey) {
         const deviceKeyPath = "device-key.json";
@@ -108,5 +115,23 @@ export async function generateSignedTobari(
     };
 
     const { encodeCanonical } = await import('@tobari/crypto/cbor');
-    return encodeCanonical(doc);
+    const encoded = encodeCanonical(doc);
+
+    // 4. Optional Encryption (HPKE)
+    if (options.encryptionPublicKey) {
+        console.log("Applying HPKE Encryption to payload...");
+        const { encryptHPKE } = await import('@tobari/crypto/hpke');
+        const info = new TextEncoder().encode("tobari-storage-v1");
+        const ciphertext = await encryptHPKE(options.encryptionPublicKey, encoded, info);
+
+        // Wrap in a simple JSON for the demo viewer to detect encryption
+        const wrapper = {
+            tobari_enc: true,
+            alg: "HPKE-P256-SHA256-AES128GCM",
+            data: Buffer.from(ciphertext).toString('base64')
+        };
+        return new TextEncoder().encode(JSON.stringify(wrapper));
+    }
+
+    return encoded;
 }
