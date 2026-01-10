@@ -1,138 +1,136 @@
 # Tobari (帳)
 
 > **Designing trust in the agentic era. Connecting people, data, and silos.**
+> *Building silent trust in every digital document.*
 
 Tobari is a comprehensive **Trust Infrastructure Toolkit** for the AI Agent era. It bridges the gap between legacy identity systems (Physical ID cards, Paper documents) and the future of autonomous agents (ZKP, Verifiable Credentials, mdoc).
 
----
+Tobari is a digital certificate framework that imparts strong authenticity and machine readability while maintaining the "human-readable" experience of existing documents. It reconciles the trust placed in "completed forms" (like PDF or paper) with the engineering need for "programmatic verification and parsing" within a single, self-contained HTML file.
 
-Tobari は、既存の「人間向けドキュメント」の体験を維持したまま、強力な真正性と機械可読性を付与するデジタル証明書フレームワークです。
-
-PDF や紙の書類が持つ「完成された様式」への信頼感と、現代のエンジニアリングが必要とする「プログラムによる自動検証・解析」を、単一の自己完結型 HTML ファイルで両立させます。また、**civ (Citizen Identity Verification)** ライブラリを通じて、マイナンバーカードやパスポートなどの公的個人認証基盤と、Web/AIエージェントの世界をセキュアに接続します。
+Through the **civ (Citizen Identity Verification)** library, it also securely connects public personal authentication infrastructures (like My Number Cards and Passports) with the world of Web and AI agents.
 
 ## Core Philosophy
 
-- **静かな浸透**: 利用者は「綺麗な Web ドキュメント」を受け取る感覚で、裏側にある P-384 署名や高度な暗号技術を意識する必要はありません。
-- **データ・ファースト (Schema-driven)**: 特定の帳票レイアウトに縛られず、データの構造そのものに真正性を付与。Web/モバイルに最適化された閲覧ビューを自動生成します。
-- **検証者ファースト**: 受取人が特別なソフトウェアなしに、データの真正性を検証でき、かつ生のデータをシステムに直接取り込める「実務上のポータビリティ」を最優先します。
+- **Silent Adoption**: Users perceive it merely as a "beautiful Web document," without needing to be conscious of the underlying P-384 signatures or advanced cryptography.
+- **Data First (Schema-driven)**: Authenticity is granted to the data structure itself, not bound to a specific layout. Responsive viewing views are automatically generated.
+- **Verifier First**: Prioritizes "practical portability," allowing recipients to verify authenticity without special software and import raw data directly into their systems.
 
 ## Key Features
 
-1. **SD-CBOR / Selective Disclosure**: 
-   署名の整合性を保ったまま、特定の項目（マイナンバー、生年月日など）を物理的に消去して提出可能。プライバシー保護と真正性の両立。
-2. **Universal Viewer (スキーマ駆動)**:
-   CDDL/YAML スキーマからレスポンシブなビューを自動構成。特定の帳票フォーマットへの依存を排除し、アクセシビリティと読みやすさを向上。
+1. **SD-CBOR / Selective Disclosure**:
+   Submit documents with specific fields (e.g., My Number, Date of Birth) physically removed while maintaining signature integrity. Balances privacy and authenticity.
+2. **Universal Viewer (Schema-driven)**:
+   Automatically constructs responsive views from CDDL/YAML schemas. Eliminates dependency on specific form formats, improving accessibility and readability.
 3. **P-384 / ES384 Signature**:
-   最新の推奨アルゴリズムである P-384 (ECDSA) を標準採用し、長期に渡る真正性を担保。
+   Standardizes on P-384 (ECDSA), the latest recommended algorithm, to ensure long-term authenticity.
 4. **Font Subsetting & IVS Support**:
-   住民票などで不可欠な異体字（IVS）に対応。IPA MJ明朝から必要なグリフのみを抽出して埋め込み、数十KBで完璧な描画を実現。
+   Supports Ideographic Variation Sequences (IVS), essential for Japanese names. Extracts and embeds only necessary glyphs from IPA MJ Mincho, achieving perfect rendering in just a few dozen KB.
 5. **Holder Binding (Device Signature)**:
-   ISO 18013-5 (mdoc) および OID4VP に準拠したデバイス認証をサポート。提示されたデータが正当な所有者から来たものであることを暗号学的に保証します。
-   [詳細ドキュメント: docs/HOLDER_BINDING.md](docs/HOLDER_BINDING.md)
+   Supports device authentication compliant with ISO 18013-5 (mdoc) and OID4VP. Cryptographically guarantees that the presented data comes from the legitimate owner.
+   [Read more: docs/HOLDER_BINDING.md](docs/HOLDER_BINDING.md)
 6. **Zero-Knowledge Proofs (ZKP)**:
-   BBS+ 署名による「非連結な証明（Unlinkability）」や、パスポートの生年月日を隠したまま「18歳以上であること」のみを証明する ZK 回路（Circom）をサポート。
+   Supports ZK circuits (Circom) and BBS+ signatures for "Unlinkable Proofs" and proving "Over 18" without revealing birth dates.
 
 ## Advanced Privacy & Web3 Compliance
 
-Tobari は、単なるデジタル証明書を超えて、Web3 や金融規制（FATF トラベルルール）に対応するための高度なプライバシー機能を備えています。
+Tobari goes beyond simple digital certificates, equipped with advanced privacy features to support Web3 and financial regulations (FATF Travel Rule).
 
 ### SCAC: Crypto Account Ownership Credential
-[FATF アンホステッド・ウォレット規制](docs/FATF_ANALYSIS.md)に対応するための証明書モデル。本人確認済みの個人と、自己管理型ウォレット（Ethereum, Solana 等）の紐付けを暗号学的に証明します。
+A credential model to comply with [FATF Unhosted Wallet Regulations](docs/FATF_ANALYSIS.md). It cryptographically binds a verified individual to self-custody wallets (Ethereum, Solana, etc.).
 
 ### ZKP Examples
-- **Passport Age Verification**: パスポート番号を秘匿したまま、年齢要件のみを証明する ZK 回路。
-- **BBS+ Unlinkability**: 同じ証明書を複数回提示しても、提示先が同一人物だと特定できない「追跡不可能な証明」。
+- **Passport Age Verification**: Proving age requirements without revealing the passport number.
+- **BBS+ Unlinkability**: "Untraceable proofs" where presenting the same credential multiple times does not link to the same identity.
 
-これらのデモは以下のコマンドで実行できます：
+Run these demos with:
 ```bash
-bun run demo:zkp:passport  # パスポート ZK 入力生成
-bun run demo:zkp:bbs       # BBS+ 非連結証明デモ
-bun run demo:scac          # SCAC 発行・検証デモ
+bun run demo:zkp:passport
+bun run demo:zkp:bbs
+bun run demo:scac
 ```
 
 ## Project Structure
 
-- `packages/codec`: YAML スキーマからの CDDL 生成、署名済みバイナリ（.cose）の生成、HTML ビューアのバンドル。
-- `packages/crypto`: P-384 対応の COSE 署名・検証コア実装。
-- `packages/mcp-server`: AI エージェント連携用インターフェース (Model Context Protocol)。
-- `packages/signer`: Tauri ベースの WebAuthn/FIDO 署名コンパニオンアプリ。PCの内蔵認証器（Touch ID, Windows Hello）を利用して署名します。
-- `examples/juminhyo`: 住民票（世帯連記式）をモデルとした実装例。SD-CBORによる選択的開示のデモ。
-- `examples/ininjo`: 電子委任状をモデルとした実装例。ネストされたデータ構造の表現と、ビューアによる構造化表示のデモ。
+- `packages/codec`: CDDL generation from YAML, signed binary (.cose) generation, HTML viewer bundling.
+- `packages/civ`: Universal Identity Library for manipulating smart cards (JPKI, Driver's License, Passport/ICAO).
+- `packages/crypto`: P-384 COSE signing/verification core implementation.
+- `packages/mcp-server`: Model Context Protocol interface for AI Agent integration.
+- `packages/signer`: Tauri-based companion app for WebAuthn/FIDO signing using built-in authenticators (Touch ID, Windows Hello).
+- `examples`: Implementation references (Juminhyo, Ininjo) demonstrating SD-CBOR and nested structures.
 
 ## Documentation
 
-詳細なドキュメントは `docs/` ディレクトリにあります：
+Full documentation is available at [**https://masanork.github.io/tobari/**](https://masanork.github.io/tobari/) or in the `docs/` directory.
 
-- [アーキテクチャ概要](docs/ARCHITECTURE.md)
-- [MCP サーバー (AI 連携)](docs/MCP_SERVER.md)
-- [ホルダーバインディング (デバイス署名)](docs/HOLDER_BINDING.md)
-- [スキーマ仕様](docs/SCHEMA_SPEC.md)
-- [CLI ツール リファレンス](docs/CLI_TOOLS.md)
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [MCP Server (AI Integration)](docs/MCP_SERVER.md)
+- [Holder Binding](docs/HOLDER_BINDING.md)
+- [Schema Specification](docs/SCHEMA_SPEC.md)
+- [CLI Tools Reference](docs/CLI_TOOLS.md)
 
-## Quick Start (Demo Generation)
+## Quick Start
 
-Tobari は高精度な日本語描画のために **IPAmj明朝** を使用します。ライセンスの都合上、フォントファイルはリポジトリに含まれていません。
+Tobari uses **IPAmj Mincho** for high-precision Japanese text rendering. Due to license restrictions, the font file is not included in the repository.
 
-1. **フォントの準備**:
-   [IPAのサイト](https://moji.ipa.go.jp/mojikiban/mjmincho/)から `ipamjm.ttf` をダウンロードし、以下のパスに配置してください：
+1. **Prepare Font**:
+   Download `ipamjm.ttf` from the [IPA Website](https://moji.ipa.go.jp/mojikiban/mjmincho/) and place it at:
    `shared/fonts/ipamjm.ttf`
 
-2. **依存関係のインストール**:
+2. **Install Dependencies**:
    ```bash
    bun install
    ```
 
-3. **デモ・バリデーターの生成**:
+3. **Build Demo & Verifier**:
    ```bash
    bun run build
    ```
-   ※ `bun run build:examples` でデモデータのみをビルドすることも可能です。
 
-## 生成物の確認
+## Generated Artifacts
 
-## 住民票 (Juminhyo)
-- `examples/juminhyo/juminhyo.html` -> 利用者向けビューア（署名済み原本）
-- `examples/juminhyo/juminhyo.cose` -> 署名済み原本データ（COSEファイル）
+### Resident Record (Juminhyo)
+- `examples/juminhyo/juminhyo.html` -> User Viewer (Signed Original)
+- `examples/juminhyo/juminhyo.cose` -> Signed Data (COSE file)
 
-## 電子委任状 (Ininjo)
-- `examples/ininjo/ininjo.html` -> 利用者向けビューア（階層構造データ表示対応）
-  - ビューアは自己検証機能（署名およびハッシュ整合性チェック）を内包しています。
+### Electronic Power of Attorney (Ininjo)
+- `examples/ininjo/ininjo.html` -> User Viewer (Nested Data Structure)
 
-(各URLに ?debug=1 を付与することで、内部データ構造を確認できるデバッグモードが有効になります)
+*(Append `?debug=1` to the URL to enable debug mode and inspect internal data structures)*
 
-## Verification Tool
-- `examples/verifier.html` -> 事業者向け汎用検証ツール
+### Verifier
+- `examples/verifier.html` -> General-purpose verification tool for businesses.
 
 ## CLI Tools
 
-開発者やCI/CD環境向けに、コマンドラインツールを提供しています。
+Command-line tools are provided for developers and CI/CD environments.
 
-### Presentation (発行と提示)
+### Presentation (Issue & Present)
 
 ```bash
-# 1. 資格情報の発行 (Device Keyの生成と埋め込み)
+# 1. Issue Credential (Generate & Embed Device Key)
 bun run examples/juminhyo/gen-tobari.ts
 
-# 2. 提示データの作成 (Selective Disclosure & Holder Binding)
+# 2. Create Presentation (Selective Disclosure & Holder Binding)
 bun run present:cli examples/juminhyo/juminhyo.cose output_vp.cose \
-  --fields=世帯主氏名,交付年月日 \
+  --fields="世帯主氏名,交付年月日" \
   --nonce=12345 --audience=verifier.id --response-uri=https://verifier.id/cb
 ```
 
-### Verification (検証)
+### Verification
 
 ```bash
-# 原本データのデコードと署名検証
+# Decode Original Data & Verify Signature
 bun run verify:cli output_vp.cose pubkey.json
 ```
 
 ## Library Usage (TypeScript)
-独自のアプリケーションに検証ロジックを組み込む場合は、`@tobari/codec` の API を利用します。
+
+Use the `@tobari/codec` API to embed verification logic into your own applications.
 
 ```typescript
 import { verifyTobari } from '@tobari/codec';
 
-// .cose バイナリの検証
+// Verify .cose binary
 const result = await verifyTobari(binaryData, issuerPublicKey);
 
 if (result.isValid) {
@@ -140,12 +138,5 @@ if (result.isValid) {
 }
 ```
 
-## How it Works
-
-1. **Schema (YAML)**: `juminhyo.yaml` でフィールド定義と「どこを秘匿可能にするか（selective: true）」および表示上のヒント（primary, section）を定義します。
-2. **Data (YAML)**: `juminhyo-data.yaml` に実際のデータを記述します（Human-writable）。
-3. **Payload (CBOR/COSE)**: データをパッキングし、P-384 秘密鍵で署名。`.cose` ファイルとして出力。
-3. **Bundle (HTML)**: `.cose` バイナリ、閲覧ロジック、サブセットフォントを 1 つの HTML に集約。
-
 ---
-Produced by the Tobari Project - *Building silent trust in every digital document.*
+Produced by the Tobari Project.
