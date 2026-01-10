@@ -21,10 +21,11 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         if (issuerPublicKeyJwk) {
             try {
                 // Import the provided JWK
+                const namedCurve = issuerPublicKeyJwk.crv || "P-384";
                 const issuerKey = await crypto.subtle.importKey(
                     "jwk",
                     issuerPublicKeyJwk,
-                    { name: "ECDSA", namedCurve: "P-384" },
+                    { name: "ECDSA", namedCurve: namedCurve },
                     true,
                     ["verify"]
                 );
@@ -48,6 +49,7 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         const disclosedData = await revealMdocData(mso, items, namespace);
 
         currentDebugData = { doc, mso, revealed: disclosedData, isSignatureValid };
+        (window as any).currentDebugData = currentDebugData; // Expose for renderers
 
         // Render using the embedded template (if any) or auto-renderer
         render(doc, disclosedData, mso);
@@ -836,6 +838,29 @@ function renderStatement(data: any, fieldsMeta: any[], mso: any): string {
 }
 
 
+
+function safeDateString(val: any): string {
+    try {
+        if (!val) return '-';
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return String(val);
+        return d.toLocaleString();
+    } catch {
+        return String(val);
+    }
+}
+
+function safeIsoDate(val: any): string {
+    try {
+        if (!val) return '-';
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return '-';
+        return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+    } catch {
+        return '-';
+    }
+}
+
 function renderIninjo(data: any, mso: any): string {
     const getValue = (key: string) => {
         let val = data[key];
@@ -941,9 +966,14 @@ function renderIninjo(data: any, mso: any): string {
                         ${isSigValid ? '正常（改ざん等はありません）' : '検証失敗（署名の状態を確認してください）'}
                      </td></tr>
                      <tr><td style="padding: 6px 0; color: #555; font-weight: bold;">署名証明書</td><td style="padding: 6px 0;">${signerInfo}</td></tr>
-                     <tr><td style="padding: 6px 0; color: #555; font-weight: bold;">署名タイムスタンプ</td><td style="padding: 6px 0;">${new Date(mso.validityInfo.signed).toISOString().replace(/\.\d{3}Z$/, 'Z')}</td></tr>
+                     <tr><td style="padding: 6px 0; color: #555; font-weight: bold;">署名タイムスタンプ</td><td style="padding: 6px 0;">${safeIsoDate(mso.validityInfo.signed)}</td></tr>
                  </table>
             </div>
+
+            <footer style="margin-top: 60px; border-top: 1px dotted #ccc; padding-top: 20px; font-size: 10px; color: #999; text-align: center; font-family: sans-serif;">
+               This digital document is basically compliant with Digital Agency's Power of Attorney Schema.
+               <br>Signed at: ${safeDateString(mso.validityInfo.signed)}
+            </footer>
 
         </div>
     `;
