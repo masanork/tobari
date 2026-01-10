@@ -29,9 +29,9 @@ impl PassportBackend {
         let aa_pub_key = aa_key.verifying_key();
         let aa_spki = aa_pub_key.to_encoded_point(false).as_bytes().to_vec();
 
-        let dg15_content = der_wrap(0x30, &vec![
+        let dg15_content = der_wrap(0x30, &[
              der_wrap(0x30, &hex::decode("06072a8648ce3d020106082a8648ce3d030107").unwrap()), 
-             der_wrap(0x03, &vec![vec![0x00], aa_spki].concat()),
+             der_wrap(0x03, &[vec![0x00], aa_spki].concat()),
         ].concat());
         let dg15 = der_wrap(0x6F, &dg15_content);
 
@@ -65,22 +65,22 @@ impl PassportBackend {
         let mut hash_list = Vec::new();
         for (num, data) in dgs {
             let hash = Sha256::digest(&data);
-            let item = der_wrap(0x30, &vec![
-                der_wrap(0x02, &vec![num]), 
-                der_wrap(0x04, &hash.to_vec()), 
+            let item = der_wrap(0x30, &[
+                der_wrap(0x02, &[num]), 
+                der_wrap(0x04, &hash), 
             ].concat());
             hash_list.extend(item);
         }
-        let lds = der_wrap(0x30, &vec![
-            der_wrap(0x02, &vec![0x00]), 
+        let lds = der_wrap(0x30, &[
+            der_wrap(0x02, &[0x00]), 
             hex::decode("300d06096086480165030402010500").unwrap(), 
             der_wrap(0x30, &hash_list),
         ].concat());
         let lds_hash = Sha256::digest(&lds);
-        let signed_attrs_inner = vec![
-            der_wrap(0x30, &vec![
+        let signed_attrs_inner = [
+            der_wrap(0x30, &[
                 der_wrap(0x06, &hex::decode("2A864886F70D010904").unwrap()), 
-                der_wrap(0x31, &der_wrap(0x04, &lds_hash.to_vec())), 
+                der_wrap(0x31, &der_wrap(0x04, &lds_hash)), 
             ].concat())
         ].concat();
         let signed_attrs = der_wrap(0xA0, &signed_attrs_inner);
@@ -91,45 +91,45 @@ impl PassportBackend {
         let signature: EcdsaSignature = signing_key.sign(&verification_data);
         let sig_der = signature.to_der();
         let spki = verifying_key.to_encoded_point(false).as_bytes().to_vec();
-        let spki_der = der_wrap(0x30, &vec![
+        let spki_der = der_wrap(0x30, &[
              der_wrap(0x30, &hex::decode("06072a8648ce3d020106052b8104000a").unwrap()), 
-             der_wrap(0x03, &vec![vec![0x00], spki].concat()),
+             der_wrap(0x03, &[vec![0x00], spki].concat()),
         ].concat());
-        let tbs_cert = der_wrap(0x30, &vec![
-             der_wrap(0xA0, &der_wrap(0x02, &vec![0x02])), 
-             der_wrap(0x02, &vec![0x01]), 
+        let tbs_cert = der_wrap(0x30, &[
+             der_wrap(0xA0, &der_wrap(0x02, &[0x02])), 
+             der_wrap(0x02, &[0x01]), 
              der_wrap(0x30, &hex::decode("06082a8648ce3d040302").unwrap()), 
-             der_wrap(0x30, &vec![]), 
-             der_wrap(0x30, &vec![der_wrap(0x17, b"260101000000Z"), der_wrap(0x17, b"260101000000Z")].concat()), 
-             der_wrap(0x30, &vec![]), 
+             der_wrap(0x30, &[]), 
+             der_wrap(0x30, &[der_wrap(0x17, b"260101000000Z"), der_wrap(0x17, b"260101000000Z")].concat()), 
+             der_wrap(0x30, &[]), 
              spki_der,
         ].concat());
-        let dummy_cert = der_wrap(0x30, &vec![
+        let dummy_cert = der_wrap(0x30, &[
              tbs_cert,
              der_wrap(0x30, &hex::decode("06082a8648ce3d040302").unwrap()), 
-             der_wrap(0x03, &vec![0x00; 65]), 
+             der_wrap(0x03, &[0x00; 65]), 
         ].concat());
-        let encap_content = der_wrap(0x30, &vec![
+        let encap_content = der_wrap(0x30, &[
             der_wrap(0x06, &hex::decode("2A864886F70D010919").unwrap()), 
             der_wrap(0xA0, &der_wrap(0x04, &lds)), 
         ].concat());
-        let signer_info = der_wrap(0x30, &vec![
-            der_wrap(0x02, &vec![0x01]), 
-            der_wrap(0x30, &vec![der_wrap(0x30, &vec![]), der_wrap(0x02, &vec![0x01])].concat()), 
+        let signer_info = der_wrap(0x30, &[
+            der_wrap(0x02, &[0x01]), 
+            der_wrap(0x30, &[der_wrap(0x30, &[]), der_wrap(0x02, &[0x01])].concat()), 
             der_wrap(0x30, &hex::decode("06096086480165030402010500").unwrap()), 
             signed_attrs,
             der_wrap(0x30, &hex::decode("06082a8648ce3d040302").unwrap()), 
             der_wrap(0x04, &sig_der.to_bytes()), 
         ].concat());
-        let signed_data_inner = vec![
-            der_wrap(0x02, &vec![0x03]), 
-            der_wrap(0x31, &vec![]), 
+        let signed_data_inner = [
+            der_wrap(0x02, &[0x03]), 
+            der_wrap(0x31, &[]), 
             encap_content,
             der_wrap(0xA0, &dummy_cert), 
             der_wrap(0x31, &signer_info), 
         ].concat();
         let signed_data = der_wrap(0x30, &signed_data_inner);
-        der_wrap(0x30, &vec![
+        der_wrap(0x30, &[
             der_wrap(0x06, &hex::decode("2A864886F70D010702").unwrap()), 
             der_wrap(0xA0, &signed_data),
         ].concat())

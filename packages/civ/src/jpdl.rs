@@ -348,27 +348,27 @@ impl<R: CardReader> IdentityController for DriversLicenseController<R> {
 
     
 
-                    // Try reading photo if PIN2 is available
+                            // Try reading photo if PIN2 is available
 
     
 
-                    if let Some(pin2) = self.pin2.clone() {
+                            if let Some(pin2) = self.pin2.clone() {
 
     
 
-                        if self.select_dl_photo_ap().await.is_ok() {
+                                if self.select_dl_photo_ap().await.is_ok() && self.verify_pin2(&pin2).await.is_ok() {
 
     
 
-                            if self.verify_pin2(&pin2).await.is_ok() {
+                                    if let Ok(photo) = self.read_photo().await {
 
     
 
-                                if let Ok(photo) = self.read_photo().await {
+                                        photo_data = Some(photo);
 
     
 
-                                    photo_data = Some(photo);
+                                    }
 
     
 
@@ -376,21 +376,19 @@ impl<R: CardReader> IdentityController for DriversLicenseController<R> {
 
     
 
+                                // Re-select DL AP just in case
+
+    
+
+                                let _ = self.select_dl_ap().await;
+
+    
+
                             }
 
     
 
-                        }
-
-    
-
-            
-
-                // Re-select DL AP just in case
-
-                let _ = self.select_dl_ap().await;
-
-            }
+                    
 
     
 
