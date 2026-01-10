@@ -90,22 +90,37 @@ function cleanData(v: any): any {
     return v;
 }
 
-// Robust Rendering
+// Final Fidelity Rendering
 function render(doc: any, rawData: any, mso: MSO) {
     const data = cleanData(rawData);
-    console.log("🎨 Rendering Cleaned Data...", { data });
+    console.log("🎨 Final Polish Rendering...", { data });
     
-    document.body.style.background = '#f8fafc';
+    document.body.style.background = '#f0f4f8';
     document.body.style.margin = '0';
     document.body.style.padding = '0';
+    document.body.style.display = 'block';
 
     const safeStr = (v: any): string => (v === null || v === undefined) ? "" : String(v);
 
-    const primaryFieldNames = ["氏名", "世帯主氏名", "証明書名称"];
+    const primaryFieldNames = ["氏名", "世帯主氏名", "証明書名称", "Title", "Name"];
+    const issuerFieldNames = ["発行者役職", "発行者氏名"];
+    const footerFieldNames = ["交付年月日"];
+    const wideFieldNames = ["世帯住所", "住所", "前住所", "本籍", "備考"];
+    
     const entries = Object.entries(data);
     
     const primaryEntries = entries.filter(([k, v]) => primaryFieldNames.includes(k) && typeof v !== 'object');
-    const secondaryEntries = entries.filter(([k, v]) => !primaryFieldNames.includes(k) && typeof v !== 'object');
+    const issuerEntries = entries.filter(([k]) => issuerFieldNames.includes(k));
+    const footerEntries = entries.filter(([k]) => footerFieldNames.includes(k));
+    const wideEntries = entries.filter(([k, v]) => wideFieldNames.includes(k) && typeof v !== 'object');
+    
+    const secondaryEntries = entries.filter(([k, v]) => 
+        !primaryFieldNames.includes(k) && 
+        !issuerFieldNames.includes(k) && 
+        !footerFieldNames.includes(k) &&
+        !wideFieldNames.includes(k) && 
+        typeof v !== 'object'
+    );
     const complexEntries = entries.filter(([k, v]) => typeof v === 'object');
 
     const template = (window as any).TOBARI_TEMPLATE || "";
@@ -117,55 +132,111 @@ function render(doc: any, rawData: any, mso: MSO) {
 
     if (!html) {
         html = `
-            <div class="official-document" style="background: white; max-width: 850px; margin: 40px auto; padding: clamp(30px, 8vw, 80px); border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.05); font-family: 'TobariSubset', 'IPAMJMincho', serif; color: #1a202c; position: relative; line-height: 1.6;">
-                <div style="color: #38a169; font-family: sans-serif; font-size: 12px; font-weight: 600; margin-bottom: 40px; display: flex; align-items: center; gap: 8px;">
-                    <div style="width: 8px; height: 8px; background: #38a169; border-radius: 50%;"></div>
-                    DIGITALLY VERIFIED DOCUMENT
-                </div>
-                
-                <header style="margin-bottom: 60px;">
-                    <h1 style="font-size: clamp(24px, 5vw, 36px); font-weight: 500; border-bottom: 2px solid #1a202c; display: inline-block; padding-bottom: 10px; margin: 0;">
-                        ${safeStr(data["証明書名称"] || mso.docType.split('.').pop())}
-                    </h1>
-                </header>
-
-                <main>
-                    <div style="display: flex; flex-direction: column; gap: 40px; margin-bottom: 60px;">
-                        ${primaryEntries.map(([k, v]) => `
-                            <div>
-                                <label style="display: block; font-size: 14px; color: #718096; margin-bottom: 12px; font-family: sans-serif;">${k}</label>
-                                <div style="font-size: clamp(32px, 7vw, 56px); font-weight: 500; color: #000; line-height: 1.1;">${safeStr(v)}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; border-top: 1px solid #edf2f7; padding-top: 40px;">
-                        ${secondaryEntries.map(([k, v]) => `
-                            <div>
-                                <label style="display: block; font-size: 12px; color: #a0aec0; margin-bottom: 6px; font-family: sans-serif; text-transform: uppercase;">${k}</label>
-                                <div style="font-size: 19px; color: #2d3748;">${safeStr(v)}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-
-                    ${complexEntries.map(([k, v]) => `
-                        <div style="margin-top: 50px; border-top: 1px solid #edf2f7; padding-top: 40px;">
-                            <h3 style="font-size: 18px; margin-bottom: 24px; color: #4a5568;">${k}</h3>
-                            ${Array.isArray(v) ? renderComplexList(v) : `<pre style="font-size:13px; background:#f8fafc; padding:20px; border-radius:12px; overflow-x:auto;">${JSON.stringify(v, null, 2)}</pre>`}
+            <div class="official-container" style="padding: clamp(10px, 3vw, 40px); min-height: 100vh; display: flex; flex-direction: column; align-items: center;">
+                <div class="official-document" style="
+                    background: white; 
+                    width: 100%;
+                    max-width: 900px; 
+                    padding: clamp(25px, 7vw, 70px); 
+                    box-shadow: 0 30px 60px rgba(0,0,0,0.12); 
+                    border-radius: 20px;
+                    font-family: 'TobariSubset', 'IPAMJMincho', serif;
+                    color: #1a202c;
+                    position: relative;
+                    line-height: 1.7;
+                ">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 50px;">
+                        <div style="display: flex; align-items: center; gap: 10px; color: #2f855a; font-family: sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.05em; background: #f0fff4; padding: 6px 14px; border-radius: 100px; border: 1px solid #c6f6d5;">
+                            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l5-5z" clip-rule="evenodd"></path></svg>
+                            TOBARI VERIFIED
                         </div>
-                    `).join('')}
-                </main>
+                        <div style="font-family: sans-serif; font-size: 11px; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.1em;">
+                            mdoc / ISO 18013-5
+                        </div>
+                    </div>
+                    
+                    <header style="margin-bottom: 60px;">
+                        <h1 style="font-size: clamp(22px, 4vw, 34px); font-weight: 500; border-bottom: 3px solid #3182ce; display: inline-block; padding-bottom: 8px; margin: 0; color: #2d3748;">
+                            ${safeStr(data["証明書名称"] || mso.docType.split('.').pop())}
+                        </h1>
+                    </header>
 
-                <footer style="margin-top: 80px; border-top: 1px solid #eee; padding-top: 30px; font-family: sans-serif; font-size: 11px; color: #cbd5e0; display: flex; justify-content: space-between; align-items: flex-end;">
-                    <div>
-                        <strong>Protocol</strong>: Tobari v1.0 / mdoc ISO 18013-5<br>
-                        <strong>Security</strong>: SHA-384 ECDSA Integrity
-                    </div>
-                    <div style="text-align: right;">
-                        Verification Ref: ${mso.digestAlgorithm}<br>
-                        Authenticated via Secure Enclave
-                    </div>
-                </footer>
+                    <main>
+                        <div style="display: flex; flex-direction: column; gap: 30px; margin-bottom: 50px;">
+                            ${primaryEntries.filter(([k]) => k !== "証明書名称").map(([k, v]) => `
+                                <div class="field-group">
+                                    <label style="display: block; font-size: 14px; color: #718096; margin-bottom: 6px; font-family: sans-serif; border-left: 3px solid #cbd5e0; padding-left: 10px;">${k}</label>
+                                    <div style="font-size: clamp(24px, 5vw, 32px); font-weight: 500; color: #000; line-height: 1.2;">${safeStr(v)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <!-- Wide Fields (Address, Domicile, etc.) -->
+                        ${wideEntries.length > 0 ? `
+                        <div style="display: flex; flex-direction: column; gap: 20px; margin-bottom: 40px;">
+                            ${wideEntries.map(([k, v]) => `
+                                <div style="border-top: 1px solid #edf2f7; padding-top: 15px;">
+                                    <label style="display: block; font-size: 12px; color: #a0aec0; margin-bottom: 4px; font-family: sans-serif;">${k}</label>
+                                    <div style="font-size: clamp(16px, 2.5vw, 20px); color: #2d3748; line-height: 1.5;">${safeStr(v)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        ` : ''}
+
+                        <!-- Grid for other fields -->
+                        ${secondaryEntries.length > 0 ? `
+                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 25px; background: #fafbfc; padding: 30px; border-radius: 16px; border: 1px solid #f0f4f8; margin-bottom: 50px;">
+                            ${secondaryEntries.map(([k, v]) => `
+                                <div>
+                                    <label style="display: block; font-size: 11px; color: #a0aec0; margin-bottom: 4px; font-family: sans-serif;">${k}</label>
+                                    <div style="font-size: 17px; color: #2d3748;">${safeStr(v)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        ` : ''}
+
+                        ${complexEntries.map(([k, v]) => `
+                            <div style="margin-top: 60px;">
+                                <h3 style="font-size: 18px; margin-bottom: 25px; color: #4a5568; font-weight: 600; font-family: sans-serif; display: flex; align-items: center; gap: 10px;">
+                                    <span style="width: 24px; height: 2px; background: #3182ce;"></span>
+                                    ${k}
+                                </h3>
+                                ${Array.isArray(v) ? renderModernCardList(v) : `<pre style="background:#f8fafc; padding:20px; border-radius:12px; font-size:14px; border: 1px dashed #cbd5e0;">${JSON.stringify(v, null, 2)}</pre>`}
+                            </div>
+                        `).join('')}
+
+                        <!-- Issuer Info & Date at the bottom -->
+                        <div style="margin-top: 80px; text-align: right; border-top: 2px solid #1a202c; padding-top: 30px;">
+                            ${footerEntries.map(([k, v]) => `
+                                <div style="margin-bottom: 20px; text-align: left;">
+                                    <span style="font-size: 18px; color: #2d3748;">${safeStr(v)}</span>
+                                </div>
+                            `).join('')}
+                            
+                            ${issuerEntries.map(([k, v]) => `
+                                <div style="margin-bottom: 8px;">
+                                    <span style="font-size: 13px; color: #718096; margin-right: 15px; font-family: sans-serif;">${k}</span>
+                                    <span style="font-size: 22px; font-weight: 500;">${safeStr(v)}</span>
+                                </div>
+                            `).join('')}
+                            
+                            <div style="margin-top: 20px; display: inline-block; width: 60px; height: 60px; border: 2.5px solid #1a202c; color: #1a202c; border-radius: 2px; line-height: 60px; text-align: center; font-weight: bold; transform: rotate(-1deg); font-family: 'TobariSubset', 'IPAMJMincho', serif; font-size: 24px; user-select: none; box-sizing: border-box;">
+                                印
+                            </div>
+                        </div>
+                    </main>
+
+                    <footer style="margin-top: 60px; border-top: 1px solid #edf2f7; padding-top: 30px; font-family: sans-serif; font-size: 11px; color: #cbd5e0; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 20px;">
+                        <div>
+                            <strong>Cryptographic Proof</strong>: Tobari v1.0<br>
+                            Integrity Verified via P-384 ECDSA
+                        </div>
+                        <div style="text-align: right;">
+                            Ref: ${mso.digestAlgorithm.substring(0, 12)}...<br>
+                            Unlocked via Hardware Passkey
+                        </div>
+                    </footer>
+                </div>
             </div>
         `;
     }
@@ -174,17 +245,61 @@ function render(doc: any, rawData: any, mso: MSO) {
     root.innerHTML = html;
 }
 
-function renderComplexList(array: any[]): string {
-    return array.map(item => `
-        <div style="background: #fdfdfd; padding: 25px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #f0f0f0; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 20px;">
-            ${Object.entries(item).map(([k, v]) => `
-                <div>
-                    <span style="font-size: 11px; color: #a0aec0; display: block; font-family: sans-serif; margin-bottom: 4px;">${k}</span>
-                    <span style="font-size: 16px; color: #2d3748; font-weight: 500;">${v}</span>
+function renderModernCardList(array: any[]): string {
+    const highlightKeys = ["氏名", "旧氏", "Full Name"];
+    const wideKeys = ["前住所", "本籍", "住所"];
+    const remarksKey = "備考";
+    
+    if (array.length === 0) return "<p style='color:#a0aec0; font-style:italic;'>No detailed records revealed.</p>";
+    
+    return array.map(item => {
+        const name = item["氏名"] || item["Full Name"] || "";
+        const maidenName = item["旧氏"] || "";
+        
+        const normalFields = Object.entries(item).filter(([k]) => 
+            !highlightKeys.includes(k) && !wideKeys.includes(k) && k !== remarksKey
+        );
+        const trailingWideFields = Object.entries(item).filter(([k]) => 
+            wideKeys.includes(k)
+        );
+        const remarksField = Object.entries(item).find(([k]) => k === remarksKey);
+
+        const renderField = ([k, v]: [string, any], isWide = false) => `
+            <div style="${isWide ? 'border-top: 1px solid #f7fafc; padding-top: 12px; margin-top: 10px;' : ''}">
+                <span style="font-size: 10px; color: #cbd5e0; display: block; font-family: sans-serif; margin-bottom: 2px; text-transform: uppercase;">${k}</span>
+                <span style="font-size: ${isWide ? '16px' : '15px'}; color: #2d3748; line-height: 1.4;">${v}</span>
+            </div>
+        `;
+
+        return `
+            <div style="background: #fdfdfd; padding: 25px; border-radius: 16px; margin-bottom: 20px; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                <!-- Name Row (Top) -->
+                <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 30px; border-bottom: 2px solid #f7fafc; padding-bottom: 15px; margin-bottom: 20px;">
+                    <div style="min-width: 200px;">
+                        <span style="font-size: 10px; color: #a0aec0; display: block; font-family: sans-serif; margin-bottom: 2px;">氏名</span>
+                        <span style="font-size: clamp(22px, 4vw, 30px); color: #000; font-weight: 500;">${name}</span>
+                    </div>
+                    ${maidenName ? `
+                        <div>
+                            <span style="font-size: 10px; color: #a0aec0; display: block; font-family: sans-serif; margin-bottom: 2px;">旧氏</span>
+                            <span style="font-size: clamp(18px, 3vw, 24px); color: #4a5568; font-weight: 500;">${maidenName}</span>
+                        </div>
+                    ` : ""}
                 </div>
-            `).join('')}
-        </div>
-    `).join('');
+                
+                <!-- Normal Attributes Grid (Middle) -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px;">
+                    ${normalFields.map(f => renderField(f)).join('')}
+                </div>
+
+                <!-- Trailing Wide Fields (Addresses etc.) -->
+                ${trailingWideFields.map(f => renderField(f, true)).join('')}
+
+                <!-- Remarks (Absolute Bottom) -->
+                ${remarksField ? renderField(remarksField, true) : ""}
+            </div>
+        `;
+    }).join('');
 }
 
 function simpleTemplate(template: string, data: any, mso: MSO): string {
