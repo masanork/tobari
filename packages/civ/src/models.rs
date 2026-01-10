@@ -46,7 +46,8 @@ pub struct CitizenIdentity {
     pub attributes: HashMap<String, String>,
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait IdentityController {
     /// Read basic identity information from the card.
     async fn read_identity(&mut self) -> crate::errors::Result<CitizenIdentity>;

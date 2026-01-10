@@ -13,6 +13,12 @@ All notable changes to this project will be documented in this file.
     - **Passport**: Active Authentication (AA) with dynamic ECDSA key generation.
     - **PIV**: Full authentication flow with self-signed mock certificates.
   - **Error Handling**: Standardized ISO 7816-4 status word mapping to typed `CivError` (e.g., `AccessDenied`, `SecureMessagingError`).
+  - **Web/Wasm**:
+    - **Wasm Bindings**: Enhanced `CivContext` for Wasm, enabling `IdentityController` logic in browser environments.
+    - **Web Demo**: Added `examples/web-demo` (React/Vite) demonstrating reading identity from Mock/WebUSB in the browser.
+  - **CI/CD**:
+    - **GitHub Actions**: Added `civ-ci.yml` for automated testing and coverage (`cargo-tarpaulin`) on every push.
+    - **E2E Tests**: Added CLI integration tests (`cli_e2e.rs`) to verify `id` command against mock cards.
 
 ## [0.3.5] - 2026-01-10
 

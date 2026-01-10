@@ -225,7 +225,8 @@ impl<R: CardReader> ResidenceCardController<R> {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<R: CardReader> IdentityController for ResidenceCardController<R> {
     async fn provide_pin(&mut self, _pin_type: &str, pin: &str) -> Result<()> {
         self.pin = Some(pin.to_string());
