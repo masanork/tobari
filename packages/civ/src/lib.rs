@@ -18,6 +18,7 @@ pub mod demo_reader;
 pub mod transport;
 pub mod utils;
 pub mod test_utils;
+pub mod trust;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
