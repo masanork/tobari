@@ -14,7 +14,7 @@ impl GaijiMapper {
         // Example placeholder data (Police Agency specific Gaiji)
         // Real table would be much larger.
         // F040 -> ☹ (Example)
-        map.insert(0xF040, "".to_string()); 
+        map.insert(0xF040, "☹".to_string()); 
         Self { map }
     }
 
@@ -22,6 +22,12 @@ impl GaijiMapper {
     /// If not found, returns a fallback replacement character.
     pub fn map_code(&self, code: u16) -> Option<&String> {
         self.map.get(&code)
+    }
+}
+
+impl Default for GaijiMapper {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -41,7 +47,7 @@ pub fn decode_gaiji_string(bytes: &[u8]) -> String {
             let b2 = bytes[i+1];
             // Check for Shift-JIS double byte range
             // Lead byte: 81-9F, E0-FC
-            if (b1 >= 0x81 && b1 <= 0x9F) || (b1 >= 0xE0 && b1 <= 0xFC) {
+            if (0x81..=0x9F).contains(&b1) || (0xE0..=0xFC).contains(&b1) {
                 // Check if it's in the Gaiji area (E0-F9 usually reserved for vendors/UDC)
                 // JPDL specific: often F040 ~
                 let code = ((b1 as u16) << 8) | (b2 as u16);
@@ -65,7 +71,7 @@ pub fn decode_gaiji_string(bytes: &[u8]) -> String {
         // Single byte (ASCII/JIS X 0201)
         if b1 <= 0x7F {
             result.push(b1 as char);
-        } else if b1 >= 0xA1 && b1 <= 0xDF {
+        } else if (0xA1..=0xDF).contains(&b1) {
             // Half-width Katakana
             let slice = &[b1];
             let (cow, _, _) = encoding_rs::SHIFT_JIS.decode(slice);

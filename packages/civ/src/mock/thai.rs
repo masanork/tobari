@@ -30,6 +30,12 @@ impl ThaiBackend {
     }
 }
 
+impl Default for ThaiBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockBackend for ThaiBackend {
     fn handle_apdu(&mut self, cmd: &ApduCommand, _aid: &[u8]) -> (Vec<u8>, u16) {
         match cmd.ins {

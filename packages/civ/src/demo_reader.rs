@@ -103,15 +103,14 @@ impl CardReader for DemoReader {
             INS_VERIFY => {
                 if p2 == 0x80 {
                      // Status check
-                } else {
-                     if apdu.len() > 5 {
-                         let lc = apdu[4] as usize;
-                         let pin = &apdu[5..5+lc];
-                         if pin != b"1234" {
-                             sw1 = 0x63; sw2 = 0xC2; // Wrong PIN
-                         }
-                     }
-                }
+                                } else if apdu.len() > 5 {
+                                    let lc = apdu[4] as usize;
+                                    let pin = &apdu[5..5+lc];
+                                    if pin != b"1234" {
+                                        sw1 = 0x63; sw2 = 0xC2; // Wrong PIN
+                                    }
+                                }
+                
             }
             INS_READ_BINARY => {
                 let offset = ((p1 as usize) << 8) | (p2 as usize);

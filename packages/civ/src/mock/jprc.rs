@@ -31,6 +31,12 @@ impl ResidenceCardBackend {
     }
 }
 
+impl Default for ResidenceCardBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockBackend for ResidenceCardBackend {
     fn handle_apdu(&mut self, cmd: &ApduCommand, _aid: &[u8]) -> (Vec<u8>, u16) {
         match cmd.ins {

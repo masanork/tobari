@@ -38,6 +38,12 @@ impl MyKadBackend {
     }
 }
 
+impl Default for MyKadBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockBackend for MyKadBackend {
     fn handle_apdu(&mut self, cmd: &ApduCommand, _aid: &[u8]) -> (Vec<u8>, u16) {
         match cmd.ins {

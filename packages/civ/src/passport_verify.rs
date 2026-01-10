@@ -25,6 +25,7 @@ pub struct LdsSecurityObject {
 }
 
 /// Verifier for ePassport authenticity
+#[derive(Default)]
 pub struct PassportVerifier {
     /// Loaded CSCA certificates (Raw DER)
     csca_certs: Vec<Vec<u8>>,
@@ -32,9 +33,7 @@ pub struct PassportVerifier {
 
 impl PassportVerifier {
     pub fn new() -> Self {
-        Self {
-            csca_certs: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Load CSCA certificates from a PEM file
@@ -105,9 +104,9 @@ impl PassportVerifier {
         let lds_object = self.parse_lds_security_object(e_content_octet)?;
 
         let mut signer_cert = None;
-        for i in 3..signed_data_seq.len() {
-             match &signed_data_seq[i].content {
-                  BerObjectContent::Tagged(class, tag, inner) if *class == Class::ContextSpecific && tag.0 == 0 => {
+        for item in signed_data_seq.iter().skip(3) {
+             match &item.content {
+                  BerObjectContent::Tagged(class, tag, inner) if class == &Class::ContextSpecific && tag.0 == 0 => {
                        if let BerObjectContent::Sequence(certs) = &inner.content {
                             if !certs.is_empty() {
                                  signer_cert = Some(certs[0].as_slice().unwrap_or(&[]).to_vec());

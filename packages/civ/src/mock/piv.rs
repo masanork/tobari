@@ -57,6 +57,12 @@ impl PivBackend {
     }
 }
 
+impl Default for PivBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockBackend for PivBackend {
     fn handle_apdu(&mut self, cmd: &ApduCommand, _aid: &[u8]) -> (Vec<u8>, u16) {
         match cmd.ins {

@@ -2,8 +2,7 @@ use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_VE
 use crate::reader::CardReader;
 use crate::errors::{Result, CivError};
 use crate::models::{CitizenIdentity, IdentityController};
-use crate::utils::{parse_ber_tlv, decode_shift_jis_lossy_gaiji};
-use std::collections::HashMap;
+use crate::utils::parse_ber_tlv;
 
 /// My Number Drivers License (MyNa-Menkyo) Application Controller
 pub struct MynaMenkyoController<R: CardReader> {

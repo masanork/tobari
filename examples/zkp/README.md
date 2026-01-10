@@ -11,7 +11,7 @@ This directory contains examples and prototypes for using Zero-Knowledge Proofs 
 *   **Tech Stack**: Circom, SnarkJS.
 *   **Status**: Circuit definition and input generation logic are implemented.
 
-### 2. [bbs-scenarios](./bbs-scenarios) (conceptual Demo -> Prototype)
+### 2. [bbs-scenarios](./bbs-scenarios) (Conceptual Demo -> Prototype)
 **Scenario-based demonstrations of Unlinkable Credentials.**
 
 *   **Goal**: To demonstrate the concept of "Unlinkability" and "Selective Disclosure" using **BBS 2023** signatures.
@@ -21,7 +21,15 @@ This directory contains examples and prototypes for using Zero-Knowledge Proofs 
 *   **Tech Stack**: TypeScript, `@digitalbazaar/bbs-2023-cryptosuite`.
 *   **Status**: Working prototype demonstrating full Selective Disclosure flow.
 
-## How they relate to SCAC
+### 3. [scac](./scac) (Application Prototype)
+**Self-Hosted Crypto Account Ownership Credential.**
 
-The **Self-Hosted Crypto Account Ownership Credential (SCAC)** (found in `../scac`) utilizes the concepts demonstrated here.
-Specifically, SCAC uses a ZK Proof (like the one in `passport-circuit`) to bind an anonymous crypto account to a verified identity, ensuring regulatory compliance (KYC) while preserving user privacy (No passport number on-chain).
+*   **Goal**: To securely bind strict identity verification (e.g., Passport, My Number Card) to anonymous crypto wallets for FATF Travel Rule compliance without exposing personal data on-chain.
+*   **Tech Stack**: BIP-32/BIP-39, COSE/CBOR, BBS+ Signatures.
+*   **Status**: Prototype for data modeling and credential generation.
+
+## Relationships
+
+The **SCAC** project integrates the concepts from the other components:
+*   It uses **ZK Proofs** (like those in `passport-circuit`) to ingest verified identity data without storing raw sensitive identifiers (like MRZ).
+*   It uses **BBS+ Signatures** (demonstrated in `bbs-scenarios`) to allow users to present this credential to VASPs selectively (e.g., "I own this wallet and am over 18" without revealing "I am John Doe").

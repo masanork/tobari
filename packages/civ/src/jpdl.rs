@@ -120,16 +120,16 @@ impl<R: CardReader> DriversLicenseController<R> {
 
         for tlv in tlvs {
             match tlv.tag {
-                0x11 => info.name = decode_shift_jis_lossy_gaiji(tlv.value),
-                0x12 => info.name_kana = decode_shift_jis_lossy_gaiji(tlv.value),
-                0x13 => info.birth_date = decode_shift_jis_lossy_gaiji(tlv.value),
-                0x14 => info.address = decode_shift_jis_lossy_gaiji(tlv.value),
-                0x15 => info.issue_date = decode_shift_jis_lossy_gaiji(tlv.value),
-                0x17 => info.license_number = decode_shift_jis_lossy_gaiji(tlv.value),
-                0x18 => info.expire_date = decode_shift_jis_lossy_gaiji(tlv.value),
-                0x1A => info.color_class = decode_shift_jis_lossy_gaiji(tlv.value),
+                0x11 => info.name = decode_shift_jis_lossy_gaiji(&tlv.value),
+                0x12 => info.name_kana = decode_shift_jis_lossy_gaiji(&tlv.value),
+                0x13 => info.birth_date = decode_shift_jis_lossy_gaiji(&tlv.value),
+                0x14 => info.address = decode_shift_jis_lossy_gaiji(&tlv.value),
+                0x15 => info.issue_date = decode_shift_jis_lossy_gaiji(&tlv.value),
+                0x17 => info.license_number = decode_shift_jis_lossy_gaiji(&tlv.value),
+                0x18 => info.expire_date = decode_shift_jis_lossy_gaiji(&tlv.value),
+                0x1A => info.color_class = decode_shift_jis_lossy_gaiji(&tlv.value),
                 0x1C..=0x1F => {
-                    let cond = decode_shift_jis_lossy_gaiji(tlv.value);
+                    let cond = decode_shift_jis_lossy_gaiji(&tlv.value);
                     if !cond.trim().is_empty() {
                         info.conditions.push(cond);
                     }
@@ -149,7 +149,7 @@ impl<R: CardReader> DriversLicenseController<R> {
         let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
         for tlv in tlvs {
             if tlv.tag == 0x41 {
-                return Ok(decode_shift_jis_lossy_gaiji(tlv.value));
+                return Ok(decode_shift_jis_lossy_gaiji(&tlv.value));
             }
         }
         Ok("".to_string())
@@ -348,23 +348,43 @@ impl<R: CardReader> IdentityController for DriversLicenseController<R> {
 
     
 
-            // Try reading photo if PIN2 is available
+                    // Try reading photo if PIN2 is available
 
-            if let Some(pin2) = self.pin2.clone() {
+    
 
-                if let Ok(_) = self.select_dl_photo_ap().await {
+                    if let Some(pin2) = self.pin2.clone() {
 
-                    if let Ok(_) = self.verify_pin2(&pin2).await {
+    
 
-                        if let Ok(photo) = self.read_photo().await {
+                        if self.select_dl_photo_ap().await.is_ok() {
 
-                            photo_data = Some(photo);
+    
+
+                            if self.verify_pin2(&pin2).await.is_ok() {
+
+    
+
+                                if let Ok(photo) = self.read_photo().await {
+
+    
+
+                                    photo_data = Some(photo);
+
+    
+
+                                }
+
+    
+
+                            }
+
+    
 
                         }
 
-                    }
+    
 
-                }
+            
 
                 // Re-select DL AP just in case
 

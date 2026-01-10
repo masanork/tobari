@@ -28,6 +28,12 @@ impl JpkiBackend {
     }
 }
 
+impl Default for JpkiBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockBackend for JpkiBackend {
     fn handle_apdu(&mut self, cmd: &ApduCommand, aid: &[u8]) -> (Vec<u8>, u16) {
         match cmd.ins {

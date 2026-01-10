@@ -91,7 +91,7 @@ impl<R: CardReader> IdentityController for MyKadController<R> {
 
         // Gender: File 0111, Offset 011C, Len 1
         let gender_bytes = self.read_info(0x0111, 0x011C, 1).await?;
-        let gender = match gender_bytes.get(0) {
+        let gender = match gender_bytes.first() {
             Some(b'M') => "Male".to_string(),
             Some(b'F') => "Female".to_string(),
             _ => "Unspecified".to_string(),

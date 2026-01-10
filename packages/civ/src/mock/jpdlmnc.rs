@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use crate::apdu::ApduCommand;
-use crate::mock::common::{MockBackend, der_wrap};
+use crate::mock::common::MockBackend;
 use sha2::{Sha256, Digest};
 
 pub struct MynaMenkyoBackend {
@@ -42,6 +42,12 @@ impl MynaMenkyoBackend {
             pin: "1234".to_string(),
             pin_verified: false,
         }
+    }
+}
+
+impl Default for MynaMenkyoBackend {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

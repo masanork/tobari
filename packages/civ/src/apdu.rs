@@ -47,7 +47,7 @@ impl ApduCommand {
         // Note: If Le is 0, it means max length (256 for short, 65536 for extended).
         // If lc is 0 and le is 0, it's typically a Case 2S requesting 256 bytes.
         // If we want 65536 bytes with no data, we'd explicitly set le to 65536.
-        let is_extended = lc > 255 || le.map_or(false, |l| l > 256);
+        let is_extended = lc > 255 || le.is_some_and(|l| l > 256);
 
         if !is_extended {
             // --- Short APDU ---

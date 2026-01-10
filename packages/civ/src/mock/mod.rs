@@ -46,7 +46,7 @@ impl MockSmartCard {
         card.add_backend(crate::passport::file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("123456")));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01], Box::new(ThaiBackend::new()));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x74, 0x4A, 0x50, 0x4E, 0x00, 0x10], Box::new(MyKadBackend::new()));
-        card.add_backend(vec![0xA0, 0x00, 0x00, 0x02, 0x31, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00], Box::new(MynaMenkyoBackend::new()));
+        card.add_backend(vec![0xA0, 0x00, 0x00, 0x02, 0x31, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], Box::new(MynaMenkyoBackend::new()));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x00, 0x01], Box::new(LargeDataBackend::new()));
         card
     }
@@ -116,8 +116,20 @@ impl MockSmartCard {
     }
 }
 
+impl Default for MockSmartCard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct LargeDataBackend;
 impl LargeDataBackend { pub fn new() -> Self { Self } }
+
+impl Default for LargeDataBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl MockBackend for LargeDataBackend {
     fn handle_apdu(&mut self, cmd: &ApduCommand, _aid: &[u8]) -> (Vec<u8>, u16) {
         match cmd.ins {
