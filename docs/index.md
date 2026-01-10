@@ -30,6 +30,7 @@ features:
 - [Holder Binding Design](HOLDER_BINDING.md)
 - [Encryption & User Consent Policy](ENCRYPTION_STRATEGY.md)
 - [Encryption Implementation Spec](ENCRYPTION_SPEC.md)
+- [PQC PoC Plan](PQC_POC_PLAN.md)
 - [Long-Term Validation (LTV)](LONG_TERM_VALIDATION.md)
 
 ### 🛠 Tools & Integrations

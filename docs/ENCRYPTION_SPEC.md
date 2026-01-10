@@ -61,7 +61,24 @@ Encrypted credentials MUST be stored in a format that encapsulates HPKE paramete
    - Encrypt the final presentation for $PK_{verifier}$ using HPKE.
 6. **Zeroization**: Immediately clear raw $M$ from memory.
 
-## 5. Security Requirements
+## 5. Crypto Agility and Post-Quantum Readiness
+
+To ensure the long-term viability of the `civ` library, we must account for the transition to **Post-Quantum Cryptography (PQC)**. While NIST P-256 is the current standard for hardware compatibility, we will design the system to be "Agile."
+
+### 5.1. Hybrid Encryption (Classical + PQC)
+We aim to support a hybrid KEM approach, combining a classical elliptic curve (P-256 or X25519) with a post-quantum algorithm (e.g., ML-KEM / Kyber).
+
+- **Current Goal**: P-256 only (Hardware-backed).
+- **PoC Goal**: Implement a software-based hybrid KEM (`X25519 + ML-KEM-768`) to measure overhead.
+- **Data Size Evaluation**: We will evaluate the impact of PQC on:
+    - **Public Key Size**: P-256 (65 bytes) vs ML-KEM-768 (~1184 bytes).
+    - **Encapsulated Key (Ciphertext)**: ~32 bytes vs ~1088 bytes.
+    - **Performance**: Latency of key generation and encapsulation in WASM/Mobile environments.
+
+### 5.2. Pluggable KEM Interface
+The implementation should wrap HPKE logic in a trait that allows switching ciphersuites based on credential metadata or verifier requirements.
+
+## 6. Security Requirements
 
 - **No Key Export**: The private root key $SK_{dev}$ MUST NEVER leave the hardware security boundary.
 - **Memory Protection**: Decrypted raw data MUST be handled with `Zeroize` traits in Rust to ensure memory is cleared.
