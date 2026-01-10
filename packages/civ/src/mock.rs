@@ -96,7 +96,11 @@ impl MockSmartCard {
                     Ok(plain_cmd) => {
                         let (res_data, sw) = self.dispatch_plain_apdu(&plain_cmd);
                         match session.wrap_response(&res_data, (sw >> 8) as u8, (sw & 0xFF) as u8) {
-                            Ok(wrapped) => wrapped,
+                            Ok(mut wrapped) => {
+                                wrapped.push(0x90);
+                                wrapped.push(0x00);
+                                wrapped
+                            },
                             Err(_) => vec![0x6F, 0x00],
                         }
                     },
@@ -397,6 +401,7 @@ pub struct PassportBackend {
     pace_state: Option<PaceP256>,
     new_secure_session: Option<MockSecureSession>,
     aa_key: SigningKey,
+    last_challenge: Vec<u8>,
 }
 
 impl PassportBackend {
@@ -431,6 +436,7 @@ impl PassportBackend {
             pace_state: Some(PaceP256::new("123456", PaceMappingType::GenericMapping, 16)),
             new_secure_session: None,
             aa_key,
+            last_challenge: vec![0u8; 8],
         }
     }
 
@@ -546,6 +552,7 @@ impl MockBackend for PassportBackend {
             0x84 => { 
                 let mut rnd = vec![0u8; 8];
                 OsRng.fill_bytes(&mut rnd);
+                self.last_challenge = rnd.clone();
                 (rnd, 0x9000) 
             },
             0x82 => {
@@ -553,7 +560,7 @@ impl MockBackend for PassportBackend {
                 let k_seed = bac::derive_key_seed("123456");
                 let (k_enc, k_mac) = bac::derive_session_keys(&k_seed);
                 
-                let rnd_icc = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]; // Fixed for now or random? Mock mutual auth might expect matching
+                let rnd_icc: [u8; 8] = self.last_challenge.clone().try_into().unwrap_or([0u8; 8]);
                 // println!("DEBUG: Mock 0x82 called. Data len: {}", cmd.data.len());
                 match bac::mock_mutual_auth_response(&k_enc, &k_mac, &cmd.data, &rnd_icc) {
                     Ok((resp_data, ssc)) => {
