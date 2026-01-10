@@ -13,11 +13,12 @@ impl MyKadBackend {
         let mut records = HashMap::new();
         
         // IC Number (0111, 001A)
-        records.insert((0x0111, 0x001A), b"8001010112345".to_vec());
+        // 12 digits: 800101-14-1234
+        records.insert((0x0111, 0x001A), b"800101141234 ".to_vec());
         
         // Name (0111, 00E9)
         let mut name = vec![b' '; 40];
-        let name_bytes = b"Ali bin Abu";
+        let name_bytes = b"ALI BIN ABU";
         name[0..name_bytes.len()].copy_from_slice(name_bytes);
         records.insert((0x0111, 0x00E9), name);
         
