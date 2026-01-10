@@ -240,7 +240,7 @@ async function inflate(b64) {
     if (window.location.protocol === 'file:') {
         const secureViewerUrl = "https://masanork.github.io/tobari/viewer.html";
         const b64 = window.__TOBARI_DATA__.split(',')[1];
-        const redirectUrl = secureViewerUrl + "#data=" + b64;
+        const redirectUrl = secureViewerUrl + "#data=" + encodeURIComponent(b64);
 
         document.body.innerHTML = \`
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; background: #f7fafc; text-align: center; padding: 20px;">
