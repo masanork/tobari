@@ -18,17 +18,20 @@ async function main() {
 
     const sampleData = JSON.parse(fs.readFileSync(jsonDataPath, 'utf-8'));
 
+    // 4. Generate/Load Issuer Key
+    console.log("Generating Ininjo PoC credential...");
     const keyPair = await crypto.subtle.generateKey(
         { name: "ECDSA", namedCurve: "P-384" },
         true,
         ["sign", "verify"]
     );
 
-    // Export Public Key for Viewer
-    const pubKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
-    fs.writeFileSync(path.resolve(__dirname, 'issuer-key.json'), JSON.stringify(pubKeyJwk, null, 2));
+    // Save public key
+    const jwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+    fs.writeFileSync(path.join(__dirname, "issuer-key.json"), JSON.stringify(jwk, null, 2));
     console.log("Saved Issuer Public Key to issuer-key.json");
 
+    // 5. Generate COSE
     const binary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
         kid: "iss-ininjo-p384"
     });
