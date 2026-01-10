@@ -19,28 +19,28 @@ impl PivBackend {
         let verifying_key = signing_key.verifying_key();
         
         let spki = verifying_key.to_encoded_point(false).as_bytes().to_vec();
-        let spki_der = der_wrap(0x30, &vec![
+        let spki_der = der_wrap(0x30, &[
              der_wrap(0x30, &hex::decode("06072a8648ce3d020106082a8648ce3d030107").unwrap()), 
-             der_wrap(0x03, &vec![vec![0x00], spki].concat()),
+             der_wrap(0x03, &[vec![0x00], spki].concat()),
         ].concat());
 
-        let tbs_cert = der_wrap(0x30, &vec![
-             der_wrap(0xA0, &der_wrap(0x02, &vec![0x02])), 
-             der_wrap(0x02, &vec![0x01]), 
+        let tbs_cert = der_wrap(0x30, &[
+             der_wrap(0xA0, &der_wrap(0x02, &[0x02])), 
+             der_wrap(0x02, &[0x01]), 
              der_wrap(0x30, &hex::decode("06082a8648ce3d040302").unwrap()), 
-             der_wrap(0x30, &vec![der_wrap(0x31, &der_wrap(0x30, &vec![der_wrap(0x06, &hex::decode("550403").unwrap()), der_wrap(0x0C, b"PIV Mock")].concat()))].concat()), 
-             der_wrap(0x30, &vec![der_wrap(0x17, b"260101000000Z"), der_wrap(0x17, b"360101000000Z")].concat()), 
-             der_wrap(0x30, &vec![der_wrap(0x31, &der_wrap(0x30, &vec![der_wrap(0x06, &hex::decode("550403").unwrap()), der_wrap(0x0C, b"PIV Mock")].concat()))].concat()), 
+             der_wrap(0x30, &[der_wrap(0x31, &der_wrap(0x30, &[der_wrap(0x06, &hex::decode("550403").unwrap()), der_wrap(0x0C, b"PIV Mock")].concat()))].concat()), 
+             der_wrap(0x30, &[der_wrap(0x17, b"260101000000Z"), der_wrap(0x17, b"360101000000Z")].concat()), 
+             der_wrap(0x30, &[der_wrap(0x31, &der_wrap(0x30, &[der_wrap(0x06, &hex::decode("550403").unwrap()), der_wrap(0x0C, b"PIV Mock")].concat()))].concat()), 
              spki_der,
         ].concat());
 
         let signature: EcdsaSignature = signing_key.sign(&tbs_cert);
         let sig_der = signature.to_der();
 
-        let cert = der_wrap(0x30, &vec![
+        let cert = der_wrap(0x30, &[
              tbs_cert,
              der_wrap(0x30, &hex::decode("06082a8648ce3d040302").unwrap()), 
-             der_wrap(0x03, &vec![vec![0x00], sig_der.to_bytes().to_vec()].concat()), 
+             der_wrap(0x03, &[vec![0x00], sig_der.to_bytes().to_vec()].concat()), 
         ].concat());
 
         let mut files = HashMap::new();

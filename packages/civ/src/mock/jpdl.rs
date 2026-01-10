@@ -23,28 +23,28 @@ impl DriversLicenseBackend {
         // Generate Self-Signed Certificate
         use crate::mock::common::der_wrap;
         let spki = verifying_key.to_encoded_point(false).as_bytes().to_vec();
-        let spki_der = der_wrap(0x30, &vec![
+        let spki_der = der_wrap(0x30, &[
              der_wrap(0x30, &hex::decode("06072a8648ce3d020106052b8104000a").unwrap()), 
-             der_wrap(0x03, &vec![vec![0x00], spki].concat()),
+             der_wrap(0x03, &[vec![0x00], spki].concat()),
         ].concat());
 
-        let tbs_cert = der_wrap(0x30, &vec![
-             der_wrap(0xA0, &der_wrap(0x02, &vec![0x02])), 
-             der_wrap(0x02, &vec![0x01]), 
+        let tbs_cert = der_wrap(0x30, &[
+             der_wrap(0xA0, &der_wrap(0x02, &[0x02])), 
+             der_wrap(0x02, &[0x01]), 
              der_wrap(0x30, &hex::decode("06082a8648ce3d040302").unwrap()), 
-             der_wrap(0x30, &vec![der_wrap(0x31, &der_wrap(0x30, &vec![der_wrap(0x06, &hex::decode("550403").unwrap()), der_wrap(0x0C, b"NPA Mock")].concat()))].concat()), 
-             der_wrap(0x30, &vec![der_wrap(0x17, b"260101000000Z"), der_wrap(0x17, b"360101000000Z")].concat()), 
-             der_wrap(0x30, &vec![der_wrap(0x31, &der_wrap(0x30, &vec![der_wrap(0x06, &hex::decode("550403").unwrap()), der_wrap(0x0C, b"NPA Mock")].concat()))].concat()), 
+             der_wrap(0x30, &[der_wrap(0x31, &der_wrap(0x30, &[der_wrap(0x06, &hex::decode("550403").unwrap()), der_wrap(0x0C, b"NPA Mock")].concat()))].concat()), 
+             der_wrap(0x30, &[der_wrap(0x17, b"260101000000Z"), der_wrap(0x17, b"360101000000Z")].concat()), 
+             der_wrap(0x30, &[der_wrap(0x31, &der_wrap(0x30, &[der_wrap(0x06, &hex::decode("550403").unwrap()), der_wrap(0x0C, b"NPA Mock")].concat()))].concat()), 
              spki_der,
         ].concat());
 
         let signature: Signature = signing_key.sign(&tbs_cert);
         let sig_der = signature.to_der();
 
-        let certificate_der = der_wrap(0x30, &vec![
+        let certificate_der = der_wrap(0x30, &[
              tbs_cert,
              der_wrap(0x30, &hex::decode("06082a8648ce3d040302").unwrap()), 
-             der_wrap(0x03, &vec![vec![0x00], sig_der.to_bytes().to_vec()].concat()), 
+             der_wrap(0x03, &[vec![0x00], sig_der.to_bytes().to_vec()].concat()), 
         ].concat());
 
         let ef01_data = vec![
