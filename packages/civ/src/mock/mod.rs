@@ -41,8 +41,8 @@ impl MockSmartCard {
         card.add_backend(crate::piv::file_ids::DF_PIV.to_vec(), Box::new(PivBackend::new()));
         card.add_backend(crate::jpdl::file_ids::DF_DL.to_vec(), Box::new(DriversLicenseBackend::new()));
         card.add_backend(crate::jpdl::file_ids::DF_DL_PHOTO.to_vec(), Box::new(DriversLicenseBackend::new()));
-        card.add_backend(crate::jprc::file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new()));
-        card.add_backend(crate::jprc::file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new()));
+        card.add_backend(crate::jprc::file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new_df1()));
+        card.add_backend(crate::jprc::file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new_df2()));
         card.add_backend(crate::passport::file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("123456")));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01], Box::new(ThaiBackend::new()));
         card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x74, 0x4A, 0x50, 0x4E, 0x00, 0x10], Box::new(MyKadBackend::new()));

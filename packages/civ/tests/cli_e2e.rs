@@ -25,7 +25,7 @@ fn test_cli_id_demo_passport() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Card Type: Passport"))
-        .stdout(predicate::str::contains("Verified:  NO")); // PA not verified by default id command unless --verify
+        .stdout(predicate::str::contains("Verified:  NO"));
 }
 
 #[test]
@@ -53,6 +53,16 @@ fn test_cli_id_demo_mynamenkyo() {
         .success()
         .stdout(predicate::str::contains("Card Type: MyNaMenkyo"))
         .stdout(predicate::str::contains("ID Number: 123456789012"));
+}
+
+#[test]
+fn test_cli_invalid_type() {
+    let mut cmd = Command::cargo_bin("civ").unwrap();
+    cmd.arg("--demo")
+        .arg("id")
+        .arg("--type=invalid")
+        .assert()
+        .failure();
 }
 
 #[test]

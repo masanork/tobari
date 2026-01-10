@@ -1,7 +1,7 @@
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
-use civ::IdentityController;
-use civ::JpkiController;
+use civ::test_utils::TestReader;
+use civ::{IdentityController, JpkiController, PassportController, ThaiController, MyKadController, ResidenceCardController};
 use std::sync::{Arc, Mutex};
 
 struct MockRelay {
@@ -13,6 +13,32 @@ impl CardReader for MockRelay {
     async fn transmit(&mut self, apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
         Ok(self.card.lock().unwrap().handle_apdu(apdu))
     }
+}
+
+#[tokio::test]
+async fn test_failure_paths_all_cards() {
+    let reader = TestReader::new();
+    reader.set_failure(0x6A, 0x82); // Application not found
+
+    // JPKI
+    let mut c = JpkiController::new(reader.clone());
+    assert!(c.read_identity().await.is_err());
+
+    // Passport
+    let mut c = PassportController::new(reader.clone());
+    assert!(c.read_identity().await.is_err());
+
+    // Thai
+    let mut c = ThaiController::new(reader.clone());
+    assert!(c.read_identity().await.is_err());
+
+    // MyKad
+    let mut c = MyKadController::new(reader.clone());
+    assert!(c.read_identity().await.is_err());
+
+    // RC
+    let mut c = ResidenceCardController::new(reader.clone());
+    assert!(c.read_identity().await.is_err());
 }
 
 #[tokio::test]
@@ -83,4 +109,35 @@ async fn test_jprc_unified_details() {
     assert_eq!(identity.address.unwrap(), "東京都");
     // Check attributes
     assert_eq!(identity.attributes.get("residence_status").unwrap(), "許可");
+    assert_eq!(identity.attributes.get("update_status").unwrap(), "0");
+    
+    // Photo reading
+    let photo = controller.read_photo().await.unwrap();
+    assert!(!photo.is_empty());
+}
+
+#[tokio::test]
+async fn test_mykad_read_failure() {
+    struct ErrorRelay;
+    #[async_trait::async_trait]
+    impl CardReader for ErrorRelay {
+        async fn transmit(&mut self, _apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+            Ok(vec![0x6F, 0x00]) 
+        }
+    }
+
+    let mut controller = civ::MyKadController::new(ErrorRelay);
+    let res = controller.read_identity().await;
+    assert!(res.is_err());
+}
+
+#[tokio::test]
+async fn test_mykad_address_full() {
+    let card = Arc::new(Mutex::new(MockSmartCard::new()));
+    let mut controller = civ::MyKadController::new(MockRelay { card });
+    
+    controller.select_jpn_ap().await.unwrap();
+    // Read Line 1
+    let addr = controller.read_info(0x0111, 0x0203, 30).await.unwrap();
+    assert!(String::from_utf8_lossy(&addr).contains("123 Jalan Ampang"));
 }
