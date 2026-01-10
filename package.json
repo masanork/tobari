@@ -17,12 +17,18 @@
         "demo:zkp:passport": "cd examples/zkp/passport-circuit && bun run index.js",
         "demo:zkp:bbs": "cd examples/zkp/bbs-scenarios && bun run scenario-employee-discount.ts",
         "demo:zkp:dating": "cd examples/zkp/bbs-scenarios && bun run scenario-dating-app.ts",
-        "demo:scac": "cd examples/scac && bun run gen-scac.ts"
+        "demo:scac": "cd examples/scac && bun run gen-scac.ts",
+        "docs:prepare": "mkdir -p docs/civ && cp packages/civ/docs/*.md docs/civ/",
+        "docs:dev": "bun run docs:prepare && vitepress dev docs",
+        "docs:build": "bun run docs:prepare && vitepress build docs",
+        "docs:preview": "vitepress preview docs"
     },
     "devDependencies": {
         "@playwright/test": "^1.57.0",
         "bun-types": "latest",
         "playwright": "^1.57.0",
-        "typescript": "^5.0.0"
+        "typescript": "^5.0.0",
+        "vitepress": "^1.6.4",
+        "vue": "^3.5.26"
     }
 }

@@ -3,7 +3,7 @@ use crate::apdu::ApduCommand;
 use crate::mock::common::MockBackend;
 
 pub struct MyKadBackend {
-    records: HashMap<(u16, u16), Vec<u8>>,
+    pub records: HashMap<(u16, u16), Vec<u8>>,
     current_length: u8,
     current_target: Option<(u16, u16)>,
 }

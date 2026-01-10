@@ -1,5 +1,6 @@
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
+use civ::test_utils::TestReader;
 use civ::ThaiController;
 use civ::IdentityController;
 use std::sync::{Arc, Mutex};
@@ -47,6 +48,19 @@ async fn test_thai_gender_female() {
     // Since ThaiBackend.data is private, let's add a setter or just use mock relay to fake it.
     
     // Actually, let's just test read_identity with the existing mock first to ensure it's fully covered.
+}
+
+#[tokio::test]
+async fn test_thai_read_identity_failure_at_cid() {
+    let reader = TestReader::new();
+    let mut controller = ThaiController::new(reader.clone());
+    
+    // Succeed at select, fail at read_data (cid)
+    reader.push_response(&[0x90, 0x00]); // select ap
+    reader.set_failure(0x6A, 0x82);
+    
+    let res: anyhow::Result<civ::models::CitizenIdentity> = controller.read_identity().await.map_err(|e| anyhow::anyhow!(e));
+    assert!(res.is_err());
 }
 
 #[tokio::test]

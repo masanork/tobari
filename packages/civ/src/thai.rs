@@ -68,6 +68,37 @@ impl<R: CardReader> ThaiController<R> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::TestReader;
+
+    #[tokio::test]
+    async fn test_read_data_retry_exhausted() {
+        let reader = TestReader::new();
+        // Always return error
+        reader.set_failure(0x6A, 0x82);
+        let mut controller = ThaiController::new(reader.clone());
+        
+        let res = controller.read_data(0x0001, 10).await;
+        assert!(res.is_err());
+        // Verify it retried 3 times (1 initial + 2 retries = 3 total)
+        assert_eq!(reader.sent_apdus.lock().unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_read_data_success_after_retry() {
+        let reader = TestReader::new();
+        // Fail once, then succeed
+        reader.push_response(&[0x6F, 0x00]); // failure
+        reader.push_response(&[0x01, 0x02, 0x90, 0x00]); // success
+        
+        let mut controller = ThaiController::new(reader.clone());
+        let res = controller.read_data(0x0001, 2).await;
+        assert_eq!(res.unwrap(), vec![0x01, 0x02]);
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<R: CardReader> IdentityController for ThaiController<R> {

@@ -1,28 +1,41 @@
-# Tobari Documentation
+---
+layout: home
 
-Tobari (帳) プロジェクトの公式ドキュメントへようこそ。
+hero:
+  name: "Tobari (帳)"
+  text: "Trust Infrastructure Toolkit"
+  tagline: Designing trust in the agentic era. Connecting people, data, and silos.
+  actions:
+    - theme: brand
+      text: Get Started
+      link: /ARCHITECTURE
+    - theme: alt
+      text: View on GitHub
+      link: https://github.com/masanork/tobari
 
-Tobari は、ISO 18013-5 (mdoc) をベースにした、人間にもプログラムにも優しいデジタル証明書フレームワークです。
-
-## 📖 コンテンツ
-
-### 1. 導入と基礎
-- [アーキテクチャ概要](ARCHITECTURE.md): Tobari の設計思想と仕組み。
-- [スキーマ仕様](SCHEMA_SPEC.md): YAML/CDDL によるドキュメント定義。
-
-### 2. 信頼とプライバシー
-- [選択的開示とデバイス署名](HOLDER_BINDING.md): SD-CBOR と Holder Binding (mdoc) の解説。
-
-### 3. ツールと連携
-- [MCP Server](MCP_SERVER.md): AI エージェント（Claude 等）との連携方法。
-- [CLI ツール](CLI_TOOLS.md): コマンドラインからの操作リファレンス。
-
-### 4. チュートリアル
-- [行政サービス案内 (service_request) チュートリアル](SERVICE_REQUEST_TUTORIAL.md)
-
+features:
+  - title: Hybrid Document
+    details: Combines the trust of static documents (PDF/Paper) with machine-readable verifyability (P-384 Signatures).
+  - title: Selective Disclosure
+    details: Share only what allows, keeping sensitive data private using SD-CBOR and BBS+ signatures.
+  - title: AI Agent Ready
+    details: Native MCP Server support allowing AI agents to understand and verify documents autonomously.
 ---
 
-## 🚀 はじめかた
+## Documentation
 
-Tobari をすぐに試すには、ルートの `README.md` を参照してください。
-デモデータの生成から、HTML ビューアでの閲覧までを数コマンドで体験できます。
+### 📚 Core Concepts
+- [Architecture Overview](ARCHITECTURE.md)
+- [Schema Specification](SCHEMA_SPEC.md)
+- [Holder Binding (mdoc)](HOLDER_BINDING.md)
+- [Long-Term Validation](LONG_TERM_VALIDATION.md)
+
+### 🛠 Tools & Integrations
+- [CLI Tools](CLI_TOOLS.md)
+- [MCP Server (AI)](MCP_SERVER.md)
+- [Service Request Tutorial](SERVICE_REQUEST_TUTORIAL.md)
+
+### 🪪 Civ (Identity Library)
+- [Identity Scheme Analysis](civ/IDENTITY_SCHEME_ANALYSIS.md)
+- [JPKI (My Number)](civ/jpki.md)
+- [ePassport (ICAO 9303)](civ/icao9303.md)

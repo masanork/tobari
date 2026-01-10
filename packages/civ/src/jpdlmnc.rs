@@ -94,6 +94,40 @@ impl<R: CardReader> MynaMenkyoController<R> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::TestReader;
+    use crate::mock::{MockSmartCard, MynaMenkyoBackend};
+    use std::sync::{Arc, Mutex};
+
+    fn setup_myna_mock(reader: &TestReader) -> Arc<Mutex<MockSmartCard>> {
+        let mut mock = MockSmartCard::new();
+        mock.add_backend(vec![0xA0, 0x00, 0x00, 0x02, 0x31, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], Box::new(MynaMenkyoBackend::new()));
+        let mock = Arc::new(Mutex::new(mock));
+        let mock_clone = mock.clone();
+        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
+        mock
+    }
+
+    #[tokio::test]
+    async fn test_verify_pin_error() {
+        let reader = TestReader::new();
+        let _mock = setup_myna_mock(&reader);
+        let mut controller = MynaMenkyoController::new(reader.clone());
+        
+        assert!(controller.verify_pin("wrong").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_data_error() {
+        let reader = TestReader::new();
+        let mut controller = MynaMenkyoController::new(reader.clone());
+        reader.set_failure(0x6A, 0x82);
+        assert!(controller.read_data().await.is_err());
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<R: CardReader> IdentityController for MynaMenkyoController<R> {
