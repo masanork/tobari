@@ -253,19 +253,49 @@ mod tests {
     #[test]
     fn test_mrz_check_digit() {
         assert_eq!(MrzUtils::calculate_check_digit("12345678"), b'8');
+        assert_eq!(MrzUtils::calculate_check_digit("HA672242"), b'6');
+        assert_eq!(MrzUtils::calculate_check_digit("ABC<123"), b'1');
+    }
+
+    #[test]
+    fn test_parse_passport_identity() {
+        let mrz = "P<JPNTOBARI<<TARO<<<<<<<<<<<<<<<<<<<<<<<<<<<\n1234567897JPN9001011M3001018<<<<<<<<<<<<<<02";
+        let identity = MrzUtils::parse_mrz_td3(mrz).unwrap();
+        assert_eq!(identity.full_name, "TOBARI TARO");
+        assert_eq!(identity.identity_number, "123456789");
+        assert_eq!(identity.birth_date, "1990-01-01");
+        assert_eq!(identity.gender, "1");
     }
 
     #[test]
     fn test_date_parsing() {
+        // yyyymmdd
         assert_eq!(DateUtils::parse_yyyymmdd("19900101").unwrap(), "1990-01-01");
         assert_eq!(DateUtils::parse_yyyymmdd("20231231").unwrap(), "2023-12-31");
         assert!(DateUtils::parse_yyyymmdd("20231301").is_err());
+        assert!(DateUtils::parse_yyyymmdd("20231232").is_err());
+        assert!(DateUtils::parse_yyyymmdd("ABCD1234").is_err());
+
+        // yymmdd (Passport)
+        assert_eq!(DateUtils::parse_yymmdd("900101").unwrap(), "1990-01-01");
+        assert_eq!(DateUtils::parse_yymmdd("200101").unwrap(), "2020-01-01");
+        assert!(DateUtils::parse_yymmdd("901301").is_err());
     }
 
     #[test]
     fn test_japanese_era_parsing() {
-        assert_eq!(DateUtils::parse_japanese_era("4020101").unwrap(), "1990-01-01"); // Heisei 2
-        assert_eq!(DateUtils::parse_japanese_era("5010501").unwrap(), "2019-05-01"); // Reiwa 1
-        assert_eq!(DateUtils::parse_japanese_era("3640101").unwrap(), "1989-01-01"); // Showa 64
+        assert_eq!(DateUtils::parse_japanese_era("1010101").unwrap(), "1868-01-01"); // Meiji
+        assert_eq!(DateUtils::parse_japanese_era("2010101").unwrap(), "1912-01-01"); // Taisho
+        assert_eq!(DateUtils::parse_japanese_era("3010101").unwrap(), "1926-01-01"); // Showa
+        assert_eq!(DateUtils::parse_japanese_era("4010101").unwrap(), "1989-01-01"); // Heisei
+        assert_eq!(DateUtils::parse_japanese_era("5010501").unwrap(), "2019-05-01"); // Reiwa
+        assert!(DateUtils::parse_japanese_era("6010101").is_err());
+        assert!(DateUtils::parse_japanese_era("4011301").is_err());
+    }
+
+    #[test]
+    fn test_ber_tlv_as_utf8() {
+        let tlv = BerTlv { tag: 0x01, value: b"Hello".to_vec(), children: vec![] };
+        assert_eq!(tlv.as_utf8(), "Hello");
     }
 }

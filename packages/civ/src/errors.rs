@@ -63,8 +63,36 @@ impl CivError {
             (0x6A, 0x88) => CivError::NotFound("Referenced data not found".to_string()),
             
             (0x6B, 0x00) => CivError::InvalidData("Wrong parameter P1-P2".to_string()),
-            
-            _ => CivError::ApduError(sw1, sw2),
+            _ => CivError::Communication(format!("APDU Error: {:02X}{:02X}", sw1, sw2)),
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display() {
+        let err = CivError::NotFound("File".to_string());
+        assert_eq!(format!("{}", err), "Not found: File");
+        
+        let sw_err = CivError::from_sw(0x6A, 0x82);
+        assert!(format!("{}", sw_err).contains("File or application not found"));
+    }
+
+        #[test]
+
+        fn test_from_sw() {
+
+            assert!(matches!(CivError::from_sw(0x69, 0x82), CivError::AccessDenied(_)));
+
+            assert!(matches!(CivError::from_sw(0x63, 0xC3), CivError::IncorrectPin(3)));
+
+            assert!(matches!(CivError::from_sw(0x6F, 0x00), CivError::Communication(_)));
+
+        }
+
+    }
+
+    

@@ -100,5 +100,20 @@ mod tests {
         // Let's rely on the fact that `add_certificate` returns Result.
         // If it fails to parse, it's correct behavior for garbage.
         assert!(store.add_certificate(&[0x00], TrustAnchorType::CSCA).is_err());
+
+        // Test struct manually for lookup coverage
+        let t_cert = TrustedCertificate {
+            subject: "CN=Test".to_string(),
+            issuer: "CN=Root".to_string(),
+            serial: "1".to_string(),
+            raw_der: vec![0x01, 0x02],
+            anchor_type: TrustAnchorType::CSCA,
+        };
+        store.certs.push(t_cert);
+
+        assert!(store.find_by_subject("CN=Test").is_some());
+        assert!(store.find_by_subject("Nonexistent").is_none());
+        assert_eq!(store.get_by_type(TrustAnchorType::CSCA).len(), 1);
+        assert_eq!(store.get_by_type(TrustAnchorType::JpkiRoot).len(), 0);
     }
 }

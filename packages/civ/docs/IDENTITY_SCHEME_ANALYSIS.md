@@ -139,7 +139,7 @@ Verify and harden **Extended Length APDU** support. Although `civ`'s APDU builde
 ## 7. Summary Timeline
 
 | Era | Crypto | Representative Schemes | Civ Support |
-+|---|---|---|---|
+|---|---|---|---|
 | **2000-2010** | RSA 1024, 3DES, SHA-1 | EstEID (Gen1), MyKad (Gen1), ICAO BAC, **Juki-Card** | Legacy (BAC supported) |
 | **2011-2015** | RSA 2048, SHA-256 | EstEID (Gen2), US PIV (RSA) | **Good** |
 | **2016-2020** | RSA 2048, SHA-256 | **JPKI (Current)**, ICAO PACE (Early) | **Good (JPKI)** |

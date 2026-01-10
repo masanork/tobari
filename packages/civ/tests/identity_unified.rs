@@ -72,3 +72,15 @@ async fn test_mykad_unified() {
     assert!(identity.photo_data.is_none());
     assert_eq!(identity.gender, "Male");
 }
+
+#[tokio::test]
+async fn test_jprc_unified_details() {
+    let card = Arc::new(Mutex::new(MockSmartCard::new()));
+    let mut controller = civ::ResidenceCardController::new(MockRelay { card });
+
+    let identity = controller.read_identity().await.unwrap();
+    assert_eq!(identity.card_type, "ResidenceCard");
+    assert_eq!(identity.address.unwrap(), "東京都");
+    // Check attributes
+    assert_eq!(identity.attributes.get("residence_status").unwrap(), "許可");
+}
