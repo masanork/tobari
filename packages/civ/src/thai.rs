@@ -1,7 +1,7 @@
 use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE};
-use crate::reader::CardReader;
-use crate::errors::{Result, CivError};
+use crate::errors::{CivError, Result};
 use crate::models::{CitizenIdentity, IdentityController};
+use crate::reader::CardReader;
 use std::collections::HashMap;
 
 /// Thailand National ID Card Controller
@@ -17,9 +17,8 @@ impl<R: CardReader> ThaiController<R> {
     /// Select Thai ID Application
     pub async fn select_thai_ap(&mut self) -> Result<()> {
         let aid = vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01];
-        let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x00)
-            .with_data(&aid);
-        
+        let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x00).with_data(&aid);
+
         let res = self.reader.transmit(&apdu.to_bytes()).await?;
         Self::check_sw(&res)
     }
@@ -29,9 +28,8 @@ impl<R: CardReader> ThaiController<R> {
     pub async fn read_data(&mut self, offset: u16, len: u8) -> Result<Vec<u8>> {
         let p1 = (offset >> 8) as u8;
         let p2 = (offset & 0xFF) as u8;
-        
-        let apdu = ApduCommand::new(0x80, 0xB0, p1, p2)
-            .with_le(len as usize);
+
+        let apdu = ApduCommand::new(0x80, 0xB0, p1, p2).with_le(len as usize);
 
         // Thai ID cards are sometimes slow or unstable, retry once if transport error
         for retry in 0..3 {
@@ -39,7 +37,7 @@ impl<R: CardReader> ThaiController<R> {
             match res {
                 Ok(data) => {
                     if Self::check_sw(&data).is_ok() {
-                        return Ok(data[0..data.len()-2].to_vec());
+                        return Ok(data[0..data.len() - 2].to_vec());
                     }
                     // If check_sw fails (SW error), fall through to retry
                 }
@@ -49,21 +47,30 @@ impl<R: CardReader> ThaiController<R> {
             }
             if retry == 2 {
                 // Return original result or error
-                let final_res = self.reader.transmit(&apdu.to_bytes()).await.map_err(|e| CivError::Communication(e.to_string()))?;
+                let final_res = self
+                    .reader
+                    .transmit(&apdu.to_bytes())
+                    .await
+                    .map_err(|e| CivError::Communication(e.to_string()))?;
                 Self::check_sw(&final_res)?;
-                return Ok(final_res[0..final_res.len()-2].to_vec());
+                return Ok(final_res[0..final_res.len() - 2].to_vec());
             }
         }
-        
+
         Err(CivError::Communication("Failed after retries".to_string()))
     }
 
     fn check_sw(res: &[u8]) -> Result<()> {
-        if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
-        let sw1 = res[res.len()-2];
-        let sw2 = res[res.len()-1];
-        if sw1 == 0x90 && sw2 == 0x00 { Ok(()) }
-        else { Err(CivError::from_sw(sw1, sw2)) }
+        if res.len() < 2 {
+            return Err(CivError::Communication("Response too short".to_string()));
+        }
+        let sw1 = res[res.len() - 2];
+        let sw2 = res[res.len() - 1];
+        if sw1 == 0x90 && sw2 == 0x00 {
+            Ok(())
+        } else {
+            Err(CivError::from_sw(sw1, sw2))
+        }
     }
 }
 
@@ -92,7 +99,7 @@ impl<R: CardReader> IdentityController for ThaiController<R> {
         // DOB (BE): Offset 0x00D1, Len 8 (YYYYMMDD)
         let dob_bytes = self.read_data(0x00D1, 8).await?;
         let dob_be = String::from_utf8_lossy(&dob_bytes).trim().to_string();
-        
+
         // Convert BE YYYY to AD YYYY (BE - 543)
         let birth_date = if dob_be.len() == 8 {
             let be_year: i32 = dob_be[0..4].parse().unwrap_or(0);
@@ -113,7 +120,7 @@ impl<R: CardReader> IdentityController for ThaiController<R> {
 
         // Photo: Offset 0x0100 (example, real photo is much larger and requires chaining)
         // Thai ID photo is at a different AP/offset usually.
-        
+
         Ok(CitizenIdentity {
             full_name,
             surname: None,
@@ -138,28 +145,46 @@ mod tests {
     use super::*;
     use crate::test_utils::TestReader;
 
-        #[tokio::test]
+    #[tokio::test]
 
-        async fn test_read_data_retry_exhausted() {
+    async fn test_read_identity_success() {
+        let reader = TestReader::new();
 
-            let reader = TestReader::new();
+        // 1. select ap
 
-            reader.set_transport_error(true);
+        reader.push_response(&[0x90, 0x00]);
 
-            let mut controller = ThaiController::new(reader.clone());
+        // 2. read cid
 
-            
+        let mut cid = b"1234567890123".to_vec();
+        cid.extend_from_slice(&[0x90, 0x00]);
 
-            let res = controller.read_data(0x0001, 10).await;
+        reader.push_response(&cid);
 
-            assert!(res.is_err());
+        // 3. read name
 
-            // 3 retries in loop + 1 final attempt = 4 total
+        let mut name = vec![b'A'; 100];
+        name.extend_from_slice(&[0x90, 0x00]);
 
-            assert_eq!(reader.sent_apdus.lock().unwrap().len(), 4);
+        reader.push_response(&name);
 
-        }
+        // 4. read dob
 
+        let mut dob = b"25330101".to_vec();
+        dob.extend_from_slice(&[0x90, 0x00]);
+
+        reader.push_response(&dob);
+
+        // 5. read gender
+
+        reader.push_response(&[b'1', 0x90, 0x00]);
+
+        let mut controller = ThaiController::new(reader.clone());
+
+        let res = controller.read_identity().await.unwrap();
+
+        assert_eq!(res.identity_number, "1234567890123");
+
+        assert_eq!(res.birth_date, "1990-01-01");
     }
-
-    
+}

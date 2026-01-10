@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
-use ciborium::value::Value;
 use crate::models::CitizenIdentity;
 use anyhow::Result;
+use ciborium::value::Value;
+use serde::{Deserialize, Serialize};
 
 pub mod mso;
 pub use mso::MobileSecurityObject;
@@ -23,7 +23,7 @@ impl IssuerSignedItem {
         use rand::RngCore;
         let mut random = vec![0u8; 16];
         rand::thread_rng().fill_bytes(&mut random);
-        
+
         Self {
             digest_id: id,
             random,
@@ -41,7 +41,10 @@ impl IssuerSignedItem {
 }
 
 /// Convert CitizenIdentity to mDoc Items for a specific namespace
-pub fn identity_to_mdoc_items(identity: &CitizenIdentity, namespace: &str) -> Vec<IssuerSignedItem> {
+pub fn identity_to_mdoc_items(
+    identity: &CitizenIdentity,
+    namespace: &str,
+) -> Vec<IssuerSignedItem> {
     let mut items = Vec::new();
     let mut id = 0;
 
@@ -58,8 +61,8 @@ pub fn identity_to_mdoc_items(identity: &CitizenIdentity, namespace: &str) -> Ve
 
     match namespace {
         "org.iso.18013.5.1" => {
-            add_item!("family_name", Some(&identity.full_name)); 
-            add_item!("given_name", Some(&"".to_string())); 
+            add_item!("family_name", Some(&identity.full_name));
+            add_item!("given_name", Some(&"".to_string()));
             add_item!("birth_date", Some(&identity.birth_date));
             add_item!("document_number", Some(&identity.identity_number));
             add_item!("issuing_authority", identity.issuing_authority.as_ref());
@@ -91,20 +94,21 @@ pub fn generate_mdoc(identity: &CitizenIdentity, doc_type: &str) -> Result<Vec<u
     let mso_cbor = mso.to_cbor();
 
     // Create COSE Sign1 (Mock for now)
-    use coset::{CoseSign1Builder, HeaderBuilder, iana};
-    
+    use coset::{iana, CoseSign1Builder, HeaderBuilder};
+
     let protected = HeaderBuilder::new()
         .algorithm(iana::Algorithm::ES256)
         .build();
-    
+
     let signer = CoseSign1Builder::new()
         .protected(protected)
         .payload(mso_cbor)
         .build();
-    
+
     // Use coset's native serialization
     use coset::CborSerializable;
-    let issuer_auth_bytes = signer.to_vec()
+    let issuer_auth_bytes = signer
+        .to_vec()
         .map_err(|e| anyhow::anyhow!("COSE serialization error: {:?}", e))?;
 
     // Encode Items as tagged bytes for IssuerSigned
@@ -116,20 +120,36 @@ pub fn generate_mdoc(identity: &CitizenIdentity, doc_type: &str) -> Result<Vec<u
     name_spaces.insert(namespace.to_string(), Value::Array(encoded_items));
 
     let issuer_signed = Value::Map(vec![
-        (Value::Text("nameSpaces".to_string()), Value::Map(vec![
-            (Value::Text(namespace.to_string()), name_spaces.get(namespace).unwrap().clone())
-        ])),
-        (Value::Text("issuerAuth".to_string()), Value::Bytes(issuer_auth_bytes)),
+        (
+            Value::Text("nameSpaces".to_string()),
+            Value::Map(vec![(
+                Value::Text(namespace.to_string()),
+                name_spaces.get(namespace).unwrap().clone(),
+            )]),
+        ),
+        (
+            Value::Text("issuerAuth".to_string()),
+            Value::Bytes(issuer_auth_bytes),
+        ),
     ]);
 
     let document = Value::Map(vec![
-        (Value::Text("docType".to_string()), Value::Text(doc_type.to_string())),
+        (
+            Value::Text("docType".to_string()),
+            Value::Text(doc_type.to_string()),
+        ),
         (Value::Text("issuerSigned".to_string()), issuer_signed),
     ]);
 
     let response = Value::Map(vec![
-        (Value::Text("version".to_string()), Value::Text("1.0".to_string())),
-        (Value::Text("documents".to_string()), Value::Array(vec![document])),
+        (
+            Value::Text("version".to_string()),
+            Value::Text("1.0".to_string()),
+        ),
+        (
+            Value::Text("documents".to_string()),
+            Value::Array(vec![document]),
+        ),
     ]);
 
     let mut mdoc_bytes = Vec::new();
@@ -155,11 +175,16 @@ mod tests {
         assert!(res.is_ok());
         let mdoc = res.unwrap();
         assert!(!mdoc.is_empty());
-        
+
         // Basic CBOR check
         let val: Value = ciborium::de::from_reader(&mdoc[..]).unwrap();
         if let Value::Map(map) = val {
-            let version = map.iter().find(|(k, _)| k.as_text() == Some("version")).unwrap().1.as_text();
+            let version = map
+                .iter()
+                .find(|(k, _)| k.as_text() == Some("version"))
+                .unwrap()
+                .1
+                .as_text();
             assert_eq!(version, Some("1.0"));
         }
     }

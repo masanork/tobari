@@ -1,10 +1,10 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use x509_parser::prelude::*;
 
 /// Trusted Anchor types
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TrustAnchorType {
-    CSCA, // Country Signing CA (Passport/eID)
+    CSCA,     // Country Signing CA (Passport/eID)
     JpkiRoot, // JPKI Root CA
     JpdlRoot, // Police Agency Root (Hypothetical)
 }
@@ -23,11 +23,11 @@ pub struct TrustedCertificate {
 pub trait TrustStore: Send + Sync {
     /// Add a certificate to the store
     fn add_certificate(&mut self, cert_der: &[u8], anchor_type: TrustAnchorType) -> Result<()>;
-    
+
     /// Find a certificate by Subject Key Identifier (SKI) or similar ID
     /// For now, simpler lookup by Subject Name or just returning all matching type.
     fn find_by_subject(&self, subject: &str) -> Option<&TrustedCertificate>;
-    
+
     /// Get all certificates of a specific type
     fn get_by_type(&self, anchor_type: TrustAnchorType) -> Vec<&TrustedCertificate>;
 }
@@ -48,7 +48,7 @@ impl TrustStore for InMemoryTrustStore {
     fn add_certificate(&mut self, cert_der: &[u8], anchor_type: TrustAnchorType) -> Result<()> {
         let (_, cert) = X509Certificate::from_der(cert_der)
             .map_err(|e| anyhow!("Failed to parse certificate: {}", e))?;
-        
+
         let t_cert = TrustedCertificate {
             subject: cert.subject().to_string(),
             issuer: cert.issuer().to_string(),
@@ -56,7 +56,7 @@ impl TrustStore for InMemoryTrustStore {
             raw_der: cert_der.to_vec(),
             anchor_type,
         };
-        
+
         self.certs.push(t_cert);
         Ok(())
     }
@@ -66,7 +66,10 @@ impl TrustStore for InMemoryTrustStore {
     }
 
     fn get_by_type(&self, anchor_type: TrustAnchorType) -> Vec<&TrustedCertificate> {
-        self.certs.iter().filter(|c| c.anchor_type == anchor_type).collect()
+        self.certs
+            .iter()
+            .filter(|c| c.anchor_type == anchor_type)
+            .collect()
     }
 }
 
@@ -77,7 +80,7 @@ mod tests {
     #[test]
     fn test_in_memory_trust_store() {
         let mut store = InMemoryTrustStore::new();
-        
+
         // Minimal Self-Signed Cert DER (generated for testing)
         // Subject: CN=Test CA
         let cert_der = hex::decode(concat!(
@@ -85,21 +88,23 @@ mod tests {
         )).unwrap();
 
         let res = store.add_certificate(&cert_der, TrustAnchorType::CSCA);
-        // Note: The hex string above is likely broken/incomplete as a real cert, 
+        // Note: The hex string above is likely broken/incomplete as a real cert,
         // x509-parser might fail. Let's use a dummy PEM loading test instead if this fails.
         // Actually, let's use the cert generation logic from Mock if possible, or just skip if parsing fails (testing structure).
-        
+
         // For now, let's mock the add behavior or use valid minimal DER.
-        // Since we don't have a valid DER handy without a crypto lib call, 
+        // Since we don't have a valid DER handy without a crypto lib call,
         // let's test the struct methods assuming data is valid if we could mock the parser.
         // But the parser is real.
-        
+
         // Alternative: Use a mock cert from `mock::passport` if accessible?
         // It's private.
-        
+
         // Let's rely on the fact that `add_certificate` returns Result.
         // If it fails to parse, it's correct behavior for garbage.
-        assert!(store.add_certificate(&[0x00], TrustAnchorType::CSCA).is_err());
+        assert!(store
+            .add_certificate(&[0x00], TrustAnchorType::CSCA)
+            .is_err());
 
         // Test struct manually for lookup coverage
         let t_cert = TrustedCertificate {

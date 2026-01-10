@@ -68,55 +68,31 @@ fn test_cli_invalid_type() {
 #[test]
 
 fn test_cli_passport_missing_mrz() {
-
     let mut cmd = Command::cargo_bin("civ").unwrap();
 
     cmd.arg("--demo")
-
         .arg("id")
-
         .arg("--type=passport")
-
         .assert()
-
         .success(); // Succeeds with default "123456" MRZ
-
 }
-
-
 
 #[test]
 
 fn test_cli_jpki_missing_pin() {
-
     let mut cmd = Command::cargo_bin("civ").unwrap();
 
     cmd.arg("--demo")
-
         .arg("id")
-
         .arg("--type=jpki")
-
         .assert()
-
         .success(); // Succeeds with default "1234" PIN
-
 }
-
-
-
-
 
 #[test]
 
 fn test_cli_unknown_command() {
-
     let mut cmd = Command::cargo_bin("civ").unwrap();
 
-    cmd.arg("unknown")
-
-        .assert()
-
-        .failure();
-
+    cmd.arg("unknown").assert().failure();
 }

@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -14,7 +14,7 @@ pub struct CitizenIdentity {
     /// Name in Kana (Japanese specific)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub full_name_kana: Option<String>,
-    
+
     /// Standardized Address
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
@@ -22,7 +22,7 @@ pub struct CitizenIdentity {
     pub birth_date: String,
     /// Gender (1: Male, 2: Female, 9: Not specified, or ICAO "M"/"F"/"<")
     pub gender: String,
-    
+
     /// Identity Number (My Number, License No, Passport No, etc.)
     pub identity_number: String,
     /// Card Type (JPKI, DriverLicense, Passport, etc.)
@@ -33,7 +33,7 @@ pub struct CitizenIdentity {
     /// Expiration Date
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expiration_date: Option<String>,
-    
+
     /// Face Photo Data (JPEG/JP2/PNG)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub photo_data: Option<Vec<u8>>,

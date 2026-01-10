@@ -1,8 +1,8 @@
 use crate::reader::CardReader;
 use anyhow::Result;
 use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
 pub type ApduHandler = Box<dyn FnMut(&[u8]) -> Vec<u8> + Send>;
 
@@ -45,7 +45,7 @@ impl TestReader {
 impl CardReader for TestReader {
     async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>> {
         self.sent_apdus.lock().unwrap().push(apdu.to_vec());
-        
+
         if *self.transport_error.lock().unwrap() {
             return Err(anyhow::anyhow!("Transport error simulated"));
         }

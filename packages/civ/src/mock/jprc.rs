@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use crate::apdu::ApduCommand;
 use crate::mock::common::MockBackend;
+use std::collections::HashMap;
 
 pub enum ResidenceCardType {
     DF1, // Visual
@@ -17,7 +17,10 @@ impl ResidenceCardBackend {
         let mut files = HashMap::new();
         // DF1/EF02: Photo (Tag D1)
         files.insert(vec![0x00, 0x02], vec![0xD1, 0x03, 0xAA, 0xBB, 0xCC]);
-        Self { files, current_ef: None }
+        Self {
+            files,
+            current_ef: None,
+        }
     }
 
     pub fn new_df2() -> Self {
@@ -33,7 +36,10 @@ impl ResidenceCardBackend {
         files.insert(vec![0x00, 0x02], ef_perm);
 
         files.insert(vec![0x00, 0x04], vec![0xD7, 0x01, b'0']);
-        Self { files, current_ef: None }
+        Self {
+            files,
+            current_ef: None,
+        }
     }
 
     pub fn corrupt_data(&mut self) {
@@ -55,18 +61,29 @@ impl MockBackend for ResidenceCardBackend {
     fn handle_apdu(&mut self, cmd: &ApduCommand, _aid: &[u8]) -> (Vec<u8>, u16) {
         match cmd.ins {
             0xA4 => {
-                if cmd.p1 == 0x02 { self.current_ef = Some(cmd.data.clone()); (vec![], 0x9000) }
-                else { (vec![], 0x6A82) }
-            },
+                if cmd.p1 == 0x02 {
+                    self.current_ef = Some(cmd.data.clone());
+                    (vec![], 0x9000)
+                } else {
+                    (vec![], 0x6A82)
+                }
+            }
             0xB0 => {
                 if let Some(ef) = &self.current_ef {
                     if let Some(data) = self.files.get(ef) {
                         let offset = ((cmd.p1 as usize) << 8) | (cmd.p2 as usize);
-                        if offset >= data.len() { (vec![], 0x6B00) }
-                        else { (data[offset..].to_vec(), 0x9000) }
-                    } else { (vec![], 0x6A82) }
-                } else { (vec![], 0x6986) }
-            },
+                        if offset >= data.len() {
+                            (vec![], 0x6B00)
+                        } else {
+                            (data[offset..].to_vec(), 0x9000)
+                        }
+                    } else {
+                        (vec![], 0x6A82)
+                    }
+                } else {
+                    (vec![], 0x6986)
+                }
+            }
             _ => (vec![], 0x6D00),
         }
     }

@@ -1,7 +1,7 @@
 use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE};
-use crate::reader::CardReader;
-use crate::errors::{Result, CivError};
+use crate::errors::{CivError, Result};
 use crate::models::{CitizenIdentity, IdentityController};
+use crate::reader::CardReader;
 use std::collections::HashMap;
 
 /// Malaysia MyKad Controller
@@ -21,9 +21,9 @@ impl<R: CardReader> MyKadController<R> {
 
     /// Select JPN Application
     pub async fn select_jpn_ap(&mut self) -> Result<()> {
-        let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x00)
-            .with_data(&file_ids::DF_JPN);
-        
+        let apdu =
+            ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x00).with_data(&file_ids::DF_JPN);
+
         let res = self.reader.transmit(&apdu.to_bytes()).await?;
         Self::check_sw(&res)
     }
@@ -43,8 +43,10 @@ impl<R: CardReader> MyKadController<R> {
 
         // 2. SELECT INFO (A1 00 00 [FileID_H, FileID_L, Offset_H, Offset_L])
         let sel_data = [
-            (file_id >> 8) as u8, (file_id & 0xFF) as u8,
-            (offset >> 8) as u8, (offset & 0xFF) as u8
+            (file_id >> 8) as u8,
+            (file_id & 0xFF) as u8,
+            (offset >> 8) as u8,
+            (offset & 0xFF) as u8,
         ];
         let sel_info = ApduCommand::new(0x80, 0xA1, 0x00, 0x00).with_data(&sel_data);
         let res2 = self.reader.transmit(&sel_info.to_bytes()).await?;
@@ -55,15 +57,20 @@ impl<R: CardReader> MyKadController<R> {
         let res3 = self.reader.transmit(&read_info.to_bytes()).await?;
         Self::check_sw(&res3)?;
 
-        Ok(res3[0..res3.len()-2].to_vec())
+        Ok(res3[0..res3.len() - 2].to_vec())
     }
 
     fn check_sw(res: &[u8]) -> Result<()> {
-        if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
-        let sw1 = res[res.len()-2];
-        let sw2 = res[res.len()-1];
-        if sw1 == 0x90 && sw2 == 0x00 { Ok(()) }
-        else { Err(CivError::from_sw(sw1, sw2)) }
+        if res.len() < 2 {
+            return Err(CivError::Communication("Response too short".to_string()));
+        }
+        let sw1 = res[res.len() - 2];
+        let sw2 = res[res.len() - 1];
+        if sw1 == 0x90 && sw2 == 0x00 {
+            Ok(())
+        } else {
+            Err(CivError::from_sw(sw1, sw2))
+        }
     }
 }
 
@@ -73,26 +80,42 @@ mod tests {
     use crate::test_utils::TestReader;
 
     #[tokio::test]
-    async fn test_read_info_steps() {
+    async fn test_read_identity_success() {
         let reader = TestReader::new();
         let mut controller = MyKadController::new(reader.clone());
 
-        // 1. Failure at Step 1 (SET LENGTH)
-        reader.set_failure(0x67, 0x00);
-        assert!(controller.read_info(0x01, 0x02, 10).await.is_err());
+        // Select AP
+        reader.push_response(&[0x90, 0x00]);
+        // IC Number: C1, A1, B1
+        reader.push_response(&[0x90, 0x00]); // C1
+        reader.push_response(&[0x90, 0x00]); // A1
+        let mut ic = b"800101141234 ".to_vec();
+        ic.extend_from_slice(&[0x90, 0x00]);
+        reader.push_response(&ic); // B1
 
-        // 2. Failure at Step 2 (SELECT INFO)
-        reader.force_failure.lock().unwrap().take();
-        reader.push_response(&[0x90, 0x00]); // Step 1 OK
-        reader.set_failure(0x6A, 0x82);      // Step 2 FAIL
-        assert!(controller.read_info(0x01, 0x02, 10).await.is_err());
+        // Name: C1, A1, B1
+        reader.push_response(&[0x90, 0x00]);
+        reader.push_response(&[0x90, 0x00]);
+        let mut name = vec![b' '; 40];
+        name[0..3].copy_from_slice(b"ALI");
+        name.extend_from_slice(&[0x90, 0x00]);
+        reader.push_response(&name);
 
-        // 3. Failure at Step 3 (READ INFO)
-        reader.force_failure.lock().unwrap().take();
-        reader.push_response(&[0x90, 0x00]); // Step 1 OK
-        reader.push_response(&[0x90, 0x00]); // Step 2 OK
-        reader.set_failure(0x69, 0x85);      // Step 3 FAIL
-        assert!(controller.read_info(0x01, 0x02, 10).await.is_err());
+        // Gender: C1, A1, B1
+        reader.push_response(&[0x90, 0x00]);
+        reader.push_response(&[0x90, 0x00]);
+        reader.push_response(&[b'M', 0x90, 0x00]);
+
+        // Address: C1, A1, B1
+        reader.push_response(&[0x90, 0x00]);
+        reader.push_response(&[0x90, 0x00]);
+        let mut addr = vec![b' '; 30];
+        addr.extend_from_slice(&[0x90, 0x00]);
+        reader.push_response(&addr);
+
+        let res = controller.read_identity().await.unwrap();
+        assert_eq!(res.identity_number, "800101141234");
+        assert_eq!(res.gender, "Male");
     }
 }
 

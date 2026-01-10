@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
 /// Gaiji (External Character) Mapper
 /// Handles conversion from JPDL/JPRC specific private use characters to Unicode.
@@ -14,7 +14,7 @@ impl GaijiMapper {
         // Example placeholder data (Police Agency specific Gaiji)
         // Real table would be much larger.
         // F040 -> ☹ (Example)
-        map.insert(0xF040, "☹".to_string()); 
+        map.insert(0xF040, "☹".to_string());
         Self { map }
     }
 
@@ -31,9 +31,7 @@ impl Default for GaijiMapper {
     }
 }
 
-pub static GLOBAL_GAIJI_MAPPER: Lazy<GaijiMapper> = Lazy::new(|| {
-    GaijiMapper::new()
-});
+pub static GLOBAL_GAIJI_MAPPER: Lazy<GaijiMapper> = Lazy::new(|| GaijiMapper::new());
 
 /// Decode byte slice with Gaiji support (Shift-JIS based)
 /// This is a specialized decoder that detects Gaiji regions (e.g. F0xx - F9xx in CP932)
@@ -44,21 +42,21 @@ pub fn decode_gaiji_string(bytes: &[u8]) -> String {
     while i < bytes.len() {
         let b1 = bytes[i];
         if i + 1 < bytes.len() {
-            let b2 = bytes[i+1];
+            let b2 = bytes[i + 1];
             // Check for Shift-JIS double byte range
             // Lead byte: 81-9F, E0-FC
             if (0x81..=0x9F).contains(&b1) || (0xE0..=0xFC).contains(&b1) {
                 // Check if it's in the Gaiji area (E0-F9 usually reserved for vendors/UDC)
                 // JPDL specific: often F040 ~
                 let code = ((b1 as u16) << 8) | (b2 as u16);
-                
+
                 // Try Gaiji map first
                 if let Some(mapped) = GLOBAL_GAIJI_MAPPER.map_code(code) {
                     result.push_str(mapped);
                     i += 2;
                     continue;
                 }
-                
+
                 // Fallback to standard Shift-JIS decode
                 let slice = &[b1, b2];
                 let (cow, _, _) = encoding_rs::SHIFT_JIS.decode(slice);
@@ -67,7 +65,7 @@ pub fn decode_gaiji_string(bytes: &[u8]) -> String {
                 continue;
             }
         }
-        
+
         // Single byte (ASCII/JIS X 0201)
         if b1 <= 0x7F {
             result.push(b1 as char);

@@ -1,17 +1,20 @@
-use crate::apdu::{ApduCommand, CLA_ISO, INS_SELECT_FILE, INS_READ_BINARY, INS_GET_CHALLENGE, INS_EXTERNAL_AUTHENTICATE, INS_INTERNAL_AUTHENTICATE};
-use crate::reader::CardReader;
+use crate::apdu::{
+    ApduCommand, CLA_ISO, INS_EXTERNAL_AUTHENTICATE, INS_GET_CHALLENGE, INS_INTERNAL_AUTHENTICATE,
+    INS_READ_BINARY, INS_SELECT_FILE,
+};
 use crate::crypto::bac::BacSession;
-use std::collections::HashMap;
+use crate::crypto::pace::{derive_session_keys_sha256, PaceMappingType, PaceP256};
 use crate::crypto::sm::AesSecureMessaging;
-use crate::crypto::pace::{PaceP256, PaceMappingType, derive_session_keys_sha256};
-use crate::errors::{Result, CivError};
+use crate::errors::{CivError, Result};
 use crate::models::{CitizenIdentity, IdentityController};
-use p256::{PublicKey, ecdh::EphemeralSecret};
-use rand_core::OsRng;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
-use p256::ecdsa::{SigningKey, Signature};
-use signature::Signer;
+use crate::reader::CardReader;
 use crate::utils::{parse_ber_tlv, MrzUtils};
+use p256::ecdsa::{Signature, SigningKey};
+use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::{ecdh::EphemeralSecret, PublicKey};
+use rand_core::OsRng;
+use signature::Signer;
+use std::collections::HashMap;
 
 /// Secure Session Wrapper (BAC or PACE)
 pub enum SecureSession {
@@ -29,20 +32,26 @@ impl SecureSession {
 
     pub fn wrap_command(&mut self, apdu: &ApduCommand) -> Result<Vec<u8>> {
         match self {
-            SecureSession::Bac(s) => s.wrap_command(apdu).map_err(|e| CivError::SecureMessagingError(e.to_string())),
+            SecureSession::Bac(s) => s
+                .wrap_command(apdu)
+                .map_err(|e| CivError::SecureMessagingError(e.to_string())),
             SecureSession::Pace(s) => {
                 use crate::crypto::sm::SecureMessagingSession;
-                s.wrap_command(apdu).map_err(|e| CivError::SecureMessagingError(e.to_string()))
+                s.wrap_command(apdu)
+                    .map_err(|e| CivError::SecureMessagingError(e.to_string()))
             }
         }
     }
 
     pub fn unwrap_response(&mut self, data: &[u8]) -> Result<(Vec<u8>, u8, u8)> {
         match self {
-            SecureSession::Bac(s) => s.unwrap_response(data).map_err(|e| CivError::SecureMessagingError(e.to_string())),
+            SecureSession::Bac(s) => s
+                .unwrap_response(data)
+                .map_err(|e| CivError::SecureMessagingError(e.to_string())),
             SecureSession::Pace(s) => {
                 use crate::crypto::sm::SecureMessagingSession;
-                s.unwrap_response(data).map_err(|e| CivError::SecureMessagingError(e.to_string()))
+                s.unwrap_response(data)
+                    .map_err(|e| CivError::SecureMessagingError(e.to_string()))
             }
         }
     }
@@ -85,20 +94,20 @@ pub mod file_ids {
 
 impl<R: CardReader> PassportController<R> {
     pub fn new(reader: R) -> Self {
-        Self { 
-            reader, 
-            secure_session: None, 
-            mrz: None, 
-            can: None, 
-            last_verified: false 
+        Self {
+            reader,
+            secure_session: None,
+            mrz: None,
+            can: None,
+            last_verified: false,
         }
     }
 
     /// Select the ePassport Application
     pub async fn select_ep_ap(&mut self) -> Result<()> {
-        let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C)
-            .with_data(&file_ids::DF_ICAO);
-        
+        let apdu =
+            ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C).with_data(&file_ids::DF_ICAO);
+
         let res = self.reader.transmit(&apdu.to_bytes()).await?;
         Self::check_sw(&res)
     }
@@ -108,16 +117,28 @@ impl<R: CardReader> PassportController<R> {
         use crate::crypto::bac;
         let k_seed = bac::derive_key_seed(mrz);
         let (k_enc, k_mac) = bac::derive_session_keys(&k_seed);
-        
-        let get_challenge = ApduCommand::new(CLA_ISO, INS_GET_CHALLENGE, 0x00, 0x00).with_le(0x08); 
-        let rnd_ic_response = self.reader.transmit(&get_challenge.to_bytes()).await.map_err(|e| CivError::Communication(e.to_string()))?;
+
+        let get_challenge = ApduCommand::new(CLA_ISO, INS_GET_CHALLENGE, 0x00, 0x00).with_le(0x08);
+        let rnd_ic_response = self
+            .reader
+            .transmit(&get_challenge.to_bytes())
+            .await
+            .map_err(|e| CivError::Communication(e.to_string()))?;
         Self::check_sw(&rnd_ic_response)?;
         let rnd_ic = &rnd_ic_response[0..8];
 
-        let rnd_ic: [u8; 8] = rnd_ic.try_into().map_err(|_| CivError::Communication("Invalid RND.ICC".to_string()))?;
-        let (auth_data, ssc) = bac::build_mutual_auth_data(&k_enc, &k_mac, &rnd_ic).map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
-        let external_auth = ApduCommand::new(CLA_ISO, INS_EXTERNAL_AUTHENTICATE, 0x00, 0x00).with_data(&auth_data);
-        let response = self.reader.transmit(&external_auth.to_bytes()).await.map_err(|e| CivError::Communication(e.to_string()))?;
+        let rnd_ic: [u8; 8] = rnd_ic
+            .try_into()
+            .map_err(|_| CivError::Communication("Invalid RND.ICC".to_string()))?;
+        let (auth_data, ssc) = bac::build_mutual_auth_data(&k_enc, &k_mac, &rnd_ic)
+            .map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
+        let external_auth =
+            ApduCommand::new(CLA_ISO, INS_EXTERNAL_AUTHENTICATE, 0x00, 0x00).with_data(&auth_data);
+        let response = self
+            .reader
+            .transmit(&external_auth.to_bytes())
+            .await
+            .map_err(|e| CivError::Communication(e.to_string()))?;
         Self::check_sw(&response)?;
 
         self.secure_session = Some(SecureSession::Bac(bac::BacSession::new(k_enc, k_mac, ssc)));
@@ -126,7 +147,9 @@ impl<R: CardReader> PassportController<R> {
 
     /// Perform PACE (Password Authenticated Connection Establishment)
     pub async fn perform_pace(&mut self, mrz_or_can: &str) -> Result<()> {
-        let oid_pace_gm_aes = vec![0x06, 0x0A, 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04, 0x02, 0x02];
+        let oid_pace_gm_aes = vec![
+            0x06, 0x0A, 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04, 0x02, 0x02,
+        ];
         let mut mse_val = vec![0x80, oid_pace_gm_aes.len() as u8];
         mse_val.extend_from_slice(&oid_pace_gm_aes);
         mse_val.extend_from_slice(&[0x83, 0x01, 0x01]);
@@ -134,50 +157,69 @@ impl<R: CardReader> PassportController<R> {
         let mse_set = ApduCommand::new(0x00, 0x22, 0xC1, 0xA4).with_data(&mse_val);
         let res = self.transmit(&mse_set).await?;
         Self::check_sw(&res)?;
-        
+
         let mut pace = PaceP256::new(mrz_or_can, PaceMappingType::GenericMapping, 16);
-        let gen_auth_1 = ApduCommand::new(0x10, 0x86, 0x00, 0x00).with_data(&[0x7C, 0x00]).with_le(0x00);
+        let gen_auth_1 = ApduCommand::new(0x10, 0x86, 0x00, 0x00)
+            .with_data(&[0x7C, 0x00])
+            .with_le(0x00);
         let res_nonce = self.transmit(&gen_auth_1).await?;
         Self::check_sw(&res_nonce)?;
         let z = parse_pace_response(&res_nonce, 0x80)?;
         pace.set_encrypted_nonce(&z);
 
-        let my_pk = pace.perform_mapping_and_generate_key().map_err(|e| CivError::CryptoError(e.to_string()))?;
+        let my_pk = pace
+            .perform_mapping_and_generate_key()
+            .map_err(|e| CivError::CryptoError(e.to_string()))?;
         let mut cmd_data_2 = vec![0x7C];
-        let mut inner_2 = vec![0x81]; 
+        let mut inner_2 = vec![0x81];
         inner_2.extend_from_slice(&encode_len(my_pk.len()));
         inner_2.extend_from_slice(&my_pk);
         cmd_data_2.extend_from_slice(&encode_len(inner_2.len()));
         cmd_data_2.extend_from_slice(&inner_2);
-        
-        let gen_auth_2 = ApduCommand::new(0x10, 0x86, 0x00, 0x00).with_data(&cmd_data_2).with_le(0x00);
+
+        let gen_auth_2 = ApduCommand::new(0x10, 0x86, 0x00, 0x00)
+            .with_data(&cmd_data_2)
+            .with_le(0x00);
         let res_map = self.transmit(&gen_auth_2).await?;
         Self::check_sw(&res_map)?;
         let peer_pk = parse_pace_response(&res_map, 0x82)?;
-        pace.compute_shared_secret(&peer_pk).map_err(|e| CivError::CryptoError(e.to_string()))?;
+        pace.compute_shared_secret(&peer_pk)
+            .map_err(|e| CivError::CryptoError(e.to_string()))?;
 
         let t_pcd = pace.perform_token_exchange(&[])?;
         let mut cmd_data_3 = vec![0x7C];
-        let mut inner_3 = vec![0x85]; 
+        let mut inner_3 = vec![0x85];
         inner_3.extend_from_slice(&encode_len(t_pcd.len()));
         inner_3.extend_from_slice(&t_pcd);
         cmd_data_3.extend_from_slice(&encode_len(inner_3.len()));
         cmd_data_3.extend_from_slice(&inner_3);
 
-        let gen_auth_3 = ApduCommand::new(0x10, 0x86, 0x00, 0x00).with_data(&cmd_data_3).with_le(0x00);
+        let gen_auth_3 = ApduCommand::new(0x10, 0x86, 0x00, 0x00)
+            .with_data(&cmd_data_3)
+            .with_le(0x00);
         let res_auth = self.transmit(&gen_auth_3).await?;
         Self::check_sw(&res_auth)?;
-        
+
         let t_picc = parse_pace_response(&res_auth, 0x86)?;
-        pace.perform_token_exchange(&t_picc).map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
-        
-        let session = pace.finalize_session().map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
-        self.secure_session = Some(SecureSession::Pace(AesSecureMessaging::new(&session.k_enc, &session.k_mac, session.ssc).map_err(|e| CivError::SecureMessagingError(e.to_string()))?));
+        pace.perform_token_exchange(&t_picc)
+            .map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
+
+        let session = pace
+            .finalize_session()
+            .map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
+        self.secure_session = Some(SecureSession::Pace(
+            AesSecureMessaging::new(&session.k_enc, &session.k_mac, session.ssc)
+                .map_err(|e| CivError::SecureMessagingError(e.to_string()))?,
+        ));
         Ok(())
     }
 
     /// Perform Chip Authentication
-    pub async fn perform_chip_authentication(&mut self, ca_oid: &[u8], picc_pk_bytes: &[u8]) -> Result<()> {
+    pub async fn perform_chip_authentication(
+        &mut self,
+        ca_oid: &[u8],
+        picc_pk_bytes: &[u8],
+    ) -> Result<()> {
         let secret = EphemeralSecret::random(&mut OsRng);
         let public_key = PublicKey::from(&secret);
         let pk_bytes = public_key.to_encoded_point(false).as_bytes().to_vec();
@@ -191,26 +233,37 @@ impl<R: CardReader> PassportController<R> {
         Self::check_sw(&res_mse)?;
 
         let mut cmd_data = vec![0x7C];
-        let mut inner = vec![0x80]; 
+        let mut inner = vec![0x80];
         inner.extend_from_slice(&encode_len(pk_bytes.len()));
         inner.extend_from_slice(&pk_bytes);
         cmd_data.extend_from_slice(&encode_len(inner.len()));
         cmd_data.extend_from_slice(&inner);
-        
-        let gen_auth = ApduCommand::new(0x00, 0x86, 0x00, 0x00).with_data(&cmd_data).with_le(0x00);
+
+        let gen_auth = ApduCommand::new(0x00, 0x86, 0x00, 0x00)
+            .with_data(&cmd_data)
+            .with_le(0x00);
         let res_auth = self.transmit(&gen_auth).await?;
         Self::check_sw(&res_auth)?;
-        
-        let picc_pk = PublicKey::from_sec1_bytes(picc_pk_bytes).map_err(|e| CivError::CryptoError(format!("Invalid PICC Public Key: {}", e)))?;
+
+        let picc_pk = PublicKey::from_sec1_bytes(picc_pk_bytes)
+            .map_err(|e| CivError::CryptoError(format!("Invalid PICC Public Key: {}", e)))?;
         let shared_secret = secret.diffie_hellman(&picc_pk);
-        let (k_enc, k_mac) = derive_session_keys_sha256(shared_secret.raw_secret_bytes().as_slice(), 16);
-        
-        self.secure_session = Some(SecureSession::Pace(AesSecureMessaging::new(&k_enc, &k_mac, 0).map_err(|e| CivError::SecureMessagingError(e.to_string()))?));
+        let (k_enc, k_mac) =
+            derive_session_keys_sha256(shared_secret.raw_secret_bytes().as_slice(), 16);
+
+        self.secure_session = Some(SecureSession::Pace(
+            AesSecureMessaging::new(&k_enc, &k_mac, 0)
+                .map_err(|e| CivError::SecureMessagingError(e.to_string()))?,
+        ));
         Ok(())
     }
 
     /// Perform Terminal Authentication
-    pub async fn perform_terminal_authentication(&mut self, cert_chain: &[Vec<u8>], terminal_priv_key: &[u8]) -> Result<()> {
+    pub async fn perform_terminal_authentication(
+        &mut self,
+        cert_chain: &[Vec<u8>],
+        terminal_priv_key: &[u8],
+    ) -> Result<()> {
         for cert in cert_chain {
             let mse_cmd = ApduCommand::new(0x00, 0x22, 0x81, 0xB6).with_data(cert);
             let res = self.transmit(&mse_cmd).await?;
@@ -221,7 +274,8 @@ impl<R: CardReader> PassportController<R> {
         Self::check_sw(&res_challenge)?;
         let challenge = &res_challenge[0..8];
 
-        let signing_key = SigningKey::from_slice(terminal_priv_key).map_err(|e| CivError::CryptoError(format!("Invalid key: {}", e)))?;
+        let signing_key = SigningKey::from_slice(terminal_priv_key)
+            .map_err(|e| CivError::CryptoError(format!("Invalid key: {}", e)))?;
         let signature: Signature = signing_key.sign(challenge);
         let sig_bytes = signature.to_bytes().to_vec();
 
@@ -233,24 +287,49 @@ impl<R: CardReader> PassportController<R> {
 
     /// Perform Active Authentication
     pub async fn perform_active_authentication(&mut self, challenge: &[u8]) -> Result<Vec<u8>> {
-        let apdu = ApduCommand::new(CLA_ISO, INS_INTERNAL_AUTHENTICATE, 0x00, 0x00).with_data(challenge).with_le(0x00);
+        let apdu = ApduCommand::new(CLA_ISO, INS_INTERNAL_AUTHENTICATE, 0x00, 0x00)
+            .with_data(challenge)
+            .with_le(0x00);
         let res = self.transmit(&apdu).await?;
         Self::check_sw(&res)?;
-        Ok(res[0..res.len()-2].to_vec())
+        Ok(res[0..res.len() - 2].to_vec())
     }
 
-    pub async fn read_common_data(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_COM).await }
-    pub async fn read_dg1(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG1).await }
-    pub async fn read_dg2(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG2).await }
-    pub async fn read_dg3(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG3).await }
-    pub async fn read_dg4(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG4).await }
-    pub async fn read_dg11(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG11).await }
-    pub async fn read_dg12(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG12).await }
-    pub async fn read_dg14(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG14).await }
-    pub async fn read_dg15(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG15).await }
-    pub async fn read_sod(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_SOD).await }
+    pub async fn read_common_data(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_COM).await
+    }
+    pub async fn read_dg1(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG1).await
+    }
+    pub async fn read_dg2(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG2).await
+    }
+    pub async fn read_dg3(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG3).await
+    }
+    pub async fn read_dg4(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG4).await
+    }
+    pub async fn read_dg11(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG11).await
+    }
+    pub async fn read_dg12(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG12).await
+    }
+    pub async fn read_dg14(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG14).await
+    }
+    pub async fn read_dg15(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_DG15).await
+    }
+    pub async fn read_sod(&mut self) -> Result<Vec<u8>> {
+        self.read_file(&file_ids::EF_SOD).await
+    }
 
-    pub async fn verify_passive_authentication(&mut self, dgs: &HashMap<u8, Vec<u8>>) -> Result<()> {
+    pub async fn verify_passive_authentication(
+        &mut self,
+        dgs: &HashMap<u8, Vec<u8>>,
+    ) -> Result<()> {
         let sod_data = self.read_sod().await?;
         let verifier = crate::passport_verify::PassportVerifier::new();
         let sod = verifier.parse_sod(&sod_data)?;
@@ -278,20 +357,36 @@ impl<R: CardReader> PassportController<R> {
         let mut data = Vec::new();
         let mut offset: u16 = 0;
         loop {
-            let read = ApduCommand::new(CLA_ISO, INS_READ_BINARY, (offset >> 8) as u8, (offset & 0xFF) as u8).with_le(0x00);
+            let read = ApduCommand::new(
+                CLA_ISO,
+                INS_READ_BINARY,
+                (offset >> 8) as u8,
+                (offset & 0xFF) as u8,
+            )
+            .with_le(0x00);
             let res = self.transmit(&read).await?;
-            if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
+            if res.len() < 2 {
+                return Err(CivError::Communication("Response too short".to_string()));
+            }
             let sw1 = res[res.len() - 2];
             let sw2 = res[res.len() - 1];
-            let chunk = &res[0..res.len()-2];
+            let chunk = &res[0..res.len() - 2];
             if !chunk.is_empty() {
                 data.extend_from_slice(chunk);
                 offset += chunk.len() as u16;
             }
-            if sw1 == 0x90 && sw2 == 0x00 { if chunk.len() < 256 { break; } }
-            else if sw1 == 0x6B || (sw1 == 0x62 && sw2 == 0x82) { break; }
-            else { return Err(CivError::from_sw(sw1, sw2)); }
-            if offset > 32768 { break; }
+            if sw1 == 0x90 && sw2 == 0x00 {
+                if chunk.len() < 256 {
+                    break;
+                }
+            } else if sw1 == 0x6B || (sw1 == 0x62 && sw2 == 0x82) {
+                break;
+            } else {
+                return Err(CivError::from_sw(sw1, sw2));
+            }
+            if offset > 32768 {
+                break;
+            }
         }
         Ok(data)
     }
@@ -300,25 +395,39 @@ impl<R: CardReader> PassportController<R> {
         if let Some(session) = self.secure_session.as_mut() {
             let is_sm_command = (apdu.cla & 0x0C) != 0;
             let wrapped = session.wrap_command(apdu)?;
-            let response = self.reader.transmit(&wrapped).await.map_err(|e| CivError::Communication(e.to_string()))?;
+            let response = self
+                .reader
+                .transmit(&wrapped)
+                .await
+                .map_err(|e| CivError::Communication(e.to_string()))?;
             if is_sm_command || response.len() > 2 {
                 let (data, sw1, sw2) = session.unwrap_response(&response)?;
-                let mut out = data; out.push(sw1); out.push(sw2);
+                let mut out = data;
+                out.push(sw1);
+                out.push(sw2);
                 Ok(out)
             } else {
                 Ok(response)
             }
         } else {
-            self.reader.transmit(&apdu.to_bytes()).await.map_err(|e| CivError::Communication(e.to_string()))
+            self.reader
+                .transmit(&apdu.to_bytes())
+                .await
+                .map_err(|e| CivError::Communication(e.to_string()))
         }
     }
 
     fn check_sw(res: &[u8]) -> Result<()> {
-        if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
-        let sw1 = res[res.len()-2];
-        let sw2 = res[res.len()-1];
-        if sw1 == 0x90 && sw2 == 0x00 { Ok(()) }
-        else { Err(CivError::from_sw(sw1, sw2)) }
+        if res.len() < 2 {
+            return Err(CivError::Communication("Response too short".to_string()));
+        }
+        let sw1 = res[res.len() - 2];
+        let sw2 = res[res.len() - 1];
+        if sw1 == 0x90 && sw2 == 0x00 {
+            Ok(())
+        } else {
+            Err(CivError::from_sw(sw1, sw2))
+        }
     }
 }
 
@@ -329,7 +438,12 @@ impl<R: CardReader> IdentityController for PassportController<R> {
         match pin_type {
             "mrz" => self.mrz = Some(pin.to_string()),
             "can" => self.can = Some(pin.to_string()),
-            _ => return Err(CivError::InvalidData(format!("Unknown PIN/Password type for Passport: {}", pin_type))),
+            _ => {
+                return Err(CivError::InvalidData(format!(
+                    "Unknown PIN/Password type for Passport: {}",
+                    pin_type
+                )))
+            }
         }
         Ok(())
     }
@@ -347,7 +461,9 @@ impl<R: CardReader> IdentityController for PassportController<R> {
             }
         }
         let mut dgs = HashMap::new();
-        if let Ok(dg1) = self.read_dg1().await { dgs.insert(1, dg1); }
+        if let Ok(dg1) = self.read_dg1().await {
+            dgs.insert(1, dg1);
+        }
         self.verify_passive_authentication(&dgs).await?;
         self.last_verified = true;
         Ok(true)
@@ -368,56 +484,78 @@ impl<R: CardReader> IdentityController for PassportController<R> {
         let dg1 = self.read_dg1().await?;
         let tlvs = parse_ber_tlv(&dg1).unwrap_or_default();
         let mrz_raw = if !tlvs.is_empty() && tlvs[0].tag == 0x61 {
-             let inner = parse_ber_tlv(&tlvs[0].value).unwrap_or_default();
-             if !inner.is_empty() && inner[0].tag == 0x5F1F {
-                  String::from_utf8_lossy(&inner[0].value).to_string()
-             } else { String::from_utf8_lossy(&dg1).to_string() }
-        } else { String::from_utf8_lossy(&dg1).to_string() };
+            let inner = parse_ber_tlv(&tlvs[0].value).unwrap_or_default();
+            if !inner.is_empty() && inner[0].tag == 0x5F1F {
+                String::from_utf8_lossy(&inner[0].value).to_string()
+            } else {
+                String::from_utf8_lossy(&dg1).to_string()
+            }
+        } else {
+            String::from_utf8_lossy(&dg1).to_string()
+        };
 
         let mut mrz_clean = mrz_raw.replace("\r", "");
-        if mrz_clean.len() >= 88 && !mrz_clean.contains('\n') { mrz_clean.insert(44, '\n'); }
-        let mut identity = MrzUtils::parse_mrz_td3(&mrz_clean).unwrap_or_else(|_| CitizenIdentity {
-            full_name: "PASSPORT HOLDER".to_string(),
-            card_type: "Passport".to_string(),
-            ..Default::default()
-        });
-        
-        if let Ok(photo) = self.read_dg2().await { identity.photo_data = Some(photo); }
+        if mrz_clean.len() >= 88 && !mrz_clean.contains('\n') {
+            mrz_clean.insert(44, '\n');
+        }
+        let mut identity =
+            MrzUtils::parse_mrz_td3(&mrz_clean).unwrap_or_else(|_| CitizenIdentity {
+                full_name: "PASSPORT HOLDER".to_string(),
+                card_type: "Passport".to_string(),
+                ..Default::default()
+            });
+
+        if let Ok(photo) = self.read_dg2().await {
+            identity.photo_data = Some(photo);
+        }
         identity.verified = self.last_verified;
         Ok(identity)
     }
 }
 
 fn parse_pace_response(res: &[u8], target_tag: u8) -> Result<Vec<u8>> {
-    let tlvs = parse_ber_tlv(res).map_err(|e| CivError::InvalidData(format!("Failed to parse PACE TLV: {}", e)))?;
-    
+    let tlvs = parse_ber_tlv(res)
+        .map_err(|e| CivError::InvalidData(format!("Failed to parse PACE TLV: {}", e)))?;
+
     fn find_tag_recursive(tlvs: &[crate::utils::BerTlv], target: u32) -> Option<Vec<u8>> {
         for tlv in tlvs {
-            if tlv.tag == target { return Some(tlv.value.to_vec()); }
-            if let Some(v) = find_tag_recursive(&tlv.children, target) { return Some(v); }
+            if tlv.tag == target {
+                return Some(tlv.value.to_vec());
+            }
+            if let Some(v) = find_tag_recursive(&tlv.children, target) {
+                return Some(v);
+            }
         }
         None
     }
-    
-    find_tag_recursive(&tlvs, target_tag as u32).ok_or_else(|| CivError::NotFound(format!("Tag {:02X} not found", target_tag)))
+
+    find_tag_recursive(&tlvs, target_tag as u32)
+        .ok_or_else(|| CivError::NotFound(format!("Tag {:02X} not found", target_tag)))
 }
 
 fn encode_len(len: usize) -> Vec<u8> {
-    if len <= 0x7F { vec![len as u8] }
-    else if len <= 0xFF { vec![0x81, len as u8] }
-    else { vec![0x82, ((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8] }
+    if len <= 0x7F {
+        vec![len as u8]
+    } else if len <= 0xFF {
+        vec![0x81, len as u8]
+    } else {
+        vec![0x82, ((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8]
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::TestReader;
     use crate::mock::{MockSmartCard, PassportBackend};
+    use crate::test_utils::TestReader;
     use std::sync::{Arc, Mutex};
 
     fn setup_passport_mock(reader: &TestReader) -> Arc<Mutex<MockSmartCard>> {
         let mut mock = MockSmartCard::new();
-        mock.add_backend(file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("password")));
+        mock.add_backend(
+            file_ids::DF_ICAO.to_vec(),
+            Box::new(PassportBackend::new("password")),
+        );
         let mock = Arc::new(Mutex::new(mock));
         let mock_clone = mock.clone();
         reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
@@ -432,7 +570,7 @@ mod tests {
         let res = controller.select_ep_ap().await;
         assert!(res.is_ok());
     }
-    
+
     #[tokio::test]
     async fn test_read_dg14() {
         let reader = TestReader::new();
@@ -473,8 +611,12 @@ mod tests {
         let mut controller = PassportController::new(reader.clone());
         let _ = controller.select_ep_ap().await;
         let picc_pk = hex::decode("046B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C2964FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5").unwrap();
-        let ca_oid = vec![0x06, 0x0A, 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x03, 0x02, 0x01];
-        let res = controller.perform_chip_authentication(&ca_oid, &picc_pk).await;
+        let ca_oid = vec![
+            0x06, 0x0A, 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x03, 0x02, 0x01,
+        ];
+        let res = controller
+            .perform_chip_authentication(&ca_oid, &picc_pk)
+            .await;
         assert!(res.is_ok());
     }
 
@@ -511,8 +653,9 @@ mod tests {
         // Tag 0x80 inside 0xA0
         let inner = vec![0x80, 0x02, 0x01, 0x02];
         let outer = vec![0xA0, inner.len() as u8];
-        let mut data = outer; data.extend_from_slice(&inner);
-        
+        let mut data = outer;
+        data.extend_from_slice(&inner);
+
         let res = parse_pace_response(&data, 0x80).unwrap();
         assert_eq!(res, vec![0x01, 0x02]);
     }

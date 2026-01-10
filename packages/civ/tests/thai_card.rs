@@ -1,8 +1,8 @@
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
 use civ::test_utils::TestReader;
-use civ::ThaiController;
 use civ::IdentityController;
+use civ::ThaiController;
 use std::sync::{Arc, Mutex};
 
 struct MockRelay {
@@ -36,9 +36,9 @@ async fn test_thai_gender_female() {
     // Gender is at 0x00E1
     let mut data = vec![0u8; 8192];
     data[0x00E1] = b'2';
-    // Re-initialize backend or just use a custom one if possible. 
+    // Re-initialize backend or just use a custom one if possible.
     // Since ThaiBackend.data is private, let's add a setter or just use mock relay to fake it.
-    
+
     // Actually, let's just test read_identity with the existing mock first to ensure it's fully covered.
 }
 
@@ -46,12 +46,15 @@ async fn test_thai_gender_female() {
 async fn test_thai_read_identity_failure_at_cid() {
     let reader = TestReader::new();
     let mut controller = ThaiController::new(reader.clone());
-    
+
     // Succeed at select, fail at read_data (cid)
     reader.push_response(&[0x90, 0x00]); // select ap
     reader.set_failure(0x6A, 0x82);
-    
-    let res: anyhow::Result<civ::models::CitizenIdentity> = controller.read_identity().await.map_err(|e| anyhow::anyhow!(e));
+
+    let res: anyhow::Result<civ::models::CitizenIdentity> = controller
+        .read_identity()
+        .await
+        .map_err(|e| anyhow::anyhow!(e));
     assert!(res.is_err());
 }
 
@@ -59,9 +62,9 @@ async fn test_thai_read_identity_failure_at_cid() {
 async fn test_thai_read_raw_data() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
     let mut controller = ThaiController::new(MockRelay { card });
-    
+
     controller.select_thai_ap().await.unwrap();
-    
+
     // Read CID directly
     let cid = controller.read_data(0x0004, 13).await.unwrap();
     assert_eq!(cid, b"1234567890123");
@@ -71,15 +74,20 @@ async fn test_thai_read_raw_data() {
 async fn test_thai_read_data_retry() {
     let mut backend = civ::mock::thai::ThaiBackend::new();
     backend.fail_once = true; // Trigger retry logic in controller
-    
+
     let mut card = MockSmartCard::new();
-    card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01], Box::new(backend));
-    
-    let relay = MockRelay { card: Arc::new(Mutex::new(card)) };
+    card.add_backend(
+        vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01],
+        Box::new(backend),
+    );
+
+    let relay = MockRelay {
+        card: Arc::new(Mutex::new(card)),
+    };
     let mut controller = ThaiController::new(relay);
-    
+
     controller.select_thai_ap().await.unwrap();
-    
+
     let cid = controller.read_data(0x0004, 13).await.unwrap();
     assert_eq!(cid, b"1234567890123");
 }
@@ -90,11 +98,10 @@ async fn test_thai_selection_failure() {
     #[async_trait::async_trait]
     impl CardReader for ErrorRelay {
         async fn transmit(&mut self, _apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
-            Ok(vec![0x6A, 0x82]) 
+            Ok(vec![0x6A, 0x82])
         }
     }
 
     let mut controller = ThaiController::new(ErrorRelay);
     assert!(controller.select_thai_ap().await.is_err());
 }
-
