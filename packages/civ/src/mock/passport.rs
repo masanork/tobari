@@ -42,7 +42,11 @@ impl PassportBackend {
         let dg1_data = vec![0x61, 0x05, 0x5F, 0x1F, 0x02, 0x41, 0x42]; 
         files.insert(vec![0x01, 0x01], dg1_data.clone());
         
-        let sod = Self::generate_mock_sod(vec![(1, dg1_data), (15, dg15)]);
+        // DG2: Face Photo (Tag 75)
+        let dg2_data = vec![0x75, 0x05, 0x5F, 0x2E, 0x02, 0xDD, 0xEE];
+        files.insert(vec![0x01, 0x02], dg2_data.clone());
+        
+        let sod = Self::generate_mock_sod(vec![(1, dg1_data), (2, dg2_data), (15, dg15)]);
         files.insert(vec![0x01, 0x1D], sod);
         
         Self {

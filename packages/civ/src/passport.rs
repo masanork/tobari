@@ -407,6 +407,11 @@ impl<R: CardReader> IdentityController for PassportController<R> {
             ..Default::default()
         });
         
+        // Read Face Photo if possible
+        if let Ok(photo) = self.read_dg2().await {
+            identity.photo_data = Some(photo);
+        }
+
         identity.verified = self.last_verified;
         Ok(identity)
     }

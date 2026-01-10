@@ -292,33 +292,87 @@ impl<R: CardReader> IdentityController for DriversLicenseController<R> {
         Ok(res)
     }
 
-    async fn read_identity(&mut self) -> Result<CitizenIdentity> {
-        if let Some(pin) = self.pin1.clone() {
-            self.select_dl_ap().await?;
-            self.verify_pin1(&pin).await?;
+        async fn read_identity(&mut self) -> Result<CitizenIdentity> {
+
+            if let Some(pin) = self.pin1.clone() {
+
+                self.select_dl_ap().await?;
+
+                self.verify_pin1(&pin).await?;
+
+            }
+
+    
+
+            let info = self.read_common_data().await?;
+
+            let mut photo_data = None;
+
+    
+
+            // Try reading photo if PIN2 is available
+
+            if let Some(pin2) = self.pin2.clone() {
+
+                if let Ok(_) = self.select_dl_photo_ap().await {
+
+                    if let Ok(_) = self.verify_pin2(&pin2).await {
+
+                        if let Ok(photo) = self.read_photo().await {
+
+                            photo_data = Some(photo);
+
+                        }
+
+                    }
+
+                }
+
+                // Re-select DL AP just in case
+
+                let _ = self.select_dl_ap().await;
+
+            }
+
+    
+
+            Ok(CitizenIdentity {
+
+                full_name: info.name,
+
+                surname: None,
+
+                given_names: None,
+
+                full_name_kana: Some(info.name_kana),
+
+                address: Some(info.address),
+
+                birth_date: info.birth_date,
+
+                gender: "9".to_string(), // Gender not available in EF01 Common Data
+
+                identity_number: info.license_number,
+
+                card_type: "DriversLicense".to_string(),
+
+                issuing_authority: Some("JPN".to_string()),
+
+                expiration_date: Some(info.expire_date),
+
+                photo_data,
+
+                verified: false,
+
+                attributes: std::collections::HashMap::new(),
+
+            })
+
         }
 
-                let info = self.read_common_data().await?;
-        
-                Ok(CitizenIdentity {
-                    full_name: info.name,
-                    surname: None,
-                    given_names: None,
-                    full_name_kana: Some(info.name_kana),
-                    address: Some(info.address),
-                    birth_date: info.birth_date,
-                    gender: "9".to_string(), // Gender not available in EF01 Common Data
-                    identity_number: info.license_number,
-                                card_type: "DriversLicense".to_string(),
-                                issuing_authority: Some("JPN".to_string()),
-                                expiration_date: Some(info.expire_date),
-                                photo_data: None, // Requires PIN2
-                                verified: false,
-                    
-                    attributes: std::collections::HashMap::new(),
-                })
-            }
-        }
+    }
+
+    
 #[cfg(test)]
 mod tests {
     use super::*;
