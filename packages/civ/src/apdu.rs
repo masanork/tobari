@@ -56,7 +56,7 @@ impl ApduCommand {
                 bytes.push(lc as u8);
                 bytes.extend_from_slice(&self.data);
             }
-            
+
             // Case 2S or 4S
             if let Some(l) = le {
                 // For Short APDU, Le=256 is encoded as 0x00
@@ -66,7 +66,7 @@ impl ApduCommand {
         } else {
             // --- Extended APDU ---
             // Case 2E (No data, Le), Case 3E (Data, No Le), Case 4E (Data, Le)
-            
+
             // If there's data (Case 3E or 4E)
             if lc > 0 {
                 // Lc is 3 bytes: 00 LcHigh LcLow
@@ -89,7 +89,7 @@ impl ApduCommand {
                 bytes.push((l_val & 0xFF) as u8);
             }
         }
-        
+
         bytes
     }
 
@@ -138,13 +138,13 @@ impl ApduCommand {
         } else {
             // --- Extended APDU (or Short Case 2S/4S with Lc=0, but ISO says 00 prefix is Extended) ---
             if bytes.len() == 5 {
-                 // Case 2S with Le=0 (256 bytes)
-                 cmd.le = Some(256);
-                 return Ok(cmd);
+                // Case 2S with Le=0 (256 bytes)
+                cmd.le = Some(256);
+                return Ok(cmd);
             }
-            
+
             if bytes.len() < offset + 2 {
-                 return Err("Invalid Extended APDU".to_string());
+                return Err("Invalid Extended APDU".to_string());
             }
 
             // Extended length indicator (00) was at offset 4.
@@ -163,7 +163,7 @@ impl ApduCommand {
             // Case 3E/4E
             let lc = val;
             if bytes.len() < offset + lc {
-                 return Err("Extended APDU Lc exceeds buffer".to_string());
+                return Err("Extended APDU Lc exceeds buffer".to_string());
             }
             cmd.data = bytes[offset..offset + lc].to_vec();
             offset += lc;
@@ -195,28 +195,23 @@ pub const INS_INTERNAL_AUTHENTICATE: u8 = 0x88;
 pub mod file_ids {
     /// JPKI Application AID
     /// D3 92 F0 00 26 01 00 00 00 01
-    pub const DF_JPKI: [u8; 10] = [
-        0xD3, 0x92, 0xF0, 0x00, 0x26, 0x01, 0x00, 0x00, 0x00, 0x01
-    ];
+    pub const DF_JPKI: [u8; 10] = [0xD3, 0x92, 0xF0, 0x00, 0x26, 0x01, 0x00, 0x00, 0x00, 0x01];
 
     /// Card Surface Input Support Application AID
     /// D3 92 10 00 31 00 01 01 04 08
-    pub const DF_INPUT_SUPPORT: [u8; 10] = [
-        0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x08
-    ];
+    pub const DF_INPUT_SUPPORT: [u8; 10] =
+        [0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x08];
 
     /// Surface (Visual) Application AID (券面事項確認AP)
     /// D3 92 10 00 31 00 01 01 04 02
-    pub const DF_SURFACE: [u8; 10] = [
-        0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x02
-    ];
+    pub const DF_SURFACE: [u8; 10] = [0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x02];
 
     /// Authentication PIN EF
     pub const EF_AUTH_PIN: [u8; 2] = [0x00, 0x18];
 
     /// Signature PIN EF
     pub const EF_SIGN_PIN: [u8; 2] = [0x00, 0x1B];
-    
+
     /// Card Surface Input Support PIN EF
     pub const EF_INPUT_SUPPORT_PIN: [u8; 2] = [0x00, 0x11];
 
@@ -259,7 +254,10 @@ mod tests {
         let data = vec![0x01, 0x02, 0x03];
         let cmd = ApduCommand::new(0x00, 0xA4, 0x04, 0x0C).with_data(&data);
         // Header(4) + Len(1) + Data(3)
-        assert_eq!(cmd.to_bytes(), vec![0x00, 0xA4, 0x04, 0x0C, 0x03, 0x01, 0x02, 0x03]);
+        assert_eq!(
+            cmd.to_bytes(),
+            vec![0x00, 0xA4, 0x04, 0x0C, 0x03, 0x01, 0x02, 0x03]
+        );
     }
 
     #[test]
@@ -275,8 +273,11 @@ mod tests {
         let cmd = ApduCommand::new(0x80, 0x2A, 0x00, 0x80)
             .with_data(&data)
             .with_le(0x00); // Le=0 means 256 for short APDU
-        // Header(4) + Lc(1) + Data(2) + Le(1)
-        assert_eq!(cmd.to_bytes(), vec![0x80, 0x2A, 0x00, 0x80, 0x02, 0xAA, 0xBB, 0x00]);
+                            // Header(4) + Lc(1) + Data(2) + Le(1)
+        assert_eq!(
+            cmd.to_bytes(),
+            vec![0x80, 0x2A, 0x00, 0x80, 0x02, 0xAA, 0xBB, 0x00]
+        );
     }
 
     #[test]
@@ -284,14 +285,14 @@ mod tests {
         // Create 260 bytes of data (exceeds 255)
         let data = vec![0xAA; 260];
         let cmd = ApduCommand::new(0x00, 0x20, 0x00, 0x00).with_data(&data);
-        
+
         let bytes = cmd.to_bytes();
         // Check Header
         assert_eq!(bytes[0..4], [0x00, 0x20, 0x00, 0x00]);
         // Check Extended Lc: 00 01 04 (0x0104 = 260)
         assert_eq!(bytes[4..7], [0x00, 0x01, 0x04]);
         // Check data content
-        assert_eq!(bytes[7..7+260], data[..]);
+        assert_eq!(bytes[7..7 + 260], data[..]);
         // No Le, so total length is 4 (header) + 3 (Lc) + 260 (data) = 267
         assert_eq!(bytes.len(), 267);
     }
@@ -300,7 +301,7 @@ mod tests {
     fn test_extended_apdu_le() {
         // Request 1000 bytes (exceeds 256)
         let cmd = ApduCommand::new(0x00, 0xB0, 0x00, 0x00).with_le(1000);
-        
+
         let bytes = cmd.to_bytes();
         // Case 2E: Header + 00 + LeHigh + LeLow
         // 1000 = 0x03E8
@@ -311,7 +312,7 @@ mod tests {
     fn test_extended_apdu_le_max() {
         // Request 65536 bytes (max for extended, encoded as 0x0000)
         let cmd = ApduCommand::new(0x00, 0xB0, 0x00, 0x00).with_le(65536);
-        
+
         let bytes = cmd.to_bytes();
         // Case 2E: Header + 00 + LeHigh + LeLow
         assert_eq!(bytes, vec![0x00, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x00]);
@@ -331,9 +332,9 @@ mod tests {
         // Lc: 00 01 04
         assert_eq!(bytes[4..7], [0x00, 0x01, 0x04]);
         // Data
-        assert_eq!(bytes[7..7+260], data[..]);
+        assert_eq!(bytes[7..7 + 260], data[..]);
         // Le: 03 E8
-        assert_eq!(bytes[7+260..], [0x03, 0xE8]);
+        assert_eq!(bytes[7 + 260..], [0x03, 0xE8]);
         // Total length: 4 (header) + 3 (Lc) + 260 (data) + 2 (Le) = 269
         assert_eq!(bytes.len(), 269);
     }
@@ -352,9 +353,9 @@ mod tests {
         // Lc: 00 01 04
         assert_eq!(bytes[4..7], [0x00, 0x01, 0x04]);
         // Data
-        assert_eq!(bytes[7..7+260], data[..]);
+        assert_eq!(bytes[7..7 + 260], data[..]);
         // Le: 00 00
-        assert_eq!(bytes[7+260..], [0x00, 0x00]);
+        assert_eq!(bytes[7 + 260..], [0x00, 0x00]);
         // Total length: 4 (header) + 3 (Lc) + 260 (data) + 2 (Le) = 269
         assert_eq!(bytes.len(), 269);
     }

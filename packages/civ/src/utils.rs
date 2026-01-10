@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 
 /// Decode Shift-JIS bytes to String, with lossy conversion for Gaiji.
 pub fn decode_shift_jis_lossy_gaiji(input: &[u8]) -> String {
@@ -35,11 +35,15 @@ pub fn parse_ber_tlv(data: &[u8]) -> Result<Vec<BerTlv>> {
                 let next_byte = data[i];
                 tag = (tag << 8) | (next_byte as u32);
                 i += 1;
-                if (next_byte & 0x80) == 0 { break; }
+                if (next_byte & 0x80) == 0 {
+                    break;
+                }
             }
         }
 
-        if i >= data.len() { bail!("Length truncated"); }
+        if i >= data.len() {
+            bail!("Length truncated");
+        }
         let first_len_byte = data[i];
         i += 1;
 
@@ -48,7 +52,9 @@ pub fn parse_ber_tlv(data: &[u8]) -> Result<Vec<BerTlv>> {
             len = first_len_byte as usize;
         } else {
             let len_len = (first_len_byte & 0x7F) as usize;
-            if i + len_len > data.len() { bail!("Length truncated"); }
+            if i + len_len > data.len() {
+                bail!("Length truncated");
+            }
             let mut l: usize = 0;
             for _ in 0..len_len {
                 l = (l << 8) | (data[i] as usize);
@@ -58,12 +64,16 @@ pub fn parse_ber_tlv(data: &[u8]) -> Result<Vec<BerTlv>> {
         }
 
         if i + len > data.len() {
-            bail!("Value length {} exceeds remaining data {}", len, data.len() - i);
+            bail!(
+                "Value length {} exceeds remaining data {}",
+                len,
+                data.len() - i
+            );
         }
 
         let value = &data[i..i + len];
         let mut children = Vec::new();
-        
+
         // If constructed tag (bit 6 is 1), try parsing children
         if (first_tag_byte & 0x20) != 0 && len > 0 {
             if let Ok(c) = parse_ber_tlv(value) {
@@ -103,18 +113,24 @@ impl MrzUtils {
 
     pub fn parse_mrz_td3(mrz: &str) -> Result<super::models::CitizenIdentity> {
         let lines: Vec<&str> = mrz.lines().collect();
-        if lines.len() < 2 { bail!("Invalid MRZ format"); }
+        if lines.len() < 2 {
+            bail!("Invalid MRZ format");
+        }
         let line1 = lines[0];
         let line2 = lines[1];
 
-        if line1.len() < 44 || line2.len() < 44 { bail!("Invalid MRZ line length"); }
+        if line1.len() < 44 || line2.len() < 44 {
+            bail!("Invalid MRZ line length");
+        }
 
         let nationality = &line1[2..5];
         let names_part = &line1[5..44];
         let parts: Vec<&str> = names_part.split("<<").collect();
-        let surname = parts.first().map(|s| s.replace('<', " ").trim().to_string());
+        let surname = parts
+            .first()
+            .map(|s| s.replace('<', " ").trim().to_string());
         let given_names = parts.get(1).map(|s| s.replace('<', " ").trim().to_string());
-        
+
         let full_name = match (&surname, &given_names) {
             (Some(s), Some(g)) => format!("{} {}", s, g),
             (Some(s), None) => s.clone(),
@@ -128,7 +144,8 @@ impl MrzUtils {
             "M" => "1",
             "F" => "2",
             _ => "9",
-        }.to_string();
+        }
+        .to_string();
         let expiration_date_raw = &line2[21..27];
 
         let birth_date = DateUtils::parse_yymmdd(birth_date_raw)?;
@@ -159,22 +176,30 @@ pub struct DateUtils;
 impl DateUtils {
     /// Parse YYMMDD format (used in Passport MRZ)
     pub fn parse_yymmdd(s: &str) -> Result<String> {
-        if s.len() != 6 { bail!("Invalid date length"); }
+        if s.len() != 6 {
+            bail!("Invalid date length");
+        }
         let year_short: u32 = s[0..2].parse()?;
         let month: u32 = s[2..4].parse()?;
         let day: u32 = s[4..6].parse()?;
-        
+
         if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
             bail!("Invalid date components");
         }
         // Pivot year: assume 1980-2079
-        let year = if year_short < 80 { 2000 + year_short } else { 1900 + year_short };
+        let year = if year_short < 80 {
+            2000 + year_short
+        } else {
+            1900 + year_short
+        };
         Ok(format!("{:04}-{:02}-{:02}", year, month, day))
     }
 
     /// Parse YYYYMMDD format (used in JPKI/Drivers License)
     pub fn parse_yyyymmdd(s: &str) -> Result<String> {
-        if s.len() != 8 { bail!("Invalid date length"); }
+        if s.len() != 8 {
+            bail!("Invalid date length");
+        }
         let year: u32 = s[0..4].parse()?;
         let month: u32 = s[4..6].parse().map_err(|_| anyhow!("Invalid month"))?;
         let day: u32 = s[6..8].parse().map_err(|_| anyhow!("Invalid day"))?;
@@ -190,7 +215,9 @@ impl DateUtils {
     /// Format: [Era(1)] YYMMDD
     /// Eras: 1: Meiji, 2: Taisho, 3: Showa, 4: Heisei, 5: Reiwa
     pub fn parse_japanese_era(s: &str) -> Result<String> {
-        if s.len() != 7 { bail!("Invalid Japanese era date length"); }
+        if s.len() != 7 {
+            bail!("Invalid Japanese era date length");
+        }
         let era = &s[0..1];
         let year_short: u32 = s[1..3].parse()?;
         let month: u32 = s[3..5].parse()?;
@@ -209,7 +236,12 @@ impl DateUtils {
             _ => bail!("Unknown era code: {}", era),
         };
 
-        Ok(format!("{:04}-{:02}-{:02}", era_base + year_short, month, day))
+        Ok(format!(
+            "{:04}-{:02}-{:02}",
+            era_base + year_short,
+            month,
+            day
+        ))
     }
 }
 
@@ -284,18 +316,37 @@ mod tests {
 
     #[test]
     fn test_japanese_era_parsing() {
-        assert_eq!(DateUtils::parse_japanese_era("1010101").unwrap(), "1868-01-01"); // Meiji
-        assert_eq!(DateUtils::parse_japanese_era("2010101").unwrap(), "1912-01-01"); // Taisho
-        assert_eq!(DateUtils::parse_japanese_era("3010101").unwrap(), "1926-01-01"); // Showa
-        assert_eq!(DateUtils::parse_japanese_era("4010101").unwrap(), "1989-01-01"); // Heisei
-        assert_eq!(DateUtils::parse_japanese_era("5010501").unwrap(), "2019-05-01"); // Reiwa
+        assert_eq!(
+            DateUtils::parse_japanese_era("1010101").unwrap(),
+            "1868-01-01"
+        ); // Meiji
+        assert_eq!(
+            DateUtils::parse_japanese_era("2010101").unwrap(),
+            "1912-01-01"
+        ); // Taisho
+        assert_eq!(
+            DateUtils::parse_japanese_era("3010101").unwrap(),
+            "1926-01-01"
+        ); // Showa
+        assert_eq!(
+            DateUtils::parse_japanese_era("4010101").unwrap(),
+            "1989-01-01"
+        ); // Heisei
+        assert_eq!(
+            DateUtils::parse_japanese_era("5010501").unwrap(),
+            "2019-05-01"
+        ); // Reiwa
         assert!(DateUtils::parse_japanese_era("6010101").is_err());
         assert!(DateUtils::parse_japanese_era("4011301").is_err());
     }
 
     #[test]
     fn test_ber_tlv_as_utf8() {
-        let tlv = BerTlv { tag: 0x01, value: b"Hello".to_vec(), children: vec![] };
+        let tlv = BerTlv {
+            tag: 0x01,
+            value: b"Hello".to_vec(),
+            children: vec![],
+        };
         assert_eq!(tlv.as_utf8(), "Hello");
     }
 }

@@ -1,7 +1,10 @@
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
 use civ::test_utils::TestReader;
-use civ::{IdentityController, JpkiController, PassportController, ThaiController, MyKadController, ResidenceCardController};
+use civ::{
+    IdentityController, JpkiController, MyKadController, PassportController,
+    ResidenceCardController, ThaiController,
+};
 use std::sync::{Arc, Mutex};
 
 struct MockRelay {
@@ -48,10 +51,10 @@ async fn test_jpki_unified_photo() {
 
     // Set PINs
     controller.provide_pin("auth", "1234").await.unwrap();
-    
+
     // Read Identity
     let identity = controller.read_identity().await.unwrap();
-    
+
     assert_eq!(identity.full_name, "Taro");
     // Photo should be present in Mock
     assert!(identity.photo_data.is_some());
@@ -65,7 +68,7 @@ async fn test_passport_unified_photo() {
 
     // Set MRZ
     controller.provide_pin("mrz", "123456").await.unwrap();
-    
+
     let identity = controller.read_identity().await.unwrap();
     assert!(identity.photo_data.is_some());
 }
@@ -108,7 +111,7 @@ async fn test_jprc_unified_details() {
     // Check attributes
     assert_eq!(identity.attributes.get("residence_status").unwrap(), "許可");
     assert_eq!(identity.attributes.get("update_status").unwrap(), "0");
-    
+
     // Photo reading
     let photo = controller.read_photo().await.unwrap();
     assert!(!photo.is_empty());
@@ -120,7 +123,7 @@ async fn test_mykad_read_failure() {
     #[async_trait::async_trait]
     impl CardReader for ErrorRelay {
         async fn transmit(&mut self, _apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
-            Ok(vec![0x6F, 0x00]) 
+            Ok(vec![0x6F, 0x00])
         }
     }
 
@@ -133,7 +136,7 @@ async fn test_mykad_read_failure() {
 async fn test_mykad_address_full() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
     let mut controller = civ::MyKadController::new(MockRelay { card });
-    
+
     controller.select_jpn_ap().await.unwrap();
     // Read Line 1
     let addr = controller.read_info(0x0111, 0x0203, 30).await.unwrap();

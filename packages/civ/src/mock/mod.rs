@@ -1,24 +1,24 @@
 pub mod common;
-pub mod jpki;
-pub mod passport;
 pub mod jpdl;
+pub mod jpdlmnc;
+pub mod jpki;
 pub mod jprc;
+pub mod mykad;
+pub mod passport;
 pub mod piv;
 pub mod thai;
-pub mod mykad;
-pub mod jpdlmnc;
 
-use std::collections::HashMap;
-use crate::apdu::{file_ids, ApduCommand};
 pub use self::common::{MockBackend, MockSecureSession};
-pub use self::jpki::JpkiBackend;
-pub use self::passport::PassportBackend;
 pub use self::jpdl::DriversLicenseBackend;
+pub use self::jpdlmnc::MynaMenkyoBackend;
+pub use self::jpki::JpkiBackend;
 pub use self::jprc::ResidenceCardBackend;
+pub use self::mykad::MyKadBackend;
+pub use self::passport::PassportBackend;
 pub use self::piv::PivBackend;
 pub use self::thai::ThaiBackend;
-pub use self::mykad::MyKadBackend;
-pub use self::jpdlmnc::MynaMenkyoBackend;
+use crate::apdu::{file_ids, ApduCommand};
+use std::collections::HashMap;
 
 pub struct MockSmartCard {
     current_ap_aid: Option<Vec<u8>>,
@@ -36,18 +36,54 @@ impl MockSmartCard {
             demo_mode: false,
         };
         card.add_backend(file_ids::DF_JPKI.to_vec(), Box::new(JpkiBackend::new()));
-        card.add_backend(file_ids::DF_INPUT_SUPPORT.to_vec(), Box::new(JpkiBackend::new()));
+        card.add_backend(
+            file_ids::DF_INPUT_SUPPORT.to_vec(),
+            Box::new(JpkiBackend::new()),
+        );
         card.add_backend(file_ids::DF_SURFACE.to_vec(), Box::new(JpkiBackend::new()));
-        card.add_backend(crate::piv::file_ids::DF_PIV.to_vec(), Box::new(PivBackend::new()));
-        card.add_backend(crate::jpdl::file_ids::DF_DL.to_vec(), Box::new(DriversLicenseBackend::new()));
-        card.add_backend(crate::jpdl::file_ids::DF_DL_PHOTO.to_vec(), Box::new(DriversLicenseBackend::new()));
-        card.add_backend(crate::jprc::file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new_df1()));
-        card.add_backend(crate::jprc::file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new_df2()));
-        card.add_backend(crate::passport::file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("123456")));
-        card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01], Box::new(ThaiBackend::new()));
-        card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x74, 0x4A, 0x50, 0x4E, 0x00, 0x10], Box::new(MyKadBackend::new()));
-        card.add_backend(vec![0xA0, 0x00, 0x00, 0x02, 0x31, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], Box::new(MynaMenkyoBackend::new()));
-        card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x00, 0x01], Box::new(LargeDataBackend::new()));
+        card.add_backend(
+            crate::piv::file_ids::DF_PIV.to_vec(),
+            Box::new(PivBackend::new()),
+        );
+        card.add_backend(
+            crate::jpdl::file_ids::DF_DL.to_vec(),
+            Box::new(DriversLicenseBackend::new()),
+        );
+        card.add_backend(
+            crate::jpdl::file_ids::DF_DL_PHOTO.to_vec(),
+            Box::new(DriversLicenseBackend::new()),
+        );
+        card.add_backend(
+            crate::jprc::file_ids::DF1.to_vec(),
+            Box::new(ResidenceCardBackend::new_df1()),
+        );
+        card.add_backend(
+            crate::jprc::file_ids::DF2.to_vec(),
+            Box::new(ResidenceCardBackend::new_df2()),
+        );
+        card.add_backend(
+            crate::passport::file_ids::DF_ICAO.to_vec(),
+            Box::new(PassportBackend::new("123456")),
+        );
+        card.add_backend(
+            vec![0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01],
+            Box::new(ThaiBackend::new()),
+        );
+        card.add_backend(
+            vec![0xA0, 0x00, 0x00, 0x00, 0x74, 0x4A, 0x50, 0x4E, 0x00, 0x10],
+            Box::new(MyKadBackend::new()),
+        );
+        card.add_backend(
+            vec![
+                0xA0, 0x00, 0x00, 0x02, 0x31, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+            Box::new(MynaMenkyoBackend::new()),
+        );
+        card.add_backend(
+            vec![0xA0, 0x00, 0x00, 0x00, 0x00, 0x01],
+            Box::new(LargeDataBackend::new()),
+        );
         card
     }
 
@@ -72,10 +108,10 @@ impl MockSmartCard {
                                 wrapped.push(0x90);
                                 wrapped.push(0x00);
                                 wrapped
-                            },
+                            }
                             Err(_) => vec![0x6F, 0x00],
                         }
-                    },
+                    }
                     Err(_) => vec![0x69, 0x82],
                 };
                 self.secure_session = Some(session);
@@ -123,7 +159,11 @@ impl Default for MockSmartCard {
 }
 
 pub struct LargeDataBackend;
-impl LargeDataBackend { pub fn new() -> Self { Self } }
+impl LargeDataBackend {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 impl Default for LargeDataBackend {
     fn default() -> Self {

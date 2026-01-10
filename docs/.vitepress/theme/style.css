@@ -1,0 +1,16 @@
+:root {
+  /* Brand colors - Mystical Indigo/Purple for "Tobari" (Veil/Curtain) */
+  --vp-c-brand-1: #6a5acd; /* SlateBlue */
+  --vp-c-brand-2: #483d8b; /* DarkSlateBlue */
+  --vp-c-brand-3: #7b68ee; /* MediumSlateBlue */
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #bd34fe 30%, #41d1ff);
+  
+  --vp-font-family-base: "Inter", "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+}
+
+/* Make the hero text shine */
+.VPImage.image-src {
+  filter: drop-shadow(0 0 2em #6a5acd);
+}

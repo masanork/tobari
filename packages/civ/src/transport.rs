@@ -1,13 +1,13 @@
 #[cfg(target_arch = "wasm32")]
+use crate::reader::CardReader;
+#[cfg(target_arch = "wasm32")]
+use anyhow::{anyhow, Result};
+#[cfg(target_arch = "wasm32")]
+use async_trait::async_trait;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
-#[cfg(target_arch = "wasm32")]
-use crate::reader::CardReader;
-#[cfg(target_arch = "wasm32")]
-use anyhow::{Result, anyhow};
-#[cfg(target_arch = "wasm32")]
-use async_trait::async_trait;
 
 /// Rust wrapper for JavaScript's WebUSB CardReader implementation.
 #[cfg(target_arch = "wasm32")]
@@ -43,13 +43,15 @@ impl CardReader for WebUsbReader {
         let reader: &JsCardReader = self.js_transport.unchecked_ref();
 
         // Call the JS method
-        let resp_value = reader.transmit(apdu).await
+        let resp_value = reader
+            .transmit(apdu)
+            .await
             .map_err(|e| anyhow!("JS Error during transmit: {:?}", e))?;
-        
+
         if !resp_value.is_object() {
             return Err(anyhow!("JS transmit returned non-object"));
         }
-        
+
         let resp_array = js_sys::Uint8Array::new(&resp_value);
         Ok(resp_array.to_vec())
     }

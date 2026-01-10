@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
-use sha1::{Sha1, Digest};
+use cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use des::{Des, TdesEde3};
-use cipher::{BlockEncrypt, BlockDecrypt, KeyInit};
 use generic_array::GenericArray;
+use sha1::{Digest, Sha1};
 
 pub struct BacSession {
     k_enc: [u8; 16], // 2-key 3DES keys
@@ -25,7 +25,7 @@ impl BacSession {
         let ssc_bytes = self.ssc.to_be_bytes();
 
         if self.is_null_session() {
-             return Ok(apdu.to_bytes());
+            return Ok(apdu.to_bytes());
         }
 
         let mut command_data = Vec::new();
@@ -34,11 +34,7 @@ impl BacSession {
             let mut value = Vec::with_capacity(1 + encrypted.len());
             value.push(0x01);
             value.extend_from_slice(&encrypted);
-            let do87 = [
-                vec![0x87],
-                encode_length(value.len()),
-                value
-            ].concat();
+            let do87 = [vec![0x87], encode_length(value.len()), value].concat();
             command_data.extend_from_slice(&do87);
         }
 
@@ -48,7 +44,14 @@ impl BacSession {
             command_data.extend_from_slice(&do97);
         }
 
-        let mac_input = build_mac_input(&ssc_bytes, cla_sm, apdu.ins, apdu.p1, apdu.p2, &command_data);
+        let mac_input = build_mac_input(
+            &ssc_bytes,
+            cla_sm,
+            apdu.ins,
+            apdu.p1,
+            apdu.p2,
+            &command_data,
+        );
         let mac = retail_mac(&self.k_mac, &mac_input)?;
         let mut do8e = Vec::new();
         do8e.push(0x8E);
@@ -67,21 +70,25 @@ impl BacSession {
         }
 
         if self.is_null_session() {
-             let sw1 = response[response.len()-2];
-             let sw2 = response[response.len()-1];
-             let data = if response.len() > 2 {
-                 response[0..response.len()-2].to_vec()
-             } else {
-                 Vec::new()
-             };
-             return Ok((data, sw1, sw2));
+            let sw1 = response[response.len() - 2];
+            let sw2 = response[response.len() - 1];
+            let data = if response.len() > 2 {
+                response[0..response.len() - 2].to_vec()
+            } else {
+                Vec::new()
+            };
+            return Ok((data, sw1, sw2));
         }
 
         let (raw_data, sw_bytes) = response.split_at(response.len() - 2);
         let sw1 = sw_bytes[0];
         let sw2 = sw_bytes[1];
         if sw1 != 0x90 || sw2 != 0x00 {
-            return Err(anyhow!("Secure messaging transport error: SW={:02X}{:02X}", sw1, sw2));
+            return Err(anyhow!(
+                "Secure messaging transport error: SW={:02X}{:02X}",
+                sw1,
+                sw2
+            ));
         }
 
         let tlvs = parse_tlv(raw_data)?;
@@ -143,15 +150,20 @@ impl BacSession {
         Ok((decrypted, response_sw1, response_sw2))
     }
 
-    pub fn wrap_response_from_card(&mut self, res_data: &[u8], sw1: u8, sw2: u8) -> Result<Vec<u8>> {
+    pub fn wrap_response_from_card(
+        &mut self,
+        res_data: &[u8],
+        sw1: u8,
+        sw2: u8,
+    ) -> Result<Vec<u8>> {
         self.ssc = self.ssc.wrapping_add(1);
         let ssc_bytes = self.ssc.to_be_bytes();
 
         if self.is_null_session() {
-             let mut out = res_data.to_vec();
-             out.push(sw1);
-             out.push(sw2);
-             return Ok(out);
+            let mut out = res_data.to_vec();
+            out.push(sw1);
+            out.push(sw2);
+            return Ok(out);
         }
 
         let mut wrapped = Vec::new();
@@ -178,7 +190,10 @@ impl BacSession {
         Ok(wrapped)
     }
 
-    pub fn unwrap_command(&mut self, cmd: &crate::apdu::ApduCommand) -> Result<crate::apdu::ApduCommand> {
+    pub fn unwrap_command(
+        &mut self,
+        cmd: &crate::apdu::ApduCommand,
+    ) -> Result<crate::apdu::ApduCommand> {
         if (cmd.cla & 0x0C) == 0 {
             return Ok(cmd.clone());
         }
@@ -187,14 +202,14 @@ impl BacSession {
         let ssc_bytes = self.ssc.to_be_bytes();
 
         if self.is_null_session() {
-             return Ok(crate::apdu::ApduCommand {
-                 cla: cmd.cla & !0x0C,
-                 ins: cmd.ins,
-                 p1: cmd.p1,
-                 p2: cmd.p2,
-                 data: cmd.data.clone(),
-                 le: cmd.le,
-             });
+            return Ok(crate::apdu::ApduCommand {
+                cla: cmd.cla & !0x0C,
+                ins: cmd.ins,
+                p1: cmd.p1,
+                p2: cmd.p2,
+                data: cmd.data.clone(),
+                le: cmd.le,
+            });
         }
 
         let tlvs = parse_tlv(&cmd.data)?;
@@ -212,7 +227,7 @@ impl BacSession {
         }
 
         let do8e = do8e.ok_or_else(|| anyhow!("Missing DO8E (MAC) in SM command"))?;
-        
+
         let mut mac_input = Vec::new();
         mac_input.extend_from_slice(&ssc_bytes);
         mac_input.extend_from_slice(&[cmd.cla | 0x0C, cmd.ins, cmd.p1, cmd.p2]);
@@ -242,7 +257,11 @@ impl BacSession {
         }
 
         let plain_le = if let Some(le_val) = do97 {
-            if le_val.len() == 1 { Some(le_val[0] as usize) } else { None }
+            if le_val.len() == 1 {
+                Some(le_val[0] as usize)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -289,7 +308,9 @@ fn adjust_parity(key: &mut [u8]) {
         let mask = 0xFE;
         let mut b = *byte & mask;
         let ones = b.count_ones();
-        if ones % 2 == 0 { b |= 1; }
+        if ones % 2 == 0 {
+            b |= 1;
+        }
         *byte = b;
     }
 }
@@ -320,28 +341,45 @@ fn pad_iso9797(data: &[u8], block_size: usize) -> Vec<u8> {
 
 fn unpad_iso9797(mut data: Vec<u8>) -> Result<Vec<u8>> {
     while let Some(last) = data.pop() {
-        if last == 0x80 { return Ok(data); }
-        if last != 0x00 { return Err(anyhow!("Invalid ISO9797 padding")); }
+        if last == 0x80 {
+            return Ok(data);
+        }
+        if last != 0x00 {
+            return Err(anyhow!("Invalid ISO9797 padding"));
+        }
     }
     Err(anyhow!("Invalid ISO9797 padding"))
 }
 
 fn encode_length(len: usize) -> Vec<u8> {
-    if len <= 0x7F { vec![len as u8] }
-    else if len <= 0xFF { vec![0x81, len as u8] }
-    else { vec![0x82, ((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8] }
+    if len <= 0x7F {
+        vec![len as u8]
+    } else if len <= 0xFF {
+        vec![0x81, len as u8]
+    } else {
+        vec![0x82, ((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8]
+    }
 }
 
 fn parse_length(data: &[u8], offset: usize) -> Result<(usize, usize)> {
-    if offset >= data.len() { return Err(anyhow!("TLV length out of bounds")); }
+    if offset >= data.len() {
+        return Err(anyhow!("TLV length out of bounds"));
+    }
     let first = data[offset];
-    if first & 0x80 == 0 { Ok((first as usize, 1)) }
-    else {
+    if first & 0x80 == 0 {
+        Ok((first as usize, 1))
+    } else {
         let count = (first & 0x7F) as usize;
-        if count == 0 || count > 2 { return Err(anyhow!("Unsupported TLV length encoding")); }
-        if offset + 1 + count > data.len() { return Err(anyhow!("TLV length exceeds buffer")); }
+        if count == 0 || count > 2 {
+            return Err(anyhow!("Unsupported TLV length encoding"));
+        }
+        if offset + 1 + count > data.len() {
+            return Err(anyhow!("TLV length exceeds buffer"));
+        }
         let mut len = 0usize;
-        for i in 0..count { len = (len << 8) | data[offset + 1 + i] as usize; }
+        for i in 0..count {
+            len = (len << 8) | data[offset + 1 + i] as usize;
+        }
         Ok((len, 1 + count))
     }
 }
@@ -354,7 +392,9 @@ fn parse_tlv(data: &[u8]) -> Result<Vec<(u8, Vec<u8>)>> {
         offset += 1;
         let (len, len_len) = parse_length(data, offset)?;
         offset += len_len;
-        if offset + len > data.len() { return Err(anyhow!("TLV length exceeds buffer")); }
+        if offset + len > data.len() {
+            return Err(anyhow!("TLV length exceeds buffer"));
+        }
         let value = data[offset..offset + len].to_vec();
         offset += len;
         items.push((tag, value));
@@ -371,14 +411,18 @@ fn expand_3des_key(k_2key: &[u8; 16]) -> [u8; 24] {
 }
 
 fn encrypt_3des_cbc_raw(k_enc: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
-    if !data.len().is_multiple_of(8) { return Err(anyhow!("Plaintext is not block aligned")); }
+    if !data.len().is_multiple_of(8) {
+        return Err(anyhow!("Plaintext is not block aligned"));
+    }
     let key = expand_3des_key(k_enc);
     let cipher = TdesEde3::new_from_slice(&key).map_err(|_| anyhow!("Invalid 3DES key"))?;
     let mut iv = [0u8; 8];
     let mut out = Vec::with_capacity(data.len());
     for chunk in data.chunks(8) {
         let mut block = [0u8; 8];
-        for i in 0..8 { block[i] = chunk[i] ^ iv[i]; }
+        for i in 0..8 {
+            block[i] = chunk[i] ^ iv[i];
+        }
         let mut block_ga = *GenericArray::from_slice(&block);
         cipher.encrypt_block(&mut block_ga);
         block.copy_from_slice(&block_ga);
@@ -394,7 +438,9 @@ fn encrypt_3des_cbc_padded(k_enc: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn decrypt_3des_cbc_raw(k_enc: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
-    if !data.len().is_multiple_of(8) { return Err(anyhow!("Encrypted data is not block aligned")); }
+    if !data.len().is_multiple_of(8) {
+        return Err(anyhow!("Encrypted data is not block aligned"));
+    }
     let key = expand_3des_key(k_enc);
     let cipher = TdesEde3::new_from_slice(&key).map_err(|_| anyhow!("Invalid 3DES key"))?;
     let mut iv = [0u8; 8];
@@ -405,7 +451,9 @@ fn decrypt_3des_cbc_raw(k_enc: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
         let mut block_ga = *GenericArray::from_slice(&block);
         cipher.decrypt_block(&mut block_ga);
         block.copy_from_slice(&block_ga);
-        for i in 0..8 { block[i] ^= iv[i]; }
+        for i in 0..8 {
+            block[i] ^= iv[i];
+        }
         out.extend_from_slice(&block);
         iv.copy_from_slice(chunk);
     }
@@ -418,17 +466,23 @@ fn decrypt_3des_cbc_padded(k_enc: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn retail_mac(k_mac: &[u8; 16], data: &[u8]) -> Result<[u8; 8]> {
-    let des1 = <Des as KeyInit>::new_from_slice(&k_mac[0..8]).map_err(|_| anyhow!("Invalid DES key 1"))?;
-    let des2 = <Des as KeyInit>::new_from_slice(&k_mac[8..16]).map_err(|_| anyhow!("Invalid DES key 2"))?;
+    let des1 =
+        <Des as KeyInit>::new_from_slice(&k_mac[0..8]).map_err(|_| anyhow!("Invalid DES key 1"))?;
+    let des2 = <Des as KeyInit>::new_from_slice(&k_mac[8..16])
+        .map_err(|_| anyhow!("Invalid DES key 2"))?;
     let mut iv = [0u8; 8];
     for chunk in data.chunks(8) {
         let mut block = [0u8; 8];
         if chunk.len() < 8 {
-             let mut padded = [0u8; 8];
-             padded[..chunk.len()].copy_from_slice(chunk);
-             for i in 0..8 { block[i] = padded[i] ^ iv[i]; }
+            let mut padded = [0u8; 8];
+            padded[..chunk.len()].copy_from_slice(chunk);
+            for i in 0..8 {
+                block[i] = padded[i] ^ iv[i];
+            }
         } else {
-             for i in 0..8 { block[i] = chunk[i] ^ iv[i]; }
+            for i in 0..8 {
+                block[i] = chunk[i] ^ iv[i];
+            }
         }
         let mut block_ga = *GenericArray::from_slice(&block);
         des1.encrypt_block(&mut block_ga);
@@ -439,15 +493,19 @@ fn retail_mac(k_mac: &[u8; 16], data: &[u8]) -> Result<[u8; 8]> {
     let mut block_ga = *GenericArray::from_slice(&mac_block);
     des2.decrypt_block(&mut block_ga);
     mac_block.copy_from_slice(&block_ga);
-    
+
     let mut block_ga = *GenericArray::from_slice(&mac_block);
     des1.encrypt_block(&mut block_ga);
     mac_block.copy_from_slice(&block_ga);
-    
+
     Ok(mac_block)
 }
 
-pub fn build_mutual_auth_data(k_enc: &[u8; 16], k_mac: &[u8; 16], rnd_ic: &[u8; 8]) -> Result<(Vec<u8>, u64)> {
+pub fn build_mutual_auth_data(
+    k_enc: &[u8; 16],
+    k_mac: &[u8; 16],
+    rnd_ic: &[u8; 8],
+) -> Result<(Vec<u8>, u64)> {
     use rand_core::{OsRng, RngCore};
     let mut rnd_ifd = [0u8; 8];
     let mut k_ifd = [0u8; 16];
@@ -469,13 +527,22 @@ pub fn build_mutual_auth_data(k_enc: &[u8; 16], k_mac: &[u8; 16], rnd_ic: &[u8; 
     Ok((data, ssc))
 }
 
-pub fn mock_mutual_auth_response(k_enc: &[u8; 16], k_mac: &[u8; 16], cmd_data: &[u8], rnd_icc: &[u8; 8]) -> Result<(Vec<u8>, u64)> {
-    if cmd_data.len() < 8 { return Err(anyhow!("Command too short")); }
-    let encrypted_part = &cmd_data[0..cmd_data.len()-8];
+pub fn mock_mutual_auth_response(
+    k_enc: &[u8; 16],
+    k_mac: &[u8; 16],
+    cmd_data: &[u8],
+    rnd_icc: &[u8; 8],
+) -> Result<(Vec<u8>, u64)> {
+    if cmd_data.len() < 8 {
+        return Err(anyhow!("Command too short"));
+    }
+    let encrypted_part = &cmd_data[0..cmd_data.len() - 8];
     // Decrypt RAW because mutual auth data is not padded if 32 bytes
     let decrypted = decrypt_3des_cbc_raw(k_enc, encrypted_part)?;
-    if decrypted.len() != 32 { return Err(anyhow!("Invalid auth payload length")); }
-    
+    if decrypted.len() != 32 {
+        return Err(anyhow!("Invalid auth payload length"));
+    }
+
     let rnd_ifd = &decrypted[0..8];
     // rnd_icc_recv = &decrypted[8..16] should match our rnd_icc
     // k_ifd = &decrypted[16..32]
@@ -488,10 +555,10 @@ pub fn mock_mutual_auth_response(k_enc: &[u8; 16], k_mac: &[u8; 16], cmd_data: &
     s.extend_from_slice(rnd_icc);
     s.extend_from_slice(rnd_ifd);
     s.extend_from_slice(&k_icc);
-    
+
     let encrypted_resp = encrypt_3des_cbc_raw(k_enc, &s)?;
     let mac = retail_mac(k_mac, &pad_iso9797(&encrypted_resp, 8))?;
-    
+
     let mut data = Vec::with_capacity(encrypted_resp.len() + mac.len());
     data.extend_from_slice(&encrypted_resp);
     data.extend_from_slice(&mac);

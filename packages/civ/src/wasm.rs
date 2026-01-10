@@ -1,16 +1,16 @@
-use wasm_bindgen::prelude::*;
-use crate::jpki::JpkiController;
 use crate::jpdl::DriversLicenseController;
+use crate::jpdlmnc::MynaMenkyoController;
+use crate::jpki::JpkiController;
 use crate::jprc::ResidenceCardController;
+use crate::mock::MockSmartCard;
+use crate::models::IdentityController;
 use crate::passport::PassportController;
 use crate::piv::PivController;
-use crate::jpdlmnc::MynaMenkyoController;
-use crate::transport::WebUsbReader;
-use crate::mock::MockSmartCard;
 use crate::reader::CardReader;
-use crate::models::IdentityController;
-use std::sync::{Arc, Mutex};
+use crate::transport::WebUsbReader;
 use async_trait::async_trait;
+use std::sync::{Arc, Mutex};
+use wasm_bindgen::prelude::*;
 
 // Enum to hold either a WebUSB reader or a Mock reader
 #[derive(Clone)]
@@ -71,16 +71,30 @@ impl CivContext {
         // Provide PIN based on type
         // TODO: More granular PIN types support in Wasm
         if card_type == "passport" {
-            controller.provide_pin("mrz", pin).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
+            controller
+                .provide_pin("mrz", pin)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
         } else if card_type == "dl" || card_type == "mynamenkyo" {
-            controller.provide_pin("pin1", pin).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
+            controller
+                .provide_pin("pin1", pin)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
         } else if card_type == "jpki" {
-            controller.provide_pin("auth", pin).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
+            controller
+                .provide_pin("auth", pin)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
         } else {
-            controller.provide_pin("pin", pin).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
+            controller
+                .provide_pin("pin", pin)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
         }
 
-        let identity = controller.read_identity().await
+        let identity = controller
+            .read_identity()
+            .await
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         serde_wasm_bindgen::to_value(&identity)

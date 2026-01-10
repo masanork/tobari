@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use sha2::{Sha256, Digest};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ValidityInfo {
@@ -58,4 +58,6 @@ impl MobileSecurityObject {
 }
 
 // Helper to handle serialization of u64 keys in CBOR maps
-fn item_id_to_u64(id: u64) -> u64 { id }
+fn item_id_to_u64(id: u64) -> u64 {
+    id
+}

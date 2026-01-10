@@ -1,6 +1,6 @@
+use crate::errors::Result;
 use crate::passport::PassportController;
 use crate::reader::CardReader;
-use crate::errors::{Result};
 
 /// European Identity Card Controller
 /// Most EU National ID cards (compliant with EU 2019/1157) are ICAO 9303 compliant.
@@ -79,11 +79,11 @@ mod tests {
     async fn test_read_face_and_details() {
         let reader = TestReader::new();
         let mut controller = EuIdController::new(reader.clone());
-        
+
         // Mocking for Face (DG2)
         reader.push_response(&[0x90, 0x00]); // Select DG2
         reader.push_response(&[0xCC, 0xDD, 0x90, 0x00]); // Data
-        
+
         let res = controller.read_face().await;
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), vec![0xCC, 0xDD]);

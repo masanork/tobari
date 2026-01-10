@@ -57,6 +57,35 @@ export default defineConfig({
 
         socialLinks: [
             { icon: 'github', link: 'https://github.com/masanork/tobari' }
-        ]
+        ],
+
+        search: {
+            provider: 'local'
+        },
+
+        footer: {
+            message: 'Released under the MIT License.',
+            copyright: 'Copyright © 2024-present Tobari Project'
+        },
+
+        editLink: {
+            pattern: 'https://github.com/masanork/tobari/edit/main/:path',
+            text: 'Edit this page on GitHub'
+        },
+
+        lastUpdated: {
+            text: 'Updated at',
+            formatOptions: {
+                dateStyle: 'full',
+                timeStyle: 'short'
+            }
+        }
+    },
+    lastUpdated: true,
+    markdown: {
+        theme: {
+            light: 'github-light',
+            dark: 'github-dark'
+        }
     }
 })
