@@ -1,33 +1,36 @@
 {
-    "id": "UUID-1234-5678-90AB",
-    "creationTime": "2026-01-06",
+    "id": "TP10000006",
+    "creationTime": "2020-02-26",
     "mandator": {
         "type": "Individual",
-        "name": "䶒藤󠄃 太朗󠄅",
-        "birthDate": "1989-01-01",
-        "address": "東京都港区虎ノ門2-2-1 虎ノ門ハイツ101号"
+        "tradeName": "太郎特許事務所",
+        "name": "山田太郎",
+        "address": "東京都江戸川区"
     },
     "mandatary": {
         "type": "Individual",
-        "name": "䶒藤󠄃 花󠄃子",
-        "birthDate": "1993-05-05",
-        "address": "東京都港区虎ノ門2-2-1 虎ノ門ハイツ101号"
+        "name": "伊藤花子",
+        "title": "伊藤税理士事務所 代表",
+        "address": "東京都江戸川区一の江",
+        "identificationId": "税理士番号 0000121"
     },
     "delegatedAuthority": {
         "validityPeriod": {
-            "startDate": "2026-01-06",
-            "endDate": "2026-03-31"
+            "startDate": "2020-02-26",
+            "endDate": "2021-02-27"
         },
         "delegatedActs": [
             {
-                "actName": "住民票の写しの交付請求及び受領に関すること"
-            },
-            {
-                "actName": "印鑑登録証明書の交付請求及び受領に関すること"
+                "actName": "試験２"
             }
         ],
         "subDelegation": {
             "allocated": false
         }
+    },
+    "provider": {
+        "serviceName": "電子委任状サービス",
+        "policyUrl": "https://poa-test.langedge.jp/policy.html",
+        "revocationUrl": "https://poa-test.langedge.jp/api/revocation"
     }
 }
