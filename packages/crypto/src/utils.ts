@@ -7,6 +7,17 @@ export const COSE_ALG = {
 
 export type CoseAlg = typeof COSE_ALG[keyof typeof COSE_ALG];
 
+export const COSE_HEADER_LABELS = {
+    alg: 1,
+    crit: 2,
+    content_type: 3,
+    kid: 4,
+    IV: 5,
+    Partial_IV: 6,
+    Countersignature: 11,   // RFC 9338
+    Countersignature0: 12   // RFC 9338
+} as const;
+
 // Base64URL utilities
 export const base64url = {
     encode: (buffer: Uint8Array): string => {

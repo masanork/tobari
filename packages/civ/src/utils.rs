@@ -3,12 +3,7 @@ use encoding_rs::SHIFT_JIS;
 
 /// Decode Shift-JIS bytes to String, with lossy conversion for Gaiji.
 pub fn decode_shift_jis_lossy_gaiji(input: &[u8]) -> String {
-    let (cow, _encoding_used, malformed) = SHIFT_JIS.decode(input);
-    if !malformed {
-        return cow.into_owned();
-    }
-    // TODO: Implement actual Gaiji mapping for JPKI
-    cow.into_owned()
+    crate::gaiji::decode_gaiji_string(input)
 }
 
 /// BER-TLV Structure (Zero-copy)
