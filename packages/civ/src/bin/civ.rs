@@ -1,7 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use clap::{Parser, Subcommand};
 #[cfg(not(target_arch = "wasm32"))]
-use civ::{JpkiController, DriversLicenseController, ResidenceCardController, PassportController, ThaiController, PcscReader, CardReader, IdentityController};
+use civ::{JpkiController, DriversLicenseController, ResidenceCardController, PassportController, ThaiController, MyKadController, PcscReader, CardReader, IdentityController};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
@@ -152,6 +152,7 @@ async fn run_unified_id<R: CardReader + 'static>(mut reader: R, pin: Option<Stri
             "rc" => { controller = Box::new(ResidenceCardController::new(reader)); detected_type = "rc"; },
             "passport" => { controller = Box::new(PassportController::new(reader)); detected_type = "passport"; },
             "thai" => { controller = Box::new(ThaiController::new(reader)); detected_type = "thai"; },
+            "mykad" => { controller = Box::new(MyKadController::new(reader)); detected_type = "mykad"; },
             _ => return Err(anyhow::anyhow!("Invalid forced card type")),
         }
     } else if is_selected(&mut reader, &civ::passport::file_ids::DF_ICAO).await {
@@ -160,6 +161,9 @@ async fn run_unified_id<R: CardReader + 'static>(mut reader: R, pin: Option<Stri
     } else if is_selected(&mut reader, &[0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01]).await {
         controller = Box::new(ThaiController::new(reader));
         detected_type = "thai";
+    } else if is_selected(&mut reader, &[0xA0, 0x00, 0x00, 0x00, 0x74, 0x4A, 0x50, 0x4E, 0x00, 0x10]).await {
+        controller = Box::new(MyKadController::new(reader));
+        detected_type = "mykad";
     } else if is_selected(&mut reader, &civ::jpdl::file_ids::DF_DL).await {
         controller = Box::new(DriversLicenseController::new(reader));
         detected_type = "dl";
