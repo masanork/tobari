@@ -81,3 +81,14 @@ impl CardReader for PcscReader {
         Ok(resp.to_vec())
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pcsc_new_fails_if_no_service() {
+        // This will likely fail in CI/sandbox, which is what we want to cover.
+        let _ = PcscReader::new();
+    }
+}

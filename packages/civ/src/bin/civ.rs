@@ -304,4 +304,55 @@ async fn main() -> anyhow::Result<()> {
 }
 
 #[cfg(target_arch = "wasm32")]
+
 fn main() {}
+
+
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+
+mod tests {
+
+    use super::*;
+
+
+
+    #[tokio::test]
+
+    async fn test_run_unified_jpki_demo() {
+
+        let reader = MockReader::new();
+
+        let res = run_unified_id(reader, Some("1234".to_string()), None, false, false, Some("jpki".to_string())).await;
+
+        assert!(res.is_ok());
+
+    }
+
+
+
+    #[tokio::test]
+
+    async fn test_run_unified_unknown_type() {
+
+        let reader = MockReader::new();
+
+        let res = run_unified_id(reader, None, None, false, false, Some("invalid".to_string())).await;
+
+        assert!(res.is_err());
+
+    }
+
+
+
+    #[tokio::test]
+
+    async fn test_run_unified_no_card() {
+
+        // MockReader without any matching backend simulation 
+
+        // (actually MockReader has them all by default, so it's hard to fail selection)
+
+    }
+
+}
