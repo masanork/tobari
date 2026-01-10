@@ -1,8 +1,15 @@
 use std::collections::HashMap;
 use crate::apdu::{file_ids, ApduCommand};
-use crate::mock::common::MockBackend;
+pub use self::common::{MockBackend, MockSecureSession};
+pub use self::jpki::JpkiBackend;
+pub use self::passport::PassportBackend;
+pub use self::jpdl::DriversLicenseBackend;
+pub use self::jprc::ResidenceCardBackend;
+pub use self::piv::PivBackend;
+pub use self::thai::ThaiBackend;
+pub use self::mykad::MyKadBackend;
 
-pub struct JpkiBackend {
+pub struct MockSmartCard {
     files: HashMap<(Vec<u8>, Vec<u8>), Vec<u8>>,
     current_ef: Option<Vec<u8>>,
     pin_retries: HashMap<(Vec<u8>, Vec<u8>), u8>,
