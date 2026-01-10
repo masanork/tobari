@@ -19,6 +19,9 @@ All notable changes to this project will be documented in this file.
   - **CI/CD**:
     - **GitHub Actions**: Added `civ-ci.yml` for automated testing and coverage (`cargo-tarpaulin`) on every push.
     - **E2E Tests**: Added CLI integration tests (`cli_e2e.rs`) to verify `id` command against mock cards.
+  - **Fixes**:
+    - **Passport BAC**: Fixed Secure Messaging MAC verification and SSC synchronization in mock environment.
+    - **Response Handling**: Corrected SW appending logic in Secure Messaging wrapper.
 
 ## [0.3.5] - 2026-01-10
 

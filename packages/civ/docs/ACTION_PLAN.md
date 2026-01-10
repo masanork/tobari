@@ -10,7 +10,7 @@ Establish a reliable testing baseline independent of physical hardware.
     - [ ] Refactor into a unified `MockCard` trait and separate backend implementations for cleaner maintenance.
     - [x] Implement full **Passport** mock scenarios (BAC/PACE handshake, DG reading, Active Authentication).
     - [x] Implement full **PIV** mock scenarios (Authentication, Signing).
-    - [ ] Add specific error simulation (SW 63C0 for PIN retries, 6982 for Auth Required).
+    - [x] Add specific error simulation (SW 63C0 for PIN retries, 6982 for Auth Required).
 - [x] **Integration Testing**:
     - [x] Ensure `cargo test` runs all mock scenarios in GitHub Actions.
     - [x] Achieve >80% code coverage for core controller logic.
