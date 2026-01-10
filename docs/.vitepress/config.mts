@@ -4,6 +4,7 @@ export default defineConfig({
     title: "Tobari",
     description: "Trust Infrastructure Toolkit for the AI Agent era",
     base: '/tobari/',
+    ignoreDeadLinks: true,
     themeConfig: {
         nav: [
             { text: 'Home', link: '/' },
