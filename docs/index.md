@@ -14,11 +14,11 @@ hero:
       link: https://github.com/masanork/tobari
 
 features:
-  - title: Hybrid Document
+  - title: 📄 Hybrid Document
     details: Combines the trust of static documents (PDF/Paper) with machine-readable verifyability (P-384 Signatures).
-  - title: Selective Disclosure
+  - title: 🛡️ Selective Disclosure
     details: Share only what allows, keeping sensitive data private using SD-CBOR and BBS+ signatures.
-  - title: AI Agent Ready
+  - title: 🤖 AI Agent Ready
     details: Native MCP Server support allowing AI agents to understand and verify documents autonomously.
 ---
 
