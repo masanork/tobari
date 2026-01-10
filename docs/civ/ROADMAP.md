@@ -11,16 +11,15 @@ This document outlines the development path for the `civ` library and the requir
 
 ## 2. Roadmap
 
-### Phase 1: Communication Integrity & Stability (Short-term)
-- **Secure Messaging (SM) Wrapper**: Implemented BAC 3DES ISO 7816-4 / ICAO
-  9303 wrapper for encrypted APDUs. AES-based PACE SM remains pending.
-- **PACE Support**: Implement Password Authenticated Connection Establishment for newer passports and EU IDs.
-- **Extended Read Logic**: Support for large file reading across all controllers (Passport, Driver's License, and Residence Card implemented).
+### Phase 1: Communication Integrity & Stability (Completed)
+- **Secure Messaging (SM) Wrapper**: Implemented BAC (3DES) and PACE (AES) ISO 7816-4 / ICAO 9303 wrappers for encrypted APDUs.
+- **PACE Support**: Implemented Password Authenticated Connection Establishment for ePassports and EU IDs.
+- **Extended Read Logic**: Support for large file reading across all controllers.
 
-### Phase 2: Authenticity Verification (Medium-term)
-- **Passive Authentication (PA)**: Verify Data Groups against the Security Object (SOD) using Document Signer certificates.
-- **Active Authentication (AA)**: Challenge-response mechanism to prevent card cloning.
-- **Trust Store Management**: A system to manage and update CSCA (Country Signing CA) and Document Signer (DS) certificates.
+### Phase 2: Authenticity Verification (In Progress)
+- **Passive Authentication (PA)**: Partially implemented (SOD verification logic exists).
+- **Active Authentication (AA)**: Implemented for ePassports.
+- **Trust Store Management**: Basic implementation for CSCA/DS certificates exists.
 
 ### Phase 3: Unified Identity API (Long-term)
 - **Common Identity Model**: A high-level API that returns a standardized JSON structure regardless of the card type.

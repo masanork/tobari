@@ -192,6 +192,12 @@ function cleanData(v: any): any {
 function render(doc: any, rawData: any, mso: MSO) {
     injectGlobalStyles();
     const data = cleanData(rawData);
+    
+    if (mso.docType === "io.github.masanork.tobari.juminhyo.v1") {
+        renderJuminhyo(data);
+        return;
+    }
+
     const safeStr = (v: any): string => (v === null || v === undefined) ? "" : String(v);
     const primaryKeys = ["氏名", "世帯主氏名", "証明書名称", "Name", "Title"];
     const wideKeys = ["住所", "世帯住所", "本籍", "前住所", "備考"];
@@ -229,6 +235,76 @@ function render(doc: any, rawData: any, mso: MSO) {
     `;
 }
 
+function renderJuminhyo(data: any) {
+    const safe = (v: any) => (v === null || v === undefined) ? "" : String(v);
+    const members = data["世帯員"] || [];
+    
+    document.body.innerHTML = `
+        <div class="official-doc-container">
+            <div class="official-doc juminhyo-style">
+                <div class="verified-badge">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l5-5z"/></svg>
+                    VERIFIED
+                </div>
+                <div class="doc-header" style="text-align: center; border-bottom: 2px solid #000;">
+                    <h1 class="doc-title" style="font-size: 28px; letter-spacing: 0.5em; padding-bottom: 10px;">${safe(data["証明書名称"])}</h1>
+                </div>
+
+                <div class="juminhyo-meta-grid">
+                    <div class="meta-item">
+                        <span class="field-label">住所</span>
+                        <div class="field-value-md">${safe(data["世帯住所"])}</div>
+                    </div>
+                    <div class="meta-item">
+                        <span class="field-label">世帯主の氏名</span>
+                        <div class="field-value-md">${safe(data["世帯主氏名"])}</div>
+                    </div>
+                </div>
+
+                <table class="member-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40%;">氏名 / 生年月日 / 性別 / 続柄</th>
+                            <th style="width: 60%;">住民となった日 / 本籍 / 備考</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${members.map((m: any) => `
+                            <tr>
+                                <td class="member-main-cell">
+                                    <div class="name-box">
+                                        <span class="furigana">${safe(m["フリガナ"])}</span>
+                                        <div class="name-val">${safe(m["氏名"])}</div>
+                                    </div>
+                                    <div class="sub-info-grid">
+                                        <div><span class="label-mini">生年月日</span> ${safe(m["生年月日"])}</div>
+                                        <div><span class="label-mini">性別</span> ${safe(m["性別"])}</div>
+                                        <div><span class="label-mini">続柄</span> ${safe(m["続柄"])}</div>
+                                    </div>
+                                </td>
+                                <td class="member-detail-cell">
+                                    <div class="detail-line"><span class="label-mini">住民となった日</span> ${safe(m["住民となった日"])}</div>
+                                    <div class="detail-line"><span class="label-mini">本籍</span> ${Array.isArray(m["本籍"]) ? m["本籍"].join("<br>") : safe(m["本籍"])}</div>
+                                    <div class="detail-line"><span class="label-mini">備考</span> ${Array.isArray(m["備考"]) ? m["備考"].join(", ") : safe(m["備考"])}</div>
+                                    ${m["個人番号"] ? `<div class="detail-line"><span class="label-mini">個人番号</span> ${m["個人番号"]}</div>` : ""}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+
+                <div class="issuer-footer">
+                    <div style="text-align: left;">
+                        <div style="font-size: 14px; margin-bottom: 10px;">交付年月日：${safe(data["交付年月日"])}</div>
+                        <div style="font-size: 18px; color: #000;">${safe(data["発行者役職"])}　${safe(data["発行者氏名"])}</div>
+                    </div>
+                    <div class="hankyo">印</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function renderList(array: any[]): string {
     return array.map(item => `<div style="padding: 20px 0; border-bottom: 1px solid #f7fafc; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
         ${Object.entries(item).map(([k, v]) => `<div><span style="font-size: 9px; color: #a0aec0; display: block; font-family: sans-serif; text-transform: uppercase;">${k}</span><span style="font-size: 15px;">${v}</span></div>`).join('')}
@@ -237,7 +313,7 @@ function renderList(array: any[]): string {
 
 async function unlockEncryptedPayload(wrapper: any): Promise<string> {
     injectGlobalStyles();
-    document.body.innerHTML = `<div class="welcome-screen"><div class="drop-card"><div class="logo">🔒</div><h2>Encrypted Document</h2><p>この書類は暗号化されています。閲覧するには発行時に指定したパスキーが必要です。</p><button id="unlock-btn" class="primary-btn" style="width: 100%;">パスキーで復号</button><button id="demo-unlock-btn" class="secondary-btn">デモ用共有鍵で試行</button></div></div>`;
+    document.body.innerHTML = `<div class="welcome-screen"><div class="drop-card"><div class="logo">🔒</div><h2>Encrypted Document</h2><p>この書類は暗号化されています。閲覧するには発行時に指定したパスキーが必要です。</p><button id="unlock-btn" class="primary-btn" style="width: 100%;">パスキーで復号</button></div></div>`;
     const ciphertext = base64ToUint8Array(wrapper.data);
     const info = new TextEncoder().encode("tobari-storage-v1");
     const { decryptHPKE, deriveHPKEKeyPair } = await import("@tobari/crypto/hpke");
@@ -248,13 +324,7 @@ async function unlockEncryptedPayload(wrapper: any): Promise<string> {
                 const keyPair = await deriveHPKEKeyPair(secret);
                 const plaintext = await decryptHPKE(keyPair!.privateKey, ciphertext, info);
                 resolve(uint8ArrayToBase64(new Uint8Array(plaintext)));
-            } catch (e) { alert("復号に失敗しました。"); }
-        });
-        document.getElementById('demo-unlock-btn')?.addEventListener('click', async () => {
-            const secret = await deriveHmacSecret(true);
-            const keyPair = await deriveHPKEKeyPair(secret);
-            const plaintext = await decryptHPKE(keyPair!.privateKey, ciphertext, info);
-            resolve(uint8ArrayToBase64(new Uint8Array(plaintext)));
+            } catch (e) { alert("復号に失敗しました。パスキーまたは秘密鍵が正しくありません。"); }
         });
     });
 }
@@ -308,12 +378,24 @@ function injectGlobalStyles() {
         .primary-btn { background: #1a202c; color: white; border: none; padding: 14px 28px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
         .primary-btn:hover { background: #2d3748; transform: translateY(-1px); }
         .secondary-btn { background: none; color: #3182ce; border: 1px solid #3182ce; padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 15px; width: 100%; }
-        .official-doc-container { padding: 40px 20px; display: flex; justify-content: center; }
+        .official-doc-container { padding: 40px 20px; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; }
         .official-doc { 
             background: white; width: 100%; max-width: 840px; padding: 80px 100px; 
             box-shadow: 0 40px 100px rgba(0,0,0,0.08), 0 10px 20px rgba(0,0,0,0.02); 
             border-radius: 4px; font-family: 'TobariSubset', serif; position: relative;
         }
+        .juminhyo-style { border: 3px double #000; padding: 60px 80px; }
+        .juminhyo-meta-grid { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #000; margin-bottom: 20px; }
+        .meta-item { padding: 15px 0; }
+        .member-table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
+        .member-table th { border: 1px solid #000; padding: 10px; background: #f7fafc; font-size: 12px; text-align: left; }
+        .member-table td { border: 1px solid #000; padding: 15px; vertical-align: top; }
+        .name-box { margin-bottom: 10px; }
+        .furigana { font-size: 10px; color: #4a5568; display: block; margin-bottom: 2px; }
+        .name-val { font-size: 24px; color: #000; }
+        .sub-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 13px; }
+        .label-mini { font-size: 9px; color: #718096; display: block; text-transform: uppercase; margin-bottom: 2px; }
+        .detail-line { margin-bottom: 8px; font-size: 14px; line-height: 1.4; }
         .verified-badge { 
             position: absolute; top: 40px; right: 40px; 
             display: flex; align-items: center; gap: 8px;
@@ -330,6 +412,13 @@ function injectGlobalStyles() {
         .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 40px; }
         .issuer-footer { margin-top: 80px; padding-top: 30px; border-top: 1px solid #1a202c; display: flex; justify-content: space-between; align-items: flex-end; }
         .hankyo { width: 60px; height: 60px; border: 2px solid #e53e3e; color: #e53e3e; text-align: center; line-height: 60px; font-size: 24px; font-weight: bold; border-radius: 2px; transform: rotate(-5deg); user-select: none; }
+        @media print {
+            body { background: white; padding: 0; }
+            .official-doc-container { padding: 0; }
+            .official-doc { box-shadow: none; border: 1px solid #000; padding: 15mm; width: 100%; max-width: none; }
+            .juminhyo-style { border: 3px double #000; }
+            .verified-badge { display: none; }
+        }
     `;
     document.head.appendChild(style);
 }
