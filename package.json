@@ -3,7 +3,8 @@
     "version": "0.0.0",
     "private": true,
     "workspaces": [
-        "packages/*"
+        "packages/*",
+        "examples/*"
     ],
     "scripts": {
         "test": "bun test packages/**/*",
@@ -20,6 +21,7 @@
         "demo:zkp:dating": "cd examples/zkp/bbs-scenarios && bun run scenario-dating-app.ts",
         "demo:scac": "cd examples/scac && bun run gen-scac.ts",
         "demo:wallet": "bun run scripts/serve_demo.ts",
+        "demo:juminhyo": "cd examples/juminhyo-demo && bun run dev",
         "docs:prepare": "mkdir -p docs/civ && cp packages/civ/docs/*.md docs/civ/ && cp README.md docs/getting-started.md",
         "docs:dev": "bun run docs:prepare && vitepress dev docs",
         "docs:build": "bun run docs:prepare && vitepress build docs",
