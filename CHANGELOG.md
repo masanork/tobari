@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.8] - 2026-01-10
+
+### Features
+- **Security & Encryption**:
+  - **Hardware-Bound Encryption**: Implemented HPKE (Hybrid Public Key Encryption) anchored to hardware Authenticators (Passkeys/TouchID) for end-to-end device binding.
+  - **Visual Side-Channel Protection**: Encrypted font glyphs (embedded WOFS) to prevent text reconstruction attacks via side-channels.
+  - **Isolated Web Apps (IWA)**: Added PoC for Signed Web Bundles (`.swbn`) to enable verification of the Viewer code itself in offline environments.
+- **Viewer & UI**:
+  - **Rebranding**: Complete UI overhaul with "Lightweight Veil" design language, featuring high-fidelity official document aesthetics and glassmorphism.
+  - **Secure Shell Model**: Implemented "Secure Shell" architecture where documents are dropped into a protected local view, preventing accidental data exfiltration.
+  - **Juminhyo Layout**: specialized responsive layout for **Residence Certificates**, optimizing scrolling and mobile presentation.
+- **Documentation**:
+  - **VitePress Migration**: Launched comprehensive documentation site using VitePress with full English translations and improved navigation.
+  - **New Specifications**: Added detailed implementation guides for **Key Management**, **Post-Quantum Cryptography (PQC)** roadmap, and **Threat Models**.
+
+### Fixes
+- **Viewer**: Resolved stack overflow issues when rendering large binary blobs (embedded fonts) in the secure context.
+- **Build**: Fixed various issues with asset paths and VitePress build configuration.
+
 ## [0.3.7] - 2026-01-10
 
 ### Features
