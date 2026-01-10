@@ -1,107 +1,95 @@
-use anyhow::{Result, bail};
-use encoding_rs::SHIFT_JIS;
+use anyhow::{Result, anyhow, bail};
 
 /// Decode Shift-JIS bytes to String, with lossy conversion for Gaiji.
 pub fn decode_shift_jis_lossy_gaiji(input: &[u8]) -> String {
     crate::gaiji::decode_gaiji_string(input)
 }
 
-/// BER-TLV Structure (Zero-copy)
+/// BER-TLV object
 #[derive(Debug, Clone)]
-pub struct BerTlv<'a> {
+pub struct BerTlv {
     pub tag: u32,
-    pub value: &'a [u8],
-    pub children: Vec<BerTlv<'a>>,
+    pub value: Vec<u8>,
+    pub children: Vec<BerTlv>,
 }
 
-impl<'a> BerTlv<'a> {
-    pub fn find(&self, tag: u32) -> Option<&BerTlv<'a>> {
-        self.children.iter().find(|t| t.tag == tag)
-    }
-
+impl BerTlv {
     pub fn as_utf8(&self) -> String {
-        String::from_utf8_lossy(self.value).into_owned()
-    }
-    
-    pub fn as_u32(&self) -> Result<u32> {
-        let mut val = 0u32;
-        if self.value.len() > 4 { bail!("Value too long for u32"); }
-        for &b in self.value {
-            val = (val << 8) | (b as u32);
-        }
-        Ok(val)
+        String::from_utf8_lossy(&self.value).to_string()
     }
 }
 
-/// Parse BER-TLV data strictly
-pub fn parse_ber_tlv(data: &[u8]) -> Result<Vec<BerTlv<'_>>> {
-    let mut results = Vec::new();
+/// Simple BER-TLV parser with recursive support for constructed tags
+pub fn parse_ber_tlv(data: &[u8]) -> Result<Vec<BerTlv>> {
+    let mut tlvs = Vec::new();
     let mut i = 0;
+
     while i < data.len() {
-        // 1. Tag
         let first_tag_byte = data[i];
         let mut tag: u32 = first_tag_byte as u32;
         i += 1;
 
         if (first_tag_byte & 0x1F) == 0x1F {
+            // Multibyte tag
             while i < data.len() {
-                let b = data[i];
-                tag = (tag << 8) | (b as u32);
+                let next_byte = data[i];
+                tag = (tag << 8) | (next_byte as u32);
                 i += 1;
-                if (b & 0x80) == 0 { break; }
+                if (next_byte & 0x80) == 0 { break; }
             }
         }
 
-        // 2. Length
-        if i >= data.len() { bail!("Unexpected EOF during length parsing"); }
+        if i >= data.len() { bail!("Length truncated"); }
         let first_len_byte = data[i];
         i += 1;
 
-        let length = if first_len_byte == 0x80 {
-            bail!("Indefinite length not supported yet");
-        } else if (first_len_byte & 0x80) != 0 {
-            let n_bytes = (first_len_byte & 0x7F) as usize;
-            if n_bytes > 4 { bail!("Length field too long"); }
-            let mut l = 0usize;
-            for _ in 0..n_bytes {
-                if i >= data.len() { bail!("Unexpected EOF in long-form length"); }
+        let len: usize;
+        if first_len_byte <= 0x7F {
+            len = first_len_byte as usize;
+        } else {
+            let len_len = (first_len_byte & 0x7F) as usize;
+            if i + len_len > data.len() { bail!("Length truncated"); }
+            let mut l: usize = 0;
+            for _ in 0..len_len {
                 l = (l << 8) | (data[i] as usize);
                 i += 1;
             }
-            l
-        } else {
-            first_len_byte as usize
-        };
-
-        // 3. Value
-        if i + length > data.len() {
-            bail!("Value length {} exceeds remaining data {}", length, data.len() - i);
+            len = l;
         }
-        let value = &data[i..i+length];
-        i += length;
 
-        // 4. Children (Constructed check)
-        let is_constructed = (first_tag_byte & 0x20) != 0;
-        let children = if is_constructed && length > 0 {
-            parse_ber_tlv(value).unwrap_or_default() // Fallback to empty if inner parse fails but outer is OK
-        } else {
-            Vec::new()
-        };
+        if i + len > data.len() {
+            bail!("Value length {} exceeds remaining data {}", len, data.len() - i);
+        }
 
-        results.push(BerTlv { tag, value, children });
+        let value = &data[i..i + len];
+        let mut children = Vec::new();
+        
+        // If constructed tag (bit 6 is 1), try parsing children
+        if (first_tag_byte & 0x20) != 0 && len > 0 {
+            if let Ok(c) = parse_ber_tlv(value) {
+                children = c;
+            }
+        }
+
+        tlvs.push(BerTlv {
+            tag,
+            value: value.to_vec(),
+            children,
+        });
+        i += len;
     }
-    Ok(results)
+
+    Ok(tlvs)
 }
 
-/// MRZ (Machine Readable Zone) Utilities
+/// MRZ (Machine Readable Zone) utilities for Passport
 pub struct MrzUtils;
 
 impl MrzUtils {
-    /// Calculate ICAO 9303 check digit
-    pub fn calculate_check_digit(data: &str) -> u8 {
+    pub fn calculate_check_digit(s: &str) -> u8 {
         let weights = [7, 3, 1];
         let mut sum = 0;
-        for (i, c) in data.chars().enumerate() {
+        for (i, c) in s.chars().enumerate() {
             let val = match c {
                 '0'..='9' => c as u32 - '0' as u32,
                 'A'..='Z' => c as u32 - 'A' as u32 + 10,
@@ -113,43 +101,38 @@ impl MrzUtils {
         (sum % 10) as u8 + b'0'
     }
 
-    /// Verify a field with its check digit
-    pub fn verify_check_digit(data: &str, expected: char) -> bool {
-        Self::calculate_check_digit(data) == expected as u8
-    }
-
-    /// Parse TD3 (Passport) MRZ
     pub fn parse_mrz_td3(mrz: &str) -> Result<super::models::CitizenIdentity> {
-        let lines: Vec<&str> = mrz.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
-        if lines.len() != 2 || lines[0].len() != 44 || lines[1].len() != 44 {
-            bail!("Invalid TD3 MRZ format");
-        }
-
+        let lines: Vec<&str> = mrz.lines().collect();
+        if lines.len() < 2 { bail!("Invalid MRZ format"); }
         let line1 = lines[0];
         let line2 = lines[1];
 
-        // Line 1: [P][Type][IssuingState(3)][Names(39)]
+        if line1.len() < 44 || line2.len() < 44 { bail!("Invalid MRZ line length"); }
+
+        let nationality = &line1[2..5];
         let names_part = &line1[5..44];
         let parts: Vec<&str> = names_part.split("<<").collect();
-        let surname = parts.get(0).map(|s| s.replace("<", " ").trim().to_string());
-        let given_names = parts.get(1).map(|s| s.replace("<", " ").trim().to_string());
+        let surname = parts.first().map(|s| s.replace('<', " ").trim().to_string());
+        let given_names = parts.get(1).map(|s| s.replace('<', " ").trim().to_string());
         
-        let full_name = names_part.replace("<<", ", ").replace("<", " ").trim_matches(|c| c == ' ' || c == ',').to_string();
+        let full_name = match (&surname, &given_names) {
+            (Some(s), Some(g)) => format!("{} {}", s, g),
+            (Some(s), None) => s.clone(),
+            (None, Some(g)) => g.clone(),
+            (None, None) => "".to_string(),
+        };
 
-        // Line 2: [PassportNo(9)][Check(1)][Nationality(3)][DOB(6)][Check(1)][Gender(1)][Expiry(6)][Check(1)][Optional(14)][Check(1)][Check(1)]
-        let passport_no = line2[0..9].replace("<", "");
-        let nationality = &line2[10..13];
-        let dob_raw = &line2[13..19];
-        let gender_raw = &line2[20..21];
-        let expiry_raw = &line2[21..27];
-
-        let birth_date = DateUtils::parse_yymmdd(dob_raw).unwrap_or_else(|_| dob_raw.to_string());
-        let expiration_date = DateUtils::parse_yymmdd(expiry_raw).unwrap_or_else(|_| expiry_raw.to_string());
-        let gender = match gender_raw {
-            "M" => "Male",
-            "F" => "Female",
-            _ => "Unspecified",
+        let passport_no = line2[0..9].replace('<', " ").trim().to_string();
+        let birth_date_raw = &line2[13..19];
+        let gender = match &line2[20..21] {
+            "M" => "1",
+            "F" => "2",
+            _ => "9",
         }.to_string();
+        let expiration_date_raw = &line2[21..27];
+
+        let birth_date = DateUtils::parse_yymmdd(birth_date_raw)?;
+        let expiration_date = DateUtils::parse_yymmdd(expiration_date_raw)?;
 
         Ok(super::models::CitizenIdentity {
             full_name,
@@ -181,10 +164,9 @@ impl DateUtils {
         let month: u32 = s[2..4].parse()?;
         let day: u32 = s[4..6].parse()?;
         
-        if month < 1 || month > 12 || day < 1 || day > 31 {
+        if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
             bail!("Invalid date components");
         }
-
         // Pivot year: assume 1980-2079
         let year = if year_short < 80 { 2000 + year_short } else { 1900 + year_short };
         Ok(format!("{:04}-{:02}-{:02}", year, month, day))
@@ -194,12 +176,13 @@ impl DateUtils {
     pub fn parse_yyyymmdd(s: &str) -> Result<String> {
         if s.len() != 8 { bail!("Invalid date length"); }
         let year: u32 = s[0..4].parse()?;
-        let month: u32 = s[4..6].parse()?;
-        let day: u32 = s[6..8].parse()?;
-        
-        if month < 1 || month > 12 || day < 1 || day > 31 {
+        let month: u32 = s[4..6].parse().map_err(|_| anyhow!("Invalid month"))?;
+        let day: u32 = s[6..8].parse().map_err(|_| anyhow!("Invalid day"))?;
+
+        if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
             bail!("Invalid date components");
         }
+
         Ok(format!("{:04}-{:02}-{:02}", year, month, day))
     }
 
@@ -212,6 +195,10 @@ impl DateUtils {
         let year_short: u32 = s[1..3].parse()?;
         let month: u32 = s[3..5].parse()?;
         let day: u32 = s[5..7].parse()?;
+
+        if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+            bail!("Invalid date components");
+        }
 
         let era_base = match era {
             "1" => 1867, // Meiji
@@ -247,10 +234,6 @@ mod tests {
 
     #[test]
     fn test_mrz_check_digit() {
-        // Example from ICAO 9303: "HA672242" -> check digit '2'
-        // Wait, let's use a known one: "12345678"
-        // 1*7 + 2*3 + 3*1 + 4*7 + 5*3 + 6*1 + 7*7 + 8*3
-        // 7 + 6 + 3 + 28 + 15 + 6 + 49 + 24 = 138. 138 % 10 = 8.
         assert_eq!(MrzUtils::calculate_check_digit("12345678"), b'8');
     }
 

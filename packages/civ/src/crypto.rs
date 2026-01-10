@@ -104,8 +104,8 @@ pub fn verify_x509_signature(cert_der: &[u8], message: &[u8], signature_bytes: &
              let sig = Signature::from_der(signature_bytes)
                  .map_err(|e| anyhow!("Invalid ECC signature format: {}", e))?;
              
-             return verifying_key.verify(message, &sig)
-                 .map_err(|e| anyhow!("ECC Verification failed (DER): {}", e));
+             verifying_key.verify(message, &sig)
+                 .map_err(|e| anyhow!("ECC Verification failed (DER): {}", e))
         } else {
             bail!("Unsupported EC Curve: {}", params_oid);
         }

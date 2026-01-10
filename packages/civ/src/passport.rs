@@ -386,9 +386,9 @@ impl<R: CardReader> IdentityController for PassportController<R> {
         let dg1 = self.read_dg1().await?;
         let tlvs = parse_ber_tlv(&dg1).unwrap_or_default();
         let mrz_raw = if !tlvs.is_empty() && tlvs[0].tag == 0x61 {
-             let inner = parse_ber_tlv(tlvs[0].value).unwrap_or_default();
+             let inner = parse_ber_tlv(&tlvs[0].value).unwrap_or_default();
              if !inner.is_empty() && inner[0].tag == 0x5F1F {
-                  String::from_utf8_lossy(inner[0].value).to_string()
+                  String::from_utf8_lossy(&inner[0].value).to_string()
              } else {
                   String::from_utf8_lossy(&dg1).to_string()
              }

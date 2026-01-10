@@ -143,7 +143,7 @@ async fn run_unified_id<R: CardReader + 'static>(mut reader: R, pin: Option<Stri
 
     // 1. Detect Card Type and set default demo PIN
     let mut controller: Box<dyn IdentityController>;
-    let mut detected_type = "";
+    let detected_type: &str;
 
     if let Some(ref t) = forced_type {
         match t.as_str() {
@@ -159,7 +159,7 @@ async fn run_unified_id<R: CardReader + 'static>(mut reader: R, pin: Option<Stri
     } else if is_selected(&mut reader, &civ::passport::file_ids::DF_ICAO).await {
         controller = Box::new(PassportController::new(reader));
         detected_type = "passport";
-    } else if is_selected(&mut reader, &[0xA0, 0x00, 0x00, 0x02, 0x31, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00]).await {
+    } else if is_selected(&mut reader, &[0xA0, 0x00, 0x00, 0x02, 0x31, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]).await {
         controller = Box::new(MynaMenkyoController::new(reader));
         detected_type = "mynamenkyo";
     } else if is_selected(&mut reader, &[0xA0, 0x00, 0x00, 0x00, 0x54, 0x48, 0x00, 0x01]).await {

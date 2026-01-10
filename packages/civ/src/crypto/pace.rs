@@ -142,7 +142,7 @@ impl PaceP256 {
                     
                     // Failed, generate next candidate: H(candidate)
                     let mut hasher = Sha256::new();
-                    hasher.update(&candidate_bytes);
+                    hasher.update(candidate_bytes);
                     let hash = hasher.finalize();
                     candidate_bytes.copy_from_slice(&hash);
                 }
@@ -260,10 +260,10 @@ impl PaceP256 {
 pub(crate) fn derive_password_key(password: &str) -> [u8; 16] {
     let mut hasher = Sha256::new();
     hasher.update(password.as_bytes());
-    hasher.update(&[0, 0, 0, 1]); // Counter
-    let res = hasher.finalize();
+    hasher.update([0, 0, 0, 1]); // Counter
+    let hash = hasher.finalize();
     let mut key = [0u8; 16];
-    key.copy_from_slice(&res[0..16]);
+    key.copy_from_slice(&hash[0..16]);
     key
 }
 
@@ -276,10 +276,10 @@ pub fn derive_session_keys_sha256(shared_secret: &[u8], key_len_bytes: usize) ->
 fn kdf_sha256(secret: &[u8], counter: u32, len: usize) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(secret);
-    hasher.update(&counter.to_be_bytes());
-    let result = hasher.finalize();
+    hasher.update(counter.to_be_bytes());
+    let hash = hasher.finalize();
     let take_len = std::cmp::min(len, 32);
-    result[0..take_len].to_vec()
+    hash[0..take_len].to_vec()
 }
 
 #[cfg(test)]

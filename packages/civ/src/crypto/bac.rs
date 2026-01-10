@@ -31,22 +31,20 @@ impl BacSession {
         let mut command_data = Vec::new();
         if !apdu.data.is_empty() {
             let encrypted = encrypt_3des_cbc_padded(&self.k_enc, &apdu.data)?;
-            let mut do87 = Vec::new();
-            do87.push(0x87);
             let mut value = Vec::with_capacity(1 + encrypted.len());
             value.push(0x01);
             value.extend_from_slice(&encrypted);
-            do87.extend_from_slice(&encode_length(value.len()));
-            do87.extend_from_slice(&value);
+            let do87 = [
+                vec![0x87],
+                encode_length(value.len()),
+                value
+            ].concat();
             command_data.extend_from_slice(&do87);
         }
 
         if let Some(le) = apdu.le {
             let le_val = if le == 256 || le == 0 { 0x00 } else { le as u8 };
-            let mut do97 = Vec::new();
-            do97.push(0x97);
-            do97.push(0x01);
-            do97.push(le_val);
+            let do97 = vec![0x97, 0x01, le_val];
             command_data.extend_from_slice(&do97);
         }
 
@@ -314,7 +312,7 @@ fn build_mac_input_response(ssc: &[u8; 8], tlvs: &[u8]) -> Vec<u8> {
 fn pad_iso9797(data: &[u8], block_size: usize) -> Vec<u8> {
     let mut out = data.to_vec();
     out.push(0x80);
-    while out.len() % block_size != 0 {
+    while !out.len().is_multiple_of(block_size) {
         out.push(0x00);
     }
     out
@@ -373,7 +371,7 @@ fn expand_3des_key(k_2key: &[u8; 16]) -> [u8; 24] {
 }
 
 fn encrypt_3des_cbc_raw(k_enc: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
-    if data.len() % 8 != 0 { return Err(anyhow!("Plaintext is not block aligned")); }
+    if !data.len().is_multiple_of(8) { return Err(anyhow!("Plaintext is not block aligned")); }
     let key = expand_3des_key(k_enc);
     let cipher = TdesEde3::new_from_slice(&key).map_err(|_| anyhow!("Invalid 3DES key"))?;
     let mut iv = [0u8; 8];
@@ -396,7 +394,7 @@ fn encrypt_3des_cbc_padded(k_enc: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn decrypt_3des_cbc_raw(k_enc: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
-    if data.len() % 8 != 0 { return Err(anyhow!("Encrypted data is not block aligned")); }
+    if !data.len().is_multiple_of(8) { return Err(anyhow!("Encrypted data is not block aligned")); }
     let key = expand_3des_key(k_enc);
     let cipher = TdesEde3::new_from_slice(&key).map_err(|_| anyhow!("Invalid 3DES key"))?;
     let mut iv = [0u8; 8];

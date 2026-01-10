@@ -487,7 +487,7 @@ mod tests {
 fn pad_iso9797_m2(data: &[u8]) -> Vec<u8> {
     let mut padded = data.to_vec();
     padded.push(0x80);
-    while padded.len() % 16 != 0 {
+    while !padded.len().is_multiple_of(16) {
         padded.push(0x00);
     }
     padded

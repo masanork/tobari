@@ -109,7 +109,7 @@ impl<R: CardReader> IdentityController for ThaiController<R> {
 
         // Gender (Offset 00E1, Len 1)
         let gender_byte = self.read_data(0x00E1, 1).await?;
-        let gender = match gender_byte.get(0) {
+        let gender = match gender_byte.first() {
             Some(b'1') => "1".to_string(), // Male
             Some(b'2') => "2".to_string(), // Female
             _ => "9".to_string(),

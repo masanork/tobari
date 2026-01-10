@@ -241,8 +241,7 @@ impl<R: CardReader> JpkiController<R> {
             let res = self.reader.transmit(&ApduCommand::new(CLA_ISO, INS_READ_BINARY, p1, p2).with_le(0x00).to_bytes()).await?;
             if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
             let (sw1, sw2) = (res[res.len()-2], res[res.len()-1]);
-            if sw1 == 0x90 && sw2 == 0x00 { } 
-            else if sw1 == 0x62 && sw2 == 0x82 { } 
+            if (sw1 == 0x90 && sw2 == 0x00) || (sw1 == 0x62 && sw2 == 0x82) { } 
             else if sw1 == 0x6B && sw2 == 0x00 { break; }
             else { return Err(CivError::from_sw(sw1, sw2)); }
             let chunk = &res[0..res.len()-2];

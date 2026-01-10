@@ -5,7 +5,6 @@ use sha2::{Sha256, Digest};
 use p256::ecdsa::{SigningKey, Signature};
 use signature::Signer;
 use rand_core::OsRng;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
 
 pub struct DriversLicenseBackend {
     files: HashMap<Vec<u8>, Vec<u8>>,
@@ -85,7 +84,15 @@ impl DriversLicenseBackend {
 
         Self { files, current_ef: None, signing_key, certificate_der }
     }
+}
 
+impl Default for DriversLicenseBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DriversLicenseBackend {
     pub fn get_public_key_bytes(&self) -> Vec<u8> {
         self.signing_key.verifying_key().to_encoded_point(false).as_bytes().to_vec()
     }
