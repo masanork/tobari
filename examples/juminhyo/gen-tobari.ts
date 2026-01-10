@@ -4,25 +4,16 @@ import path from 'path';
 import yaml from 'js-yaml';
 
 async function main() {
-    console.log("Generating full-spec juminhyo.cose with local YAML data...");
+    const isLockedBuild = process.argv.includes('--locked');
+    const suffix = isLockedBuild ? '.locked' : '';
+    
+    console.log(`Generating juminhyo${suffix}.cose...`);
 
     const schemaPath = path.resolve(__dirname, 'juminhyo.yaml');
     const schemaYaml = fs.readFileSync(schemaPath, 'utf-8');
 
     const yamlDataPath = path.resolve(__dirname, 'juminhyo-data.yaml');
-    const jsonDataPath = path.resolve(__dirname, 'juminhyo-data.json');
-    let sampleData: any;
-
-    if (fs.existsSync(yamlDataPath)) {
-        console.log("Loading data from juminhyo-data.yaml...");
-        sampleData = yaml.load(fs.readFileSync(yamlDataPath, 'utf-8'));
-    } else if (fs.existsSync(jsonDataPath)) {
-        console.log("Loading data from juminhyo-data.json...");
-        sampleData = JSON.parse(fs.readFileSync(jsonDataPath, 'utf-8'));
-    } else {
-        console.error("Error: No data file found (juminhyo-data.yaml or .json)");
-        process.exit(1);
-    }
+    const sampleData = yaml.load(fs.readFileSync(yamlDataPath, 'utf-8'));
 
     const keyPair = await crypto.subtle.generateKey(
         { name: "ECDSA", namedCurve: "P-384" },
@@ -30,43 +21,37 @@ async function main() {
         ["sign", "verify"]
     );
 
-    // Save Public Key for verification
-    const pubKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
-    fs.writeFileSync(path.resolve(__dirname, 'issuer-key.json'), JSON.stringify(pubKeyJwk, null, 2));
-    console.log("Saved Issuer Public Key to issuer-key.json");
-
-    const encrypt = process.argv.includes('--encrypt');
+    const encrypt = process.argv.includes('--encrypt') || isLockedBuild;
     let encryptionPublicKey: Uint8Array | undefined;
     let embeddedFont: Uint8Array | undefined;
 
-    // --- Font Subsetting (Privacy Protection) ---
-    // Extract all characters from sampleData to create an encrypted font subset
+    // --- Font Subsetting ---
     const { subsetFont } = await import('../../packages/codec/src/font-engine');
     const fontPath = path.resolve(process.cwd(), 'shared/fonts/ipamjm.ttf');
     
     if (fs.existsSync(fontPath)) {
-        console.log("Subsetting font for encrypted embedding...");
         const allText = JSON.stringify(sampleData) + "（非開示）Digital Certificate Signature ES384 Verified 氏名住所交付年月日印";
         const segmenter = new Intl.Segmenter("ja", { granularity: "grapheme" });
         const uniqueChars = Array.from(new Set(Array.from(segmenter.segment(allText)).map(s => s.segment))).join('');
-        
         const { buffer } = await subsetFont(fontPath, uniqueChars);
         embeddedFont = new Uint8Array(buffer);
-        console.log(`Font subsetted: ${embeddedFont.length} bytes`);
     }
 
     if (encrypt) {
-        console.log("Encryption enabled. Generating PoC Demo Key (Salt: 'tobari')...");
-        const { deriveHPKEKeyPair } = await import("../../packages/crypto/src/hpke");
+        const recipientKeyPath = path.resolve(__dirname, 'recipient-pubkey.json');
         
-        const demoSecret = new TextEncoder().encode("tobari-demo-secret-key-32-bytes-long!!");
-        const keyPair = await deriveHPKEKeyPair(demoSecret);
-        
-        if (!keyPair || !keyPair.publicKey) {
-            throw new Error("Failed to derive HPKE KeyPair from WASM");
+        if (isLockedBuild && fs.existsSync(recipientKeyPath)) {
+            console.log(`🔒 Using REAL Recipient Public Key from ${recipientKeyPath}`);
+            const keyData = JSON.parse(fs.readFileSync(recipientKeyPath, 'utf-8'));
+            // Expecting raw base64 encoded public key from HPKE
+            encryptionPublicKey = Uint8Array.from(atob(keyData.pubkey), c => c.charCodeAt(0));
+        } else {
+            console.log("🔓 Using DEMO Shared Key for encryption...");
+            const { deriveHPKEKeyPair } = await import("../../packages/crypto/src/hpke");
+            const demoSecret = new TextEncoder().encode("tobari-demo-secret-key-32-bytes-long!!");
+            const demoKeyPair = await deriveHPKEKeyPair(demoSecret);
+            encryptionPublicKey = demoKeyPair!.publicKey;
         }
-        
-        encryptionPublicKey = keyPair.publicKey;
     }
 
     const binary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
@@ -75,10 +60,9 @@ async function main() {
         embeddedFont
     });
 
-    const outputPath = path.resolve(__dirname, 'juminhyo.cose');
+    const outputPath = path.resolve(__dirname, `juminhyo${suffix}.cose`);
     fs.writeFileSync(outputPath, binary);
-
-    console.log(`Successfully generated COSE file: ${outputPath} (${binary.length} bytes)`);
+    console.log(`✅ Generated: ${outputPath}`);
 }
 
 main().catch(console.error);
