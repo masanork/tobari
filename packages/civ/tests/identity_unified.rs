@@ -56,3 +56,19 @@ async fn test_thai_unified() {
     assert_eq!(identity.attributes.get("full_name_en").unwrap(), "Somchai Mankong");
     assert_eq!(identity.birth_date, "1990-01-01");
 }
+
+#[tokio::test]
+async fn test_mykad_unified() {
+    let card = Arc::new(Mutex::new(MockSmartCard::new()));
+    let mut controller = civ::MyKadController::new(MockRelay { card });
+
+    let identity = controller.read_identity().await.unwrap();
+    assert_eq!(identity.card_type, "MyKad");
+    // Mock data check (from mock/mykad.rs)
+    assert!(identity.full_name.contains("ALI BIN ABU"));
+    assert_eq!(identity.identity_number, "800101141234");
+    assert_eq!(identity.birth_date, "1980-01-01");
+    // Photo reading not yet implemented for MyKad
+    assert!(identity.photo_data.is_none());
+    assert_eq!(identity.gender, "Male");
+}
