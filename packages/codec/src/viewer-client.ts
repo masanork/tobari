@@ -12,6 +12,7 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         if (hash) {
             const dataPrefix = "data=";
             if (hash.startsWith(dataPrefix)) {
+                console.log("🔗 Loading data from URL fragment...");
                 rawContent = decodeURIComponent(hash.substring(dataPrefix.length));
             }
         }
@@ -42,11 +43,6 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         };
 
         const binary = b64ToBinary(rawContent);
-        if (binary.length === 0) {
-            renderWelcome();
-            return;
-        }
-
         const doc = decode(binary);
         const issuerAuthToken = doc.issuerSigned.issuerAuth;
         const coseArray = decode(issuerAuthToken);
@@ -74,7 +70,6 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         (window as any).currentDebugData = currentDebugData;
 
         if (doc.visuals && doc.visuals.font) {
-            console.log("🎨 Applying embedded font...");
             const fontBytes = doc.visuals.font;
             const blob = new Blob([fontBytes], { type: 'font/woff2' });
             const fontUrl = URL.createObjectURL(blob);
@@ -113,13 +108,14 @@ function renderWelcome() {
 }
 
 function renderError(err: any) {
+    injectGlobalStyles();
     document.body.innerHTML = `
         <div class="welcome-screen">
             <div class="drop-card error">
                 <div class="logo">⚠️</div>
                 <h2>Failed to Load</h2>
-                <p>${err}</p>
-                <button class="primary-btn" onclick="location.href=location.pathname">再読み込み</button>
+                <p>ドキュメントの読み込みに失敗しました。不正な形式か、パスキーが一致しない可能性があります。</p>
+                <button class="primary-btn" onclick="location.href=location.pathname">トップに戻る</button>
             </div>
         </div>
     `;
@@ -158,19 +154,14 @@ function injectGlobalStyles() {
         p { color: #718096; line-height: 1.6; margin-bottom: 32px; }
         .primary-btn { background: #1a202c; color: white; border: none; padding: 14px 28px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
         .primary-btn:hover { background: #2d3748; transform: translateY(-1px); }
+        .secondary-btn { background: none; color: #3182ce; border: 1px solid #3182ce; padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 15px; width: 100%; }
         .footer-note { margin-top: 24px; color: #a0aec0; font-size: 13px; }
         
-        @media (max-width: 640px) {
-            .drop-card { padding: 40px 20px; }
-        }
-
         .official-doc-container { padding: 40px 20px; display: flex; justify-content: center; }
         .official-doc { 
             background: white; width: 100%; max-width: 840px; padding: 80px 100px; 
             box-shadow: 0 40px 100px rgba(0,0,0,0.08), 0 10px 20px rgba(0,0,0,0.02); 
             border-radius: 4px; font-family: 'TobariSubset', serif; position: relative;
-            background-image: linear-gradient(#f9f9f9 1px, transparent 1px);
-            background-size: 100% 3em;
         }
         .verified-badge { 
             position: absolute; top: 40px; right: 40px; 
@@ -260,11 +251,6 @@ function render(doc: any, rawData: any, mso: MSO) {
                     </div>
                     <div class="hankyo">印</div>
                 </div>
-                
-                <div style="margin-top: 40px; font-family: sans-serif; font-size: 10px; color: #cbd5e0; display: flex; justify-content: space-between;">
-                    <span>Verification: ECDSA P-384 / SHA-256</span>
-                    <span>Tobari Verifiable Document v1.0</span>
-                </div>
             </div>
         </div>
     `;
@@ -290,37 +276,50 @@ async function unlockEncryptedPayload(wrapper: any): Promise<string> {
             <div class="drop-card">
                 <div class="logo">🔒</div>
                 <h2>Encrypted Document</h2>
-                <p>この書類は暗号化されています。<br>閲覧するにはパスキーによる承認が必要です。</p>
+                <p>この書類は暗号化されています。閲覧するには発行時に指定したパスキーが必要です。</p>
                 <button id="unlock-btn" class="primary-btn" style="width: 100%;">パスキーで復号</button>
+                <button id="demo-unlock-btn" class="secondary-btn">デモ用共有鍵で試行</button>
+                <p style="margin-top:20px; font-size:11px; color:#a0aec0; text-align:left;">
+                    ※ パスキーによる復号は、発行者へ事前に公開鍵を登録している必要があります。デモ用ドキュメントの場合は「デモ用共有鍵」を使用してください。
+                </p>
             </div>
         </div>
     `;
 
+    const ciphertext = Uint8Array.from(atob(wrapper.data), c => c.charCodeAt(0));
+    const info = new TextEncoder().encode("tobari-storage-v1");
+    const { decryptHPKE } = await import("@tobari/crypto/hpke");
+
     return new Promise((resolve) => {
         document.getElementById('unlock-btn')?.addEventListener('click', async () => {
             try {
-                const secret = await deriveHmacSecret();
-                const ciphertext = Uint8Array.from(atob(wrapper.data), c => c.charCodeAt(0));
-                const info = new TextEncoder().encode("tobari-storage-v1");
-                const { decryptHPKE } = await import("@tobari/crypto/hpke");
+                const secret = await deriveHmacSecret(false); // Try real WebAuthn
                 const plaintext = await decryptHPKE(secret.slice(0, 32), ciphertext, info);
                 resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
             } catch (e) {
-                alert("復号に失敗しました。正しいパスキーを使用しているか確認してください。");
+                alert("復号に失敗しました。このドキュメント用ではないパスキーです。");
             }
+        });
+
+        document.getElementById('demo-unlock-btn')?.addEventListener('click', async () => {
+            const secret = await deriveHmacSecret(true); // Force demo fallback
+            const plaintext = await decryptHPKE(secret.slice(0, 32), ciphertext, info);
+            resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
         });
     });
 }
 
-async function deriveHmacSecret(): Promise<Uint8Array> {
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    try {
-        const assertion = await navigator.credentials.get({
-            publicKey: { challenge, timeout: 60000, userVerification: "required", extensions: { hmacGetSecret: { salt1: new Uint8Array(32) } } as any }
-        }) as any;
-        const res = assertion.getClientExtensionResults();
-        if (res.hmacGetSecret) return new Uint8Array(res.hmacGetSecret.output1);
-    } catch (e) { console.warn("WebAuthn failed, using demo fallback"); }
+async function deriveHmacSecret(forceDemo: boolean): Promise<Uint8Array> {
+    if (!forceDemo) {
+        const challenge = crypto.getRandomValues(new Uint8Array(32));
+        try {
+            const assertion = await navigator.credentials.get({
+                publicKey: { challenge, timeout: 60000, userVerification: "required", extensions: { hmacGetSecret: { salt1: new Uint8Array(32) } } as any }
+            }) as any;
+            const res = assertion.getClientExtensionResults();
+            if (res.hmacGetSecret) return new Uint8Array(res.hmacGetSecret.output1);
+        } catch (e) { console.warn("WebAuthn extension failed."); }
+    }
     return new TextEncoder().encode("tobari-demo-secret-key-32-bytes-long!!");
 }
 
