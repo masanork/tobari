@@ -8,32 +8,54 @@ ininjo = {
   "issuanceDate": tdate,
 
   ; 委任状本体 (Main Body)
-  "id": tstr,                 ; 委任状ID
-  "creation_date": tdate,     ; 作成日
+  ; Header
+  "id": tstr,                ; 委任状ID
+  "creationTime": tdate,     ; 作成日時
 
-  ; 委任者 (Principal / Mandator)
-  "principal": {
-    "name": tstr,             ; 氏名 / 名称
-    "address": tstr,          ; 住所 / 所在地
-    ? "corporate_number": tstr, ; 法人番号
-    ? "representative_title": tstr ; 代表者肩書
-  },
+  ; Mandator (委任者)
+  "mandator": entity_obj,
 
-  ; 受任者 (Agent / Mandatary)
-  "agent": {
-    "name": tstr,
-    "address": tstr,
-    ? "department": tstr,     ; 所属部課
-    ? "title": tstr,          ; 職名
-    "relationship": tstr      ; 続柄
-  },
+  ; Mandatary (受任者)
+  "mandatary": entity_obj,
 
-  ; 委任事項 (Mandate / Authority)
-  "scope": [* tstr],          ; 委任事項
-
-  ; 有効期間 (Period)
-  "validity": {
-    "not_before": tdate,
-    "not_after": tdate
+  ; Delegated Authority (委任権限)
+  "delegatedAuthority": {
+      "validityPeriod": {    ; 有効期間
+          ? "startDate": tdate,
+          ? "endDate": tdate
+      },
+      "delegatedActs": [+ act_obj], ; 委任行為のリスト（1つ以上）
+      "subDelegation": {     ; 復代理
+          "allocated": bool, ; 復代理権の有無（XML: Allocated）
+          ? "restriction": tstr ; 制限事項
+      }
   }
+}
+
+; Entity Object (Used for Mandator and Mandatary)
+entity_obj = {
+    "type": "Individual" / "Corporation", ; 区分
+    "name": tstr,            ; 氏名・名称
+    "address": tstr,         ; 住所・所在地
+    ? "kanaName": tstr,      ; カナ
+    
+    ; Individual specific
+    ? "birthDate": tdate,    ; 生年月日
+    ? "gender": tstr,        ; 性別
+    
+    ; Corporation specific
+    ? "corporateNumber": tstr,    ; 法人番号
+    ? "representativeTitle": tstr,; 代表者肩書
+    ? "representativeName": tstr, ; 代表者氏名
+
+    ; Additional info
+    ? "contact": tstr,       ; 連絡先
+    ? "department": tstr,    ; 所属部課
+    ? "title": tstr          ; 職名
+}
+
+act_obj = {
+    "actName": tstr,         ; 手続名称
+    ? "actCode": tstr,       ; 手続コード
+    ? "note": tstr           ; 備考
 }

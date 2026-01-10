@@ -7,72 +7,108 @@ fields:
     label: "委任状ID"
     type: "string"
     section: "header"
-  
-  - id: "creation_date"
-    label: "作成日"
+  - id: "creationTime"
+    label: "作成日時"
     type: "string"
     section: "header"
 
-  - id: "principal"
+  - id: "mandator"
     label: "委任者"
-    type: "group" 
+    type: "group"
     fields:
+      - id: "type"
+        label: "区分"
+        type: "string"
+        selective: true
       - id: "name"
         label: "氏名又は名称"
         type: "string"
         selective: true
       - id: "address"
-        label: "住所又は本店所在地"
+        label: "住所又は所在地"
         type: "string"
         selective: true
-      - id: "corporate_number"
+      - id: "kanaName"
+        label: "カナ"
+        type: "string"
+        selective: true
+      - id: "birthDate"
+        label: "生年月日"
+        type: "string"
+        selective: true
+      - id: "corporateNumber"
         label: "法人番号"
         type: "string"
         selective: true
-      - id: "representative_title"
+      - id: "representativeTitle"
         label: "代表者肩書"
         type: "string"
         selective: true
 
-  - id: "agent"
+  - id: "mandatary"
     label: "受任者"
     type: "group"
     fields:
+      - id: "type"
+        label: "区分"
+        type: "string"
+        selective: true
       - id: "name"
         label: "氏名又は名称"
         type: "string"
         selective: true
       - id: "address"
-        label: "住所又は本店所在地"
+        label: "住所又は所在地"
+        type: "string"
+        selective: true
+      - id: "birthDate"
+        label: "生年月日"
         type: "string"
         selective: true
       - id: "department"
-        label: "所属部課"
+        label: "所属"
         type: "string"
         selective: true
       - id: "title"
-        label: "職名"
-        type: "string"
-        selective: true
-      - id: "relationship"
-        label: "続柄・関係"
+        label: "役職"
         type: "string"
         selective: true
 
-  - id: "scope"
-    label: "委任事項"
-    type: "array"
-    selective: true
-    items:
-      type: "string"
-
-  - id: "validity"
-    label: "有効期間"
+  - id: "delegatedAuthority"
+    label: "委任内容"
     type: "group"
     fields:
-      - id: "not_before"
-        label: "開始日"
-        type: "string"
-      - id: "not_after"
-        label: "終了日"
-        type: "string"
+      - id: "validityPeriod"
+        label: "有効期間"
+        type: "group"
+        selective: true
+        fields:
+          - id: "startDate"
+            label: "開始日"
+            type: "string"
+          - id: "endDate"
+            label: "終了日"
+            type: "string"
+
+      - id: "delegatedActs"
+        label: "委任行為"
+        type: "array"
+        selective: true
+        items:
+          type: "group"
+          fields:
+            - id: "actName"
+              label: "手続名称"
+              type: "string"
+            - id: "note"
+              label: "備考"
+              type: "string"
+
+      - id: "subDelegation"
+        label: "復代理"
+        type: "group"
+        selective: true
+        fields:
+          - id: "allocated"
+            label: "権限有無"
+            type: "boolean"
