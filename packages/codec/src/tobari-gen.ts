@@ -24,7 +24,7 @@ export interface TobariDoc {
     fields: any[];
     // Encrypted/Signed visual assets
     visuals?: {
-        font?: string; // Base64 font-face CSS
+        font?: Uint8Array; // Raw WOFF2/TTF binary
     };
 }
 
@@ -38,7 +38,7 @@ export async function generateSignedTobari(
         devicePublicKey?: CryptoKey;
         useLtvMock?: boolean;
         encryptionPublicKey?: Uint8Array; // HPKE Public Key
-        embeddedFont?: string;           // Pre-subsetted font CSS
+        embeddedFont?: Uint8Array;        // Raw font binary
     } = {}
 ): Promise<Uint8Array> {
     const schema = yaml.load(schemaYaml) as any;
