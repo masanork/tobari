@@ -12,11 +12,16 @@ pub struct TestReader {
     pub responses: Arc<Mutex<VecDeque<Vec<u8>>>>,
     pub handler: Arc<Mutex<Option<ApduHandler>>>,
     pub force_failure: Arc<Mutex<Option<(u8, u8)>>>, // SW1, SW2
+    pub transport_error: Arc<Mutex<bool>>,
 }
 
 impl TestReader {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_transport_error(&self, enabled: bool) {
+        *self.transport_error.lock().unwrap() = enabled;
     }
 
     pub fn set_failure(&self, sw1: u8, sw2: u8) {
@@ -41,6 +46,10 @@ impl CardReader for TestReader {
     async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>> {
         self.sent_apdus.lock().unwrap().push(apdu.to_vec());
         
+        if *self.transport_error.lock().unwrap() {
+            return Err(anyhow::anyhow!("Transport error simulated"));
+        }
+
         if let Some((sw1, sw2)) = *self.force_failure.lock().unwrap() {
             return Ok(vec![sw1, sw2]);
         }

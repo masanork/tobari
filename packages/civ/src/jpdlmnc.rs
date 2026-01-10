@@ -124,7 +124,17 @@ mod tests {
         let reader = TestReader::new();
         let mut controller = MynaMenkyoController::new(reader.clone());
         reader.set_failure(0x6A, 0x82);
-        assert!(controller.read_data().await.is_err());
+        assert!(controller.read_license_info().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_identity_controller_fail() {
+        let reader = TestReader::new();
+        let mut controller = MynaMenkyoController::new(reader.clone());
+        reader.set_failure(0x6A, 0x82);
+        
+        let res: anyhow::Result<CitizenIdentity> = controller.read_identity().await.map_err(|e| anyhow::anyhow!(e));
+        assert!(res.is_err());
     }
 }
 

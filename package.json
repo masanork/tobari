@@ -18,7 +18,7 @@
         "demo:zkp:bbs": "cd examples/zkp/bbs-scenarios && bun run scenario-employee-discount.ts",
         "demo:zkp:dating": "cd examples/zkp/bbs-scenarios && bun run scenario-dating-app.ts",
         "demo:scac": "cd examples/scac && bun run gen-scac.ts",
-        "docs:prepare": "mkdir -p docs/civ && cp packages/civ/docs/*.md docs/civ/",
+        "docs:prepare": "mkdir -p docs/civ && cp packages/civ/docs/*.md docs/civ/ && cp README.md docs/README.md",
         "docs:dev": "bun run docs:prepare && vitepress dev docs",
         "docs:build": "bun run docs:prepare && vitepress build docs",
         "docs:preview": "vitepress preview docs"

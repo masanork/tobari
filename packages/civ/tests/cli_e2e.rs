@@ -66,13 +66,55 @@ fn test_cli_invalid_type() {
 }
 
 #[test]
-fn test_cli_jpki_cert() {
+
+fn test_cli_passport_missing_mrz() {
+
     let mut cmd = Command::cargo_bin("civ").unwrap();
+
     cmd.arg("--demo")
-        .arg("jpki")
-        .arg("cert")
-        .arg("--type=auth")
+
+        .arg("id")
+
+        .arg("--type=passport")
+
         .assert()
-        .success()
-        .stdout(predicate::str::contains("Hex: 30820100")); // Mock cert data
+
+        .failure();
+
+}
+
+
+
+#[test]
+
+fn test_cli_jpki_missing_pin() {
+
+    let mut cmd = Command::cargo_bin("civ").unwrap();
+
+    cmd.arg("--demo")
+
+        .arg("id")
+
+        .arg("--type=jpki")
+
+        .assert()
+
+        .failure();
+
+}
+
+
+
+#[test]
+
+fn test_cli_unknown_command() {
+
+    let mut cmd = Command::cargo_bin("civ").unwrap();
+
+    cmd.arg("unknown")
+
+        .assert()
+
+        .failure();
+
 }

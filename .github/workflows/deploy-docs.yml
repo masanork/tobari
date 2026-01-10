@@ -32,12 +32,6 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Prepare Docs
-        run: |
-          mkdir -p docs/civ
-          cp packages/civ/docs/*.md docs/civ/
-          cp packages/civ/docs/*.txt docs/civ/ || true
-
       - name: Build with VitePress
         run: bun run docs:build
 

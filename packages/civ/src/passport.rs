@@ -296,11 +296,36 @@ impl<R: CardReader> PassportController<R> {
 
     fn check_sw(res: &[u8]) -> Result<()> {
         if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
-        let sw1 = res[res.len() - 2];
-        let sw2 = res[res.len() - 1];
+        let sw1 = res[res.len()-2];
+        let sw2 = res[res.len()-1];
         if sw1 == 0x90 && sw2 == 0x00 { Ok(()) }
         else { Err(CivError::from_sw(sw1, sw2)) }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::TestReader;
+
+    #[tokio::test]
+    async fn test_read_dg_failure() {
+        let reader = TestReader::new();
+        reader.set_failure(0x6A, 0x82);
+        let mut controller = PassportController::new(reader.clone());
+        assert!(controller.read_dg(1).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_identity_failure() {
+        let reader = TestReader::new();
+        reader.set_failure(0x6A, 0x82);
+        let mut controller = PassportController::new(reader.clone());
+        
+        let res: anyhow::Result<CitizenIdentity> = controller.read_identity().await.map_err(|e| anyhow::anyhow!(e));
+        assert!(res.is_err());
+    }
+}
 
     async fn transmit(&mut self, apdu: &ApduCommand) -> Result<Vec<u8>> {
         if let Some(session) = self.secure_session.as_mut() {

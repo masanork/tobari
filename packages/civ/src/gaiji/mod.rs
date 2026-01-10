@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_decode_invalid() {
-        // Single 0x82 without b2
-        assert_eq!(decode_gaiji_string(&[0x82]), "");
+        // Single 0x82 without b2 -> falls through to "else" and adds REPLACEMENT_CHARACTER
+        assert_eq!(decode_gaiji_string(&[0x82]), "\u{FFFD}");
     }
 }

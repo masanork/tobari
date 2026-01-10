@@ -14,15 +14,15 @@ impl ThaiBackend {
         // CID (0004): 1234567890123
         data[0x0004..0x0004+13].copy_from_slice(b"1234567890123");
         
-        // Full Name Thai (0011): "สม"
-        let name_thai = hex::decode("CAC1").unwrap();
-        data[0x0011..0x0011+name_thai.len()].copy_from_slice(&name_thai);
+        // Full Name (0011): "Somchai" (Using UTF-8 for now)
+        let name = b"Somchai";
+        data[0x0011..0x0011+name.len()].copy_from_slice(name);
         
         // Full Name En (0075): "Somchai Mankong"
         data[0x0075..0x0075+15].copy_from_slice(b"Somchai Mankong");
         
-        // DOB (00D9): 25330101 (BE 2533 = AD 1990)
-        data[0x00D9..0x00D9+8].copy_from_slice(b"25330101");
+        // DOB (00D1): 25330101 (BE 2533 = AD 1990)
+        data[0x00D1..0x00D1+8].copy_from_slice(b"25330101");
         
         // Gender (00E1): 1 (Male)
         data[0x00E1] = b'1';
@@ -44,7 +44,7 @@ impl MockBackend for ThaiBackend {
             0xB0 => { // READ BINARY
                 if self.fail_once {
                     self.fail_once = false;
-                    return (vec![0x00; 1], 0x9000); // Return too short data
+                    return (vec![], 0x6F00); // Return error to trigger retry
                 }
                 let offset = ((cmd.p1 as usize) << 8) | (cmd.p2 as usize);
                 // Simulate quirky Thai ID behavior: 

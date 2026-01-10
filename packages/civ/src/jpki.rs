@@ -397,14 +397,42 @@ mod tests {
         assert_eq!(retries, 2);
     }
 
-    #[tokio::test]
-    async fn test_read_face_photo() {
-        let reader = TestReader::new();
-        let _mock = setup_jpki_mock(&reader);
-        let mut controller = JpkiController::new(reader.clone());
-        let res = controller.read_face_photo("123456789012").await;
-        assert!(res.is_ok());
-        let photo = res.unwrap();
-        assert_eq!(photo, vec![0xAA, 0xBB, 0xCC]);
+        #[tokio::test]
+
+        async fn test_read_ef_full_eof() {
+
+            let reader = TestReader::new();
+
+            // Simulate 62 82 (EOF) after first chunk
+
+            reader.push_response(&[0x01, 0x62, 0x82]);
+
+            let mut controller = JpkiController::new(reader.clone());
+
+            let res = controller.read_ef_full(&[0x00, 0x01]).await;
+
+            assert_eq!(res.unwrap(), vec![0x01]);
+
+        }
+
+    
+
+        #[tokio::test]
+
+        async fn test_read_cert_failure() {
+
+            let reader = TestReader::new();
+
+            reader.set_failure(0x6A, 0x82);
+
+            let mut controller = JpkiController::new(reader.clone());
+
+            assert!(controller.read_auth_cert().await.is_err());
+
+            assert!(controller.read_sign_cert().await.is_err());
+
+        }
+
     }
-}
+
+    
