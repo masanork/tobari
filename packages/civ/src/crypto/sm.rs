@@ -234,19 +234,30 @@ impl SecureMessagingSession for AesSecureMessaging {
     }
 
     fn unwrap_response(&mut self, data: &[u8]) -> Result<(Vec<u8>, u8, u8)> {
+        if data.len() < 2 {
+            return Err(CivError::Communication("Response too short".to_string()));
+        }
+
         self.increment_ssc();
 
         if self.is_null_session() {
-            if data.len() < 2 {
-                return Err(CivError::Communication("Response too short".to_string()));
-            }
             let sw1 = data[data.len() - 2];
             let sw2 = data[data.len() - 1];
             let payload = data[0..data.len() - 2].to_vec();
             return Ok((payload, sw1, sw2));
         }
 
-        let tlvs = parse_tlv(data)?;
+        let (raw_data, sw_bytes) = data.split_at(data.len() - 2);
+        // Transport SW should be 90 00 for successful SM.
+        // Some cards might return 61xx or 6Cxx which are also "success" in transport layer.
+        if sw_bytes[0] != 0x90 && sw_bytes[0] != 0x61 && sw_bytes[0] != 0x6C {
+            return Err(CivError::SecureMessagingError(format!(
+                "SM Transport Error: {:02X}{:02X}",
+                sw_bytes[0], sw_bytes[1]
+            )));
+        }
+
+        let tlvs = parse_tlv(raw_data)?;
         let mut do87 = None;
         let mut do99 = None;
         let mut do8e = None;
@@ -501,9 +512,10 @@ mod tests {
         let _ = card_sm.unwrap_command_from_reader(&wrapped_cmd).unwrap();
 
         let payload = vec![0xAA, 0xBB];
-        let wrapped_resp = card_sm
+        let mut wrapped_resp = card_sm
             .wrap_response_from_card(&payload, 0x90, 0x00)
             .unwrap();
+        wrapped_resp.extend_from_slice(&[0x90, 0x00]);
         let (data, sw1, sw2) = reader_sm.unwrap_response(&wrapped_resp).unwrap();
 
         assert_eq!(data, payload);

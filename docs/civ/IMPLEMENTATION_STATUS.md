@@ -13,8 +13,8 @@ This document summarizes the current status of research and implementation for v
 | **Japan** | **JPRC** | `docs/jprc.md` | **Implemented** | Residence Card. |
 | **Estonia** | **EstEID** | `docs/esteid.md` | Documented | Unique AID, file-based records, PIN1/PIN2. |
 | **Germany** | **PQC PoC** | `docs/german_pqc_poc.md`| Documented | Hybrid PQC (Kyber/Dilithium) extensions. |
-| **Thailand** | **Thai ID** | `docs/thai.md` | Documented | Proprietary AID, fixed-offset reading. |
-| **Malaysia** | **MyKad** | `docs/mykad.md` | Documented | Proprietary AID (JPN), length-based reading. |
+| **Thailand** | **Thai ID** | `docs/thai.md` | **Implemented** | Proprietary AID, fixed-offset reading. |
+| **Malaysia** | **MyKad** | `docs/mykad.md` | **Implemented** | Proprietary AID (JPN), length-based reading. |
 
 ## 2. Research Findings for Other Schemes
 
@@ -32,7 +32,5 @@ This document summarizes the current status of research and implementation for v
 - **India (Aadhaar):** Smart cards were based on SCOSTA specs, but the ecosystem has shifted heavily towards QR/Online-API (UIDAI) rather than offline chip reading.
 
 ## 3. Future Expansion Plan
-- [ ] Implement `ThaiController` based on `docs/thai.md`.
-- [ ] Implement `MyKadController` based on `docs/mykad.md`.
 - [ ] Enhance `PassportController` to support EAC (Extended Access Control) for sensitive DGs.
 - [ ] Add PACE (ECDH) support for EU eIDs and newer Passports.
