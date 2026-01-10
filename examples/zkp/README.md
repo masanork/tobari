@@ -11,15 +11,15 @@ This directory contains examples and prototypes for using Zero-Knowledge Proofs 
 *   **Tech Stack**: Circom, SnarkJS.
 *   **Status**: Circuit definition and input generation logic are implemented.
 
-### 2. [bbs-scenarios](./bbs-scenarios) (Conceptual Demo)
+### 2. [bbs-scenarios](./bbs-scenarios) (conceptual Demo -> Prototype)
 **Scenario-based demonstrations of Unlinkable Credentials.**
 
-*   **Goal**: To demonstrate the concept of "Unlinkability" and "Selective Disclosure" using BBS+ signatures (simulated).
+*   **Goal**: To demonstrate the concept of "Unlinkability" and "Selective Disclosure" using **BBS 2023** signatures.
 *   **Scenarios**:
     *   **Employee Discount**: Proving employment without being tracked across visits.
     *   **Dating App**: Combining multiple credentials (ID, Income) without revealing identity.
-*   **Tech Stack**: TypeScript (Mock implementation).
-*   **Status**: Conceptual code for educational purposes.
+*   **Tech Stack**: TypeScript, `@digitalbazaar/bbs-2023-cryptosuite`.
+*   **Status**: Working prototype demonstrating full Selective Disclosure flow.
 
 ## How they relate to SCAC
 
