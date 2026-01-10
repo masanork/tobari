@@ -31,7 +31,9 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
                 isEncrypted = true;
                 rawContent = await unlockEncryptedPayload(json);
             }
-        } catch (e) {}
+        } catch (e) {
+            console.log("Not an encrypted JSON wrapper, trying raw CBOR.");
+        }
 
         const b64ToBinary = (b64: string) => {
             const s = b64.includes(',') ? b64.split(',')[1] : b64;
@@ -70,6 +72,7 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         (window as any).currentDebugData = currentDebugData;
 
         if (doc.visuals && doc.visuals.font) {
+            console.log("🎨 Applying embedded font...");
             const fontBytes = doc.visuals.font;
             const blob = new Blob([fontBytes], { type: 'font/woff2' });
             const fontUrl = URL.createObjectURL(blob);
@@ -114,7 +117,8 @@ function renderError(err: any) {
             <div class="drop-card error">
                 <div class="logo">⚠️</div>
                 <h2>Failed to Load</h2>
-                <p>ドキュメントの読み込みに失敗しました。不正な形式か、パスキーが一致しない可能性があります。</p>
+                <p>ドキュメントの読み込みに失敗しました。</p>
+                <p style="font-size:12px; color:#e53e3e;">${err}</p>
                 <button class="primary-btn" onclick="location.href=location.pathname">トップに戻る</button>
             </div>
         </div>
@@ -288,23 +292,33 @@ async function unlockEncryptedPayload(wrapper: any): Promise<string> {
 
     const ciphertext = Uint8Array.from(atob(wrapper.data), c => c.charCodeAt(0));
     const info = new TextEncoder().encode("tobari-storage-v1");
-    const { decryptHPKE } = await import("@tobari/crypto/hpke");
+    const { decryptHPKE, deriveHPKEKeyPair } = await import("@tobari/crypto/hpke");
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         document.getElementById('unlock-btn')?.addEventListener('click', async () => {
             try {
                 const secret = await deriveHmacSecret(false); // Try real WebAuthn
-                const plaintext = await decryptHPKE(secret.slice(0, 32), ciphertext, info);
+                const keyPair = await deriveHPKEKeyPair(secret);
+                if (!keyPair) throw new Error("Failed to derive keypair");
+                const plaintext = await decryptHPKE(keyPair.privateKey, ciphertext, info);
                 resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
             } catch (e) {
+                console.error("Decryption failed:", e);
                 alert("復号に失敗しました。このドキュメント用ではないパスキーです。");
             }
         });
 
         document.getElementById('demo-unlock-btn')?.addEventListener('click', async () => {
-            const secret = await deriveHmacSecret(true); // Force demo fallback
-            const plaintext = await decryptHPKE(secret.slice(0, 32), ciphertext, info);
-            resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
+            try {
+                const secret = await deriveHmacSecret(true); // Force demo fallback
+                const keyPair = await deriveHPKEKeyPair(secret);
+                if (!keyPair) throw new Error("Failed to derive keypair");
+                const plaintext = await decryptHPKE(keyPair.privateKey, ciphertext, info);
+                resolve(btoa(String.fromCharCode(...new Uint8Array(plaintext))));
+            } catch (e) {
+                console.error("Demo decryption failed:", e);
+                alert("デモ用共有鍵での復号に失敗しました。");
+            }
         });
     });
 }
@@ -320,17 +334,8 @@ async function deriveHmacSecret(forceDemo: boolean): Promise<Uint8Array> {
             if (res.hmacGetSecret) return new Uint8Array(res.hmacGetSecret.output1);
         } catch (e) { console.warn("WebAuthn extension failed."); }
     }
+    // Static demo seed - MUST match what is used in gen-tobari.ts
     return new TextEncoder().encode("tobari-demo-secret-key-32-bytes-long!!");
-}
-
-function showWarning(msg: string) {
-    const warning = document.createElement('div');
-    Object.assign(warning.style, {
-        position: 'fixed', top: '0', left: '0', width: '100%', background: '#e53e3e',
-        color: 'white', padding: '12px', textAlign: 'center', fontWeight: 'bold', zIndex: '9999', fontFamily: 'sans-serif'
-    });
-    warning.textContent = msg;
-    document.body.prepend(warning);
 }
 
 function setupDebugUI() {
