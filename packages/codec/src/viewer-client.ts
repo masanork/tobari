@@ -8,6 +8,18 @@ let currentDebugData: any = null;
 export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
     try {
         let rawContent = base64Data;
+
+        // 0. Priority: Load from URL Fragment (Stateless Redirection)
+        // This is used when a local file redirects to a secure origin like GitHub Pages
+        const fragment = window.location.hash.substring(1);
+        if (fragment && fragment.startsWith('data=')) {
+            console.log("🔗 Loading data from URL fragment...");
+            const params = new URLSearchParams(fragment);
+            const fragmentData = params.get('data');
+            if (fragmentData) {
+                rawContent = fragmentData;
+            }
+        }
         
         // 1. Detect if the content is an encrypted JSON wrapper
         let isEncrypted = false;

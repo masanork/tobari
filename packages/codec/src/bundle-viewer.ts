@@ -236,6 +236,32 @@ async function inflate(b64) {
     window.__ISSUER_KEY__ = ${issuerKeyJson};
     window.__TOBARI_WASM__ = "${wasmBase64}";
     
+    // Redirect logic for file:// protocols to support WebAuthn
+    if (window.location.protocol === 'file:') {
+        const secureViewerUrl = "https://masanork.github.io/tobari/viewer.html";
+        const b64 = window.__TOBARI_DATA__.split(',')[1];
+        const redirectUrl = secureViewerUrl + "#data=" + b64;
+
+        document.body.innerHTML = \`
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; background: #f7fafc; text-align: center; padding: 20px;">
+                <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 500px;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">🌐</div>
+                    <h2 style="margin-bottom: 10px;">Secure Access Required</h2>
+                    <p style="color: #718096; margin-bottom: 30px; line-height: 1.5;">To use your <strong>Hardware Passkey</strong> for decryption, this document needs to be opened in a Secure Context.</p>
+                    <a href="\${redirectUrl}" style="display: block; background: #3182ce; color: white; text-decoration: none; padding: 14px 24px; border-radius: 6px; font-size: 16px; font-weight: bold; margin-bottom: 15px;">
+                        Open in Secure Viewer
+                    </a>
+                    <p style="font-size: 12px; color: #a0aec0;">Your encrypted data is passed via URL fragment and is <strong>never sent to the server</strong>.</p>
+                    <hr style="border: none; border-top: 1px solid #edf2f7; margin: 20px 0;">
+                    <button onclick="window.initTobari(window.__TOBARI_DATA__, window.__ISSUER_KEY__)" style="background: none; border: none; color: #3182ce; cursor: pointer; text-decoration: underline; font-size: 14px;">
+                        Stay here (Fallback mode)
+                    </button>
+                </div>
+            </div>
+        \`;
+        return;
+    }
+
     let attempts = 0;
     const checkInit = setInterval(() => {
         attempts++;
