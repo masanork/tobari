@@ -7,7 +7,12 @@ use anyhow::{anyhow, Result};
 #[cfg(not(target_arch = "wasm32"))]
 use async_trait::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
-use pcsc::{Context as PcscContext, Scope, Card, ShareMode, Protocols, MAX_BUFFER_SIZE, Error};
+use pcsc::{Context as PcscContext, Scope, Card, ShareMode, Protocols, Error};
+
+// Standard Extended APDU Max Length is 65536 bytes + 2 status bytes.
+// Using a slightly larger buffer to be safe.
+#[cfg(not(target_arch = "wasm32"))]
+const EXTENDED_BUFFER_SIZE: usize = 65540;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub struct PcscReader {
@@ -68,7 +73,8 @@ impl CardReader for PcscReader {
     async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>> {
         let card = self.card.as_ref().ok_or_else(|| anyhow!("Card not connected"))?;
         
-        let mut resp_buf = [0; MAX_BUFFER_SIZE];
+        // Use a heap-allocated buffer for large sizes to avoid stack overflow
+        let mut resp_buf = vec![0u8; EXTENDED_BUFFER_SIZE];
         let resp = card.transmit(apdu, &mut resp_buf)
             .map_err(|e| anyhow!("Transmit failed: {}", e))?;
 

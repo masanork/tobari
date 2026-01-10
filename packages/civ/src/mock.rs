@@ -76,6 +76,7 @@ impl MockSmartCard {
         };
         card.add_backend(file_ids::DF_JPKI.to_vec(), Box::new(JpkiBackend::new()));
         card.add_backend(crate::piv::file_ids::DF_PIV.to_vec(), Box::new(PivBackend::new()));
+        card.add_backend(vec![0xA0, 0x00, 0x00, 0x00, 0x00, 0x01], Box::new(LargeDataBackend::new()));
         card
     }
 
@@ -141,6 +142,32 @@ impl MockSmartCard {
             }
         }
         (vec![], 0x6D00)
+    }
+}
+
+// --- Large Data Backend (for Extended APDU testing) ---
+pub struct LargeDataBackend;
+
+impl LargeDataBackend {
+    pub fn new() -> Self { Self }
+}
+
+impl MockBackend for LargeDataBackend {
+    fn handle_apdu(&mut self, cmd: &ApduCommand, _aid: &[u8]) -> (Vec<u8>, u16) {
+        match cmd.ins {
+            0xA4 => (vec![], 0x9000), // Select
+            0x10 => { // ECHO command (Proprietary)
+                // Echo back the received data to verify full roundtrip
+                (cmd.data.clone(), 0x9000)
+            },
+            0x11 => { // GENERATE LARGE RESPONSE
+                // P1/P2 determines size (high/low)
+                let size = ((cmd.p1 as usize) << 8) | (cmd.p2 as usize);
+                let data = vec![0xAB; size];
+                (data, 0x9000)
+            }
+            _ => (vec![], 0x6D00),
+        }
     }
 }
 
