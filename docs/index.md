@@ -27,15 +27,18 @@ features:
 ### 📚 Core Concepts
 - [Architecture Overview](ARCHITECTURE.md)
 - [Schema Specification](SCHEMA_SPEC.md)
-- [Holder Binding (mdoc)](HOLDER_BINDING.md)
-- [Long-Term Validation](LONG_TERM_VALIDATION.md)
+- [Holder Binding Design](HOLDER_BINDING.md)
+- [Encryption & User Consent Policy](ENCRYPTION_STRATEGY.md)
+- [Long-Term Validation (LTV)](LONG_TERM_VALIDATION.md)
 
 ### 🛠 Tools & Integrations
 - [CLI Tools](CLI_TOOLS.md)
-- [MCP Server (AI)](MCP_SERVER.md)
+- [MCP Server (AI Integration)](MCP_SERVER.md)
 - [Service Request Tutorial](SERVICE_REQUEST_TUTORIAL.md)
 
-### 🪪 Civ (Identity Library)
+### 🪪 Civ (Identity Verification Library)
 - [Identity Scheme Analysis](civ/IDENTITY_SCHEME_ANALYSIS.md)
-- [JPKI (My Number)](civ/jpki.md)
+- [JPKI (Japanese My Number Card)](civ/jpki.md)
 - [ePassport (ICAO 9303)](civ/icao9303.md)
+- [MyKad (Malaysian ID)](civ/mykad.md)
+- [Thai ID Card](civ/thai.md)

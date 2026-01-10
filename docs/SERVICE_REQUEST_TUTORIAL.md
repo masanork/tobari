@@ -1,73 +1,37 @@
-# 行政サービス案内 (service_request) チュートリアル
+# Service Request Tutorial
 
-このチュートリアルでは、制度案内（Administrative Request / service_request）の作り方を一通り説明します。
-対象は `examples/service-request/` の構成で、手元の制度案内を Tobari 形式にするための最小手順です。
+This tutorial explains how to create an Administrative Request (service_request) using Tobari. It covers the minimum steps to convert an existing manual procedure into a machine-readable Tobari form.
 
-## 1. スキーマを用意する
+## 1. Directory Structure
 
-制度案内は `service-request.yaml` のようなスキーマで定義します。
-重要なのは `presentation_definition` を `type: object` で持たせる点です。
+Navigate to `examples/service-request/` to see the following files:
+- `service-request.yaml`: The schema defining form fields and logic.
+- `child-allowance-data.yaml`: Sample data for pre-filling the form.
+- `gen-request.ts`: A script to generate the HTML form from the schema.
 
-例: `examples/service-request/service-request.yaml`
+## 2. Defining the Schema
 
-```yaml
-- id: "presentation_definition"
-  label: "必要書類（機械可読）"
-  type: "object"
-```
+Open `service-request.yaml`. You will see sections for:
+- `meta`: General information about the service (e.g., Service Name, ID).
+- `fields`: Input fields like Name, Address, and Date.
+- `logic`: (Optional) Visibility rules and validation logic.
 
-## 2. データ（制度案内本文）を用意する
+## 3. Generating the Form
 
-`presentation_definition` は JSON 構造で、必要な書類・項目を機械可読で定義します。
-以下は最小構成のサンプルです。
-
-```yaml
-presentation_definition:
-  input_descriptors:
-    - id: "residence_info"
-      name: "世帯構成情報"
-      format:
-        mso_mdoc:
-          alg: ["ES384"]
-      constraints:
-        fields:
-          - path: ["$['io.github.masanork.tobari.juminhyo.v1']['世帯主氏名']"]
-            intent_to_retain: true
-```
-
-実例は `examples/service-request/child-allowance-data.yaml` を参照してください。
-
-## 3. COSE を生成する
-
-サンプルの生成スクリプトを使う場合は、以下のコマンドで `service-request.cose` を生成できます。
+Run the following command to generate an interactive HTML form:
 
 ```bash
-bun run examples/service-request/gen-request.ts
+bun gen-request.ts
 ```
 
-生成されたファイルは `examples/service-request/service-request.cose` になります。
+This will produce `service-request.html`. This form can be opened in any modern browser.
 
-## 4. HTML ビューアを生成する
+## 4. Autofill and Signing
 
-制度案内をそのまま配布可能な HTML にする場合は、ビューア生成スクリプトを使います。
+Tobari forms support the `autofill` attribute. If a user has a compatible Identity Card (e.g., My Number Card) or a pre-existing credential, they can autofill the form with a single click.
 
-```bash
-bun run packages/codec/src/bundle-viewer.ts examples/service-request/service-request.cose
-```
+Once the user completes the form, the data is packaged into a machine-readable format (SD-CBOR) and signed on the client side before submission.
 
-`examples/service-request/service-request.html` が作成され、`presentation_definition` も整形された JSON として表示されます。
+## 5. Verification
 
-## 5. MCP で解析する
-
-MCP サーバを使う場合は `analyze_service_request` で必要書類の抽出ができます。
-
-```json
-{
-  "name": "analyze_service_request",
-  "arguments": {
-    "path": "/absolute/path/to/service-request.cose"
-  }
-}
-```
-
-解析結果は必要書類（mdoc）とユーザー入力の区別を含めて返されます。
+The verifier (government or service provider) receives the signed package and can verify the authenticity using the Tobari CLI or API.
