@@ -34,6 +34,7 @@ features:
 - [Long-Term Validation (LTV)](LONG_TERM_VALIDATION.md)
 
 ### 🛠 Tools & Integrations
+- [Secure Viewer (Web)](./viewer.html)
 - [CLI Tools](CLI_TOOLS.md)
 - [MCP Server (AI Integration)](MCP_SERVER.md)
 - [Service Request Tutorial](SERVICE_REQUEST_TUTORIAL.md)

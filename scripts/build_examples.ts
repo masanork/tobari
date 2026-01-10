@@ -3,6 +3,7 @@ import { join } from 'path';
 
 const EXAMPLES_DIR = 'examples';
 const BUNDLE_VIEWER_SCRIPT = 'packages/codec/src/bundle-viewer.ts';
+const BUNDLE_WBN_SCRIPT = 'packages/codec/src/bundle-webbundle.ts';
 
 async function main() {
     console.log("🏗️  Building all examples...");
@@ -42,11 +43,9 @@ async function main() {
         }
 
         // 2. Find generated COSE file
-        // Re-read dir to find newly generated files
         const filesAfter = await readdir(dirPath);
         const coseFiles = filesAfter.filter(f => f.endsWith('.cose'));
 
-        // Priority: EXACT match with dirName, otherwise first one
         let targetCose = coseFiles.find(f => f === `${dirName}.cose`);
         if (!targetCose && coseFiles.length > 0) {
             targetCose = coseFiles[0];
@@ -70,6 +69,21 @@ async function main() {
 
         if (bundleExit !== 0) {
             console.error(`   ❌ Viewer bundling failed for ${dirName}`);
+            failCount++;
+            continue;
+        }
+
+        // 4. Generate Web Bundle (.wbn)
+        const htmlPath = cosePath.replace('.cose', '.html');
+        console.log(`   Packaging Web Bundle for: ${htmlPath}`);
+        const wbnProc = Bun.spawn(["bun", "run", BUNDLE_WBN_SCRIPT, htmlPath], {
+            stdout: "inherit",
+            stderr: "inherit"
+        });
+        const wbnExit = await wbnProc.exited;
+
+        if (wbnExit !== 0) {
+            console.error(`   ❌ Web Bundle packaging failed for ${dirName}`);
             failCount++;
         } else {
             console.log(`   ✅ Success: ${dirName}`);
