@@ -1,0 +1,64 @@
+name: CIV Library CI
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "packages/civ/**"
+      - ".github/workflows/civ-ci.yml"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "packages/civ/**"
+      - ".github/workflows/civ-ci.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  WORKING_DIRECTORY: packages/civ
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcsclite-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/civ/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('packages/civ/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check
+        run: cargo check --verbose
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+
+      - name: Run Tests
+        run: cargo test --verbose
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@tarpaulin
+
+      - name: Generate Code Coverage
+        run: cargo tarpaulin --verbose --timeout 120 --out Xml
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ env.WORKING_DIRECTORY }}/cobertura.xml
