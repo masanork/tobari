@@ -29,6 +29,7 @@ features:
 - [Schema Specification](SCHEMA_SPEC.md)
 - [Holder Binding Design](HOLDER_BINDING.md)
 - [Encryption & User Consent Policy](ENCRYPTION_STRATEGY.md)
+- [Encryption Implementation Spec](ENCRYPTION_SPEC.md)
 - [Long-Term Validation (LTV)](LONG_TERM_VALIDATION.md)
 
 ### 🛠 Tools & Integrations
