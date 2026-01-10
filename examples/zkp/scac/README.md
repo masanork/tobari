@@ -6,8 +6,10 @@ SCAC is a privacy-preserving credential that binds a verified legal identity to 
 
 - **Multi-Chain Binding**: Prove ownership of multiple addresses (Ethereum, Solana, etc.) in a single credential.
 - **Root of Trust**: Verified against government-issued identity documents (Passport/ICAO 9303, My Number Card/JPKI) using NFC chip verification.
-- **Privacy First (ZKP)**: Uses Zero-Knowledge Proofs to prove the authenticity of the ID document without revealing sensitive identifiers like Passport Numbers or full MRZ strings on-chain.
-- **mDoc Compatible**: Built on ISO 18013-5 (Mobile Driving License) standards for interoperability.
+- **Privacy First (BBS+ & ZKP)**: 
+  - Uses **BBS+ Signatures** (BBS 2023) to enable **Selective Disclosure** and Unlinkable presentations.
+  - Supports ZK Proofs to prove document authenticity without revealing sensitive identifiers.
+- **Standards Based**: Compatible with BBS 2023 Cryptosuite and mDoc (ISO 18013-5) concepts.
 
 ## Why SCAC? (FATF Compliance)
 

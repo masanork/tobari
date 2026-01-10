@@ -7,7 +7,7 @@ Establish a reliable testing baseline independent of physical hardware.
 
 - [x] **Comprehensive Mock Card Reader**:
     - [x] Initial `MockSmartCard` capable of simulating stateful APDU sessions for JPKI, JPDL, and JPRC.
-    - [ ] Refactor into a unified `MockCard` trait and separate backend implementations for cleaner maintenance.
+    - [x] Refactor into modular backend implementations (JPKI, Passport, PIV, Thai, MyKad) for cleaner maintenance.
     - [x] Implement full **Passport** mock scenarios (BAC/PACE handshake, DG reading, Active Authentication).
     - [x] Implement full **PIV** mock scenarios (Authentication, Signing).
     - [x] Add specific error simulation (SW 63C0 for PIN retries, 6982 for Auth Required).

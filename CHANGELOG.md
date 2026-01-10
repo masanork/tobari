@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.7] - 2026-01-10
+
+### Features
+- **CIV (Universal Identity)**:
+  - **New Card Support**:
+    - **Thai National ID**: Full support for reading identity from Thai ID cards (TIS-620 encoding).
+    - **Malaysia MyKad**: Support for reading JPN (Identity) application data from MyKad.
+  - **Unified Identity Model**: Added support for **Face Photo** retrieval and improved attribute mapping across all card types.
+  - **Extended APDU**: Optimized `PcscReader` to support **Extended Length APDUs** (up to 64KB), preparing for PQC (Post-Quantum Cryptography) and large file transfers.
+  - **Refactor**: Re-architected the mock system into a **modular backend** structure (`mock/jpki.rs`, `mock/passport.rs`, etc.) for better maintainability and scalability.
+- **Web Integration**:
+  - **WebUSB (CCID)**: Implemented a pure-JS CCID driver in `web-demo` to allow direct communication with smart card readers from the browser.
+
 ## [0.3.6] - 2026-01-10
 
 ### Features
