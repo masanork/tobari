@@ -29,6 +29,13 @@ ininjo = {
           "allocated": bool, ; 復代理権の有無（XML: Allocated）
           ? "restriction": tstr ; 制限事項
       }
+  },
+
+  ; Provider Information
+  ? "provider": {
+      "serviceName": tstr,
+      "policyUrl": tstr,
+      "revocationUrl": tstr
   }
 }
 
@@ -42,6 +49,8 @@ entity_obj = {
     ; Individual specific
     ? "birthDate": tdate,    ; 生年月日
     ? "gender": tstr,        ; 性別
+    ? "tradeName": tstr,     ; 屋号
+    ? "identificationId": tstr, ; 識別ID
     
     ; Corporation specific
     ? "corporateNumber": tstr,    ; 法人番号

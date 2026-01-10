@@ -835,6 +835,120 @@ function renderStatement(data: any, fieldsMeta: any[], mso: any): string {
     return html;
 }
 
+
+function renderIninjo(data: any, mso: any): string {
+    const getValue = (key: string) => {
+        let val = data[key];
+        if (val && typeof val === 'object' && val.hasOwnProperty('@disclosed')) {
+            val = val['@disclosed'] ? val['@value'] : null;
+        }
+        return val;
+    };
+
+    const formatVal = (v: any) => v || '-';
+
+    const getGroupVal = (groupKey: string, fieldKey: string) => {
+        const group = getValue(groupKey);
+        if (!group) return '-';
+        return formatVal(group[fieldKey]);
+    };
+
+    const provider = getValue('provider');
+
+    // Access global debug data for signature status
+    const isSigValid = (window as any).currentDebugData?.isSignatureValid;
+    // Mock certificate info as we don't parse X.509 in client yet, or use provider info
+    const signerInfo = provider ? `OU=${provider.serviceName}, O=${provider.serviceName}運営` : 'OU=電子委任状サービス, O=電子委任状株式会社';
+
+    const mandator = getValue('mandator') || getValue('principal');
+    const mandatary = getValue('mandatary') || getValue('agent');
+    const authority = getValue('delegatedAuthority') || getValue('mandate');
+    const validity = authority?.validityPeriod || getValue('validity');
+    const acts = authority?.delegatedActs || authority?.items || getValue('scope');
+    const subDelegation = authority?.subDelegation?.allocated ?? authority?.subdelegation;
+
+    return `
+        <div style="font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif; color: #1a202c; max-width: 800px; margin: 0 auto; padding: 60px; background: #fff; border: 1px solid #ddd; box-shadow: 0 4px 20px rgba(0,0,0,0.05);">
+            
+            <header style="text-align: center; margin-bottom: 60px; position: relative;">
+                <h1 style="font-size: 32px; font-weight: 500; letter-spacing: 0.2em; border-bottom: 4px solid double #333; display: inline-block; padding-bottom: 5px; margin-bottom: 10px;">委任状</h1>
+                <div style="position: absolute; right: 0; top: 0; text-align: right; font-size: 11px; color: #666; font-family: sans-serif;">
+                    <div>Id: ${formatVal(getValue('id'))}</div>
+                    <div>作成日時: ${formatVal(getValue('creationTime') || getValue('creation_date'))}</div>
+                    <div>DocType: ${mso.docType.split('.').pop()}</div>
+                </div>
+            </header>
+
+            <div style="font-size: 16px; margin-bottom: 40px; line-height: 1.8;">
+                私は、下記の者を代理人と定め、次の権限を委任します。
+            </div>
+
+            <div style="display: flex; gap: 40px; margin-bottom: 40px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 300px;">
+                    <h2 style="font-size: 16px; border-bottom: 1px solid #999; margin-bottom: 15px; padding-bottom: 5px;">委任者情報 (Mandator)</h2>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <tr><td style="padding: 6px 0; color: #666; width: 80px;">種別</td><td style="padding: 6px 0;">${getValue('mandator')?.type === 'Individual' ? '個人' : '法人'}</td></tr>
+                        ${mandator?.tradeName ? `<tr><td style="padding: 6px 0; color: #666;">屋号</td><td style="padding: 6px 0;">${formatVal(mandator.tradeName)}</td></tr>` : ''}
+                        <tr><td style="padding: 6px 0; color: #666;">氏名</td><td style="padding: 6px 0; font-size: 18px; font-weight: bold;">${formatVal(mandator?.name)}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #666;">住所</td><td style="padding: 6px 0;">${formatVal(mandator?.address)}</td></tr>
+                    </table>
+                </div>
+
+                <div style="flex: 1; min-width: 300px;">
+                    <h2 style="font-size: 16px; border-bottom: 1px solid #999; margin-bottom: 15px; padding-bottom: 5px;">受任者情報 (Mandatary)</h2>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <tr><td style="padding: 6px 0; color: #666; width: 80px;">識別名</td><td style="padding: 6px 0; font-size: 18px; font-weight: bold;">${formatVal(mandatary?.name)}</td></tr>
+                         ${mandatary?.title ? `<tr><td style="padding: 6px 0; color: #666;">役職/肩書</td><td style="padding: 6px 0;">${formatVal(mandatary.title)}</td></tr>` : ''}
+                        <tr><td style="padding: 6px 0; color: #666;">住所</td><td style="padding: 6px 0;">${formatVal(mandatary?.address)}</td></tr>
+                         ${mandatary?.identificationId ? `<tr><td style="padding: 6px 0; color: #666;">識別ID</td><td style="padding: 6px 0;">${formatVal(mandatary.identificationId)}</td></tr>` : ''}
+                    </table>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 40px;">
+                <h2 style="font-size: 16px; border-bottom: 1px solid #999; margin-bottom: 15px; padding-bottom: 5px;">代理権情報</h2>
+                <div style="background: #f9f9f9; padding: 20px; border-radius: 4px; border: 1px solid #eee;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                         <tr><td style="padding: 6px 0; color: #666; width: 140px;">電子委任状ID番号</td><td style="padding: 6px 0;">${formatVal(getValue('id'))}</td></tr>
+                         <tr><td style="padding: 6px 0; color: #666; vertical-align: top;">代理権内容</td><td style="padding: 6px 0;">
+                            <ol style="margin: 0; padding-left: 20px;">
+                                ${Array.isArray(acts) ? acts.map((act: any) =>
+        typeof act === 'string' ? `<li>${act}</li>` : `<li>${act.actName}${act.note ? ` (${act.note})` : ''}</li>`
+    ).join('') : '<li>(なし)</li>'}
+                            </ol>
+                         </td></tr>
+                         <tr><td style="padding: 6px 0; color: #666;">委任期間開始</td><td style="padding: 6px 0;">${formatVal(validity?.startDate || validity?.not_before)}</td></tr>
+                         <tr><td style="padding: 6px 0; color: #666;">委任期間終了</td><td style="padding: 6px 0;">${formatVal(validity?.endDate || validity?.not_after)}</td></tr>
+                    </table>
+                </div>
+            </div>
+
+            ${provider ? `
+            <div style="margin-bottom: 40px;">
+                <h2 style="font-size: 16px; border-bottom: 1px solid #999; margin-bottom: 15px; padding-bottom: 5px;">事業者情報</h2>
+                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                     <tr><td style="padding: 6px 0; color: #666; width: 140px;">事業者サービス名</td><td style="padding: 6px 0;">${formatVal(provider.serviceName)}</td></tr>
+                     <tr><td style="padding: 6px 0; color: #666;">事業者ポリシー</td><td style="padding: 6px 0;"><a href="${provider.policyUrl}" target="_blank" style="color: #3182ce;">${formatVal(provider.policyUrl)}</a></td></tr>
+                     <tr><td style="padding: 6px 0; color: #666;">有効性確認URL</td><td style="padding: 6px 0;"><a href="${provider.revocationUrl}" target="_blank" style="color: #3182ce;">${formatVal(provider.revocationUrl)}</a></td></tr>
+                 </table>
+            </div>
+            ` : ''}
+
+            <div style="background: #ebf8ff; padding: 20px; border: 1px solid #bee3f8; border-radius: 4px;">
+                <h2 style="font-size: 16px; border-bottom: 1px solid #4299e1; margin-bottom: 15px; padding-bottom: 5px; color: #2b6cb0;">電子署名情報（電子委任状の電子署名検証結果）</h2>
+                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                     <tr><td style="padding: 6px 0; color: #555; width: 140px; font-weight: bold;">検証結果</td><td style="padding: 6px 0; font-weight: bold; color: ${isSigValid ? '#2f855a' : '#c53030'};">
+                        ${isSigValid ? '正常（改ざん等はありません）' : '検証失敗（署名の状態を確認してください）'}
+                     </td></tr>
+                     <tr><td style="padding: 6px 0; color: #555; font-weight: bold;">署名証明書</td><td style="padding: 6px 0;">${signerInfo}</td></tr>
+                     <tr><td style="padding: 6px 0; color: #555; font-weight: bold;">署名タイムスタンプ</td><td style="padding: 6px 0;">${new Date(mso.validityInfo.signed).toISOString().replace(/\.\d{3}Z$/, 'Z')}</td></tr>
+                 </table>
+            </div>
+
+        </div>
+    `;
+}
+
 function render(doc: any, data: any, mso: any) {
     const container = document.getElementById('viewer-root');
     if (!container) return;
@@ -849,6 +963,8 @@ function render(doc: any, data: any, mso: any) {
         container.innerHTML = `<div class="">${renderBankCertificate(data, mso)}</div>`;
     } else if (mso.docType === 'io.github.masanork.tobari.credit-card-statement.v1') {
         container.innerHTML = `<div class="official-document">${renderStatement(data, doc.fields || [], mso)}</div>`;
+    } else if (mso.docType.includes('ininjo')) {
+        container.innerHTML = `<div class="">${renderIninjo(data, mso)}</div>`;
     } else {
         // Always use auto-renderer for now with new mdoc structure
         container.innerHTML = `<div class="official-document">${autoRender(data, doc.fields || [], mso)}</div>`;

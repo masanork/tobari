@@ -36,6 +36,14 @@ fields:
         label: "生年月日"
         type: "string"
         selective: true
+      - id: "tradeName"
+        label: "屋号"
+        type: "string"
+        selective: true
+      - id: "identificationId"
+        label: "識別ID"
+        type: "string"
+        selective: true
       - id: "corporateNumber"
         label: "法人番号"
         type: "string"
@@ -63,6 +71,14 @@ fields:
         selective: true
       - id: "birthDate"
         label: "生年月日"
+        type: "string"
+        selective: true
+      - id: "tradeName"
+        label: "屋号"
+        type: "string"
+        selective: true
+      - id: "identificationId"
+        label: "識別ID"
         type: "string"
         selective: true
       - id: "department"
@@ -112,3 +128,17 @@ fields:
           - id: "allocated"
             label: "権限有無"
             type: "boolean"
+
+  - id: "provider"
+    label: "事業者情報"
+    type: "group"
+    fields:
+      - id: "serviceName"
+        label: "サービス名"
+        type: "string"
+      - id: "policyUrl"
+        label: "ポリシーURL"
+        type: "string"
+      - id: "revocationUrl"
+        label: "有効性確認URL"
+        type: "string"
