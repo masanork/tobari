@@ -242,6 +242,10 @@ impl<R: CardReader> IdentityController for ResidenceCardController<R> {
         let info = self.read_df2_info().await?;
         let photo_data = self.read_photo().await.ok();
         
+        let mut attributes = std::collections::HashMap::new();
+        attributes.insert("residence_status".to_string(), info.permit_global);
+        attributes.insert("update_status".to_string(), info.update_status);
+
         Ok(CitizenIdentity {
             full_name: "Unknown".to_string(), // Name not available in DF2
             surname: None,
@@ -256,7 +260,7 @@ impl<R: CardReader> IdentityController for ResidenceCardController<R> {
             expiration_date: None,
             photo_data,
             verified: false,
-            attributes: std::collections::HashMap::new(),
+            attributes,
         })
     }
 }
