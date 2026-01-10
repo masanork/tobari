@@ -8,11 +8,11 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
     try {
         let rawContent = base64Data;
 
-        // 0. Priority: Load from URL Fragment
         const hash = window.location.hash.substring(1);
         if (hash) {
             const dataPrefix = "data=";
             if (hash.startsWith(dataPrefix)) {
+                console.log("🔗 Loading data from URL fragment...");
                 rawContent = decodeURIComponent(hash.substring(dataPrefix.length));
             }
         }
@@ -31,20 +31,16 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
 
 async function processAndRender(rawContent: string, issuerPublicKeyJwk?: any) {
     let content = rawContent;
-    let isEncrypted = false;
-
+    
     // 1. Detect if the content is an encrypted JSON wrapper
     try {
         const b64Part = content.includes(',') ? content.split(',')[1] : content;
         const decodedStr = atob(b64Part.trim());
         const json = JSON.parse(decodedStr);
         if (json.tobari_enc === true) {
-            isEncrypted = true;
             content = await unlockEncryptedPayload(json);
         }
-    } catch (e) {
-        // Not a JSON wrapper, proceed as raw
-    }
+    } catch (e) {}
 
     const b64ToBinary = (b64: string) => {
         const s = b64.includes(',') ? b64.split(',')[1] : b64;
@@ -58,12 +54,10 @@ async function processAndRender(rawContent: string, issuerPublicKeyJwk?: any) {
     const binary = b64ToBinary(content);
     const doc = decode(binary);
     
-    // ISO 18013-5 / Tobari structure parsing
     const issuerAuthToken = doc.issuerSigned.issuerAuth;
     const coseArray = decode(issuerAuthToken);
     const mso = decode(coseArray[2]);
 
-    // Cryptographic Verification
     let isSignatureValid = false;
     if (issuerPublicKeyJwk) {
         try {
@@ -73,7 +67,7 @@ async function processAndRender(rawContent: string, issuerPublicKeyJwk?: any) {
             );
             const result = await verifyTobari(binary, issuerKey);
             isSignatureValid = result.isValid;
-        } catch (e) { console.error("Verification error:", e); }
+        } catch (e) {}
     }
 
     const namespace = mso.docType;
@@ -92,7 +86,6 @@ async function processAndRender(rawContent: string, issuerPublicKeyJwk?: any) {
     }
 
     render(doc, disclosedData, mso);
-    if (issuerPublicKeyJwk && !isSignatureValid) showWarning("⚠️ SIGNATURE VALIDATION FAILED");
     setupDebugUI();
 }
 
@@ -106,11 +99,53 @@ function renderWelcome() {
                 <p>証明書ファイル（.cose / .wbn）を<br>ここにドロップして検証・閲覧</p>
                 <input type="file" id="file-input" style="display:none" accept=".cose,.wbn">
                 <button class="primary-btn" onclick="document.getElementById('file-input').click()">ファイルを選択</button>
+                
+                <hr style="margin: 30px 0; border: none; border-top: 1px solid #edf2f7;">
+                
+                <div id="key-gen-section">
+                    <p style="font-size: 13px; margin-bottom: 15px;">あなた専用のロックされた証明書を発行するために<br>必要な「受取人公開鍵」を生成します。</p>
+                    <button id="gen-key-btn" class="secondary-btn" style="margin-top:0;">受取人公開鍵を生成</button>
+                </div>
             </div>
             <p class="footer-note">ローカルで処理されるため、データが外部に送信されることはありません。</p>
         </div>
     `;
     setupDropZone();
+    setupKeyGen();
+}
+
+function setupKeyGen() {
+    const btn = document.getElementById('gen-key-btn');
+    const section = document.getElementById('key-gen-section');
+
+    btn?.addEventListener('click', async () => {
+        try {
+            btn.textContent = "パスキーを認証中...";
+            const secret = await deriveHmacSecret(false);
+            const { deriveHPKEKeyPair } = await import("@tobari/crypto/hpke");
+            const keyPair = await deriveHPKEKeyPair(secret);
+            
+            if (keyPair) {
+                const pubkeyB64 = btoa(String.fromCharCode(...keyPair.publicKey));
+                const keyJson = JSON.stringify({ pubkey: pubkeyB64 }, null, 2);
+                
+                section!.innerHTML = `
+                    <p style="font-size: 12px; color: #2f855a; font-weight: bold; margin-bottom: 10px;">✅ 公開鍵が生成されました</p>
+                    <textarea readonly style="width: 100%; height: 80px; font-family: monospace; font-size: 11px; padding: 10px; border: 1px solid #cbd5e0; border-radius: 8px; margin-bottom: 10px;">${keyJson}</textarea>
+                    <button id="copy-key-btn" class="secondary-btn" style="margin-top:0; font-size: 12px;">クリップボードにコピー</button>
+                `;
+                
+                document.getElementById('copy-key-btn')?.addEventListener('click', () => {
+                    navigator.clipboard.writeText(keyJson);
+                    alert("コピーしました。これを 'recipient-pubkey.json' として保存してください。");
+                });
+            }
+        } catch (e) {
+            console.error(e);
+            alert("鍵の生成に失敗しました。");
+            renderWelcome();
+        }
+    });
 }
 
 function setupDropZone() {
@@ -121,12 +156,7 @@ function setupDropZone() {
         const buffer = await file.arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
-        // Simple .wbn (Web Bundle) Detection: Starts with "\xf0\x9f\x8c\x90" (🌐)
         if (bytes[0] === 0x00 && bytes[1] === 0x8a && bytes[2] === 0x0b) {
-            console.log("📦 Web Bundle detected. Extracting...");
-            // Extremely simplified .wbn parsing to find Tobari data
-            // In a real implementation, we would use a full wbn reader.
-            // Here, we look for our known window.__TOBARI_DATA__ pattern in the bundle.
             const text = new TextDecoder().decode(bytes);
             const match = text.match(/window\.__TOBARI_DATA__\s*=\s*"([^"]+)"/);
             if (match) {
@@ -135,10 +165,7 @@ function setupDropZone() {
             }
         }
 
-        // Assume .cose (CBOR)
         const b64 = btoa(String.fromCharCode(...bytes));
-        // Update URL for "bookmarkability" without reload if possible, 
-        // but here we just re-init for simplicity.
         window.location.hash = "data=" + encodeURIComponent(b64);
         location.reload();
     };
@@ -149,46 +176,16 @@ function setupDropZone() {
     fileInput?.addEventListener('change', () => { if (fileInput.files?.[0]) handleFile(fileInput.files[0]); });
 }
 
-// ... (render, cleanData, unlockEncryptedPayload, etc. remain same as previous version)
-
-function injectGlobalStyles() {
-    if (document.getElementById('tobari-global-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'tobari-global-styles';
-    style.textContent = `
-        body { margin: 0; background: #f4f7f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #2d3748; }
-        .welcome-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
-        .drop-card { background: white; padding: 60px 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.04); border: 2px dashed #e2e8f0; max-width: 480px; width: 100%; text-align: center; transition: all 0.3s ease; }
-        .drop-card.active { border-color: #3182ce; background: #ebf8ff; transform: scale(1.02); }
-        .logo { font-size: 64px; margin-bottom: 24px; font-family: 'TobariSubset', serif; color: #1a202c; }
-        h2 { margin: 0 0 12px 0; font-size: 24px; color: #1a202c; }
-        p { color: #718096; line-height: 1.6; margin-bottom: 32px; }
-        .primary-btn { background: #1a202c; color: white; border: none; padding: 14px 28px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-        .secondary-btn { background: none; color: #3182ce; border: 1px solid #3182ce; padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 15px; width: 100%; }
-        .official-doc-container { padding: 40px 20px; display: flex; justify-content: center; }
-        .official-doc { 
-            background: white; width: 100%; max-width: 840px; padding: 80px 100px; 
-            box-shadow: 0 40px 100px rgba(0,0,0,0.08), 0 10px 20px rgba(0,0,0,0.02); 
-            border-radius: 4px; font-family: 'TobariSubset', serif; position: relative;
-        }
-        .verified-badge { 
-            position: absolute; top: 40px; right: 40px; 
-            display: flex; align-items: center; gap: 8px;
-            color: #2f855a; font-weight: bold; font-size: 12px; 
-            letter-spacing: 0.1em; background: #f0fff4; padding: 6px 12px; 
-            border-radius: 4px; border: 1px solid #c6f6d5; font-family: sans-serif;
-        }
-        .doc-header { margin-bottom: 60px; border-bottom: 1px solid #1a202c; padding-bottom: 15px; }
-        .doc-title { font-size: 32px; font-weight: normal; margin: 0; color: #1a202c; }
-        .field-section { margin-bottom: 40px; }
-        .field-label { font-family: sans-serif; font-size: 12px; color: #718096; margin-bottom: 8px; display: block; }
-        .field-value-lg { font-size: 36px; color: #000; line-height: 1.2; }
-        .field-value-md { font-size: 20px; color: #1a202c; }
-        .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 40px; }
-        .issuer-footer { margin-top: 80px; padding-top: 30px; border-top: 1px solid #1a202c; display: flex; justify-content: space-between; align-items: flex-end; }
-        .hankyo { width: 60px; height: 60px; border: 2px solid #e53e3e; color: #e53e3e; text-align: center; line-height: 60px; font-size: 24px; font-weight: bold; border-radius: 2px; transform: rotate(-5deg); user-select: none; }
-    `;
-    document.head.appendChild(style);
+function cleanData(v: any): any {
+    if (v === null || v === undefined) return v;
+    if (typeof v === 'object') {
+        if (v["@value"] !== undefined) return cleanData(v["@value"]);
+        if (Array.isArray(v)) return v.map(cleanData);
+        const res: any = {};
+        for (const key in v) res[key] = cleanData(v[key]);
+        return res;
+    }
+    return v;
 }
 
 function render(doc: any, rawData: any, mso: MSO) {
@@ -225,7 +222,7 @@ function render(doc: any, rawData: any, mso: MSO) {
                 <div class="issuer-footer">
                     <div style="text-align: left;">
                         <div style="font-size: 14px; margin-bottom: 10px;">${safeStr(data["交付年月日"] || "")}</div>
-                        ${issuerKeys.map(([k, v]) => `<div style="font-size: 13px; color: #4a5568;">${k}: <span style="font-size: 18px; color: #000; margin-left: 10px;">${v}</span></div>`).join('')}
+                        ${issuerKeys.map(([k, v]) => `<div>${k}: <span style="font-size: 18px; color: #000; margin-left: 10px;">${v}</span></div>`).join('')}
                     </div>
                     <div class="hankyo">印</div>
                 </div>
@@ -296,6 +293,47 @@ function setupDebugUI() {
 
 function renderError(err: any) {
     document.body.innerHTML = `<div style="padding:40px; font-family:sans-serif; text-align:center;"><h2 style="color:#e53e3e;">Failed to Load Document</h2><p>${err}</p></div>`;
+}
+
+function injectGlobalStyles() {
+    if (document.getElementById('tobari-global-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'tobari-global-styles';
+    style.textContent = `
+        body { margin: 0; background: #f4f7f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #2d3748; }
+        .welcome-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
+        .drop-card { background: white; padding: 60px 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.04); border: 2px dashed #e2e8f0; max-width: 480px; width: 100%; text-align: center; transition: all 0.3s ease; }
+        .drop-card.active { border-color: #3182ce; background: #ebf8ff; transform: scale(1.02); }
+        .logo { font-size: 64px; margin-bottom: 24px; font-family: 'TobariSubset', serif; color: #1a202c; }
+        h2 { margin: 0 0 12px 0; font-size: 24px; color: #1a202c; }
+        p { color: #718096; line-height: 1.6; margin-bottom: 32px; }
+        .primary-btn { background: #1a202c; color: white; border: none; padding: 14px 28px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .primary-btn:hover { background: #2d3748; transform: translateY(-1px); }
+        .secondary-btn { background: none; color: #3182ce; border: 1px solid #3182ce; padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 15px; width: 100%; }
+        .official-doc-container { padding: 40px 20px; display: flex; justify-content: center; }
+        .official-doc { 
+            background: white; width: 100%; max-width: 840px; padding: 80px 100px; 
+            box-shadow: 0 40px 100px rgba(0,0,0,0.08), 0 10px 20px rgba(0,0,0,0.02); 
+            border-radius: 4px; font-family: 'TobariSubset', serif; position: relative;
+        }
+        .verified-badge { 
+            position: absolute; top: 40px; right: 40px; 
+            display: flex; align-items: center; gap: 8px;
+            color: #2f855a; font-weight: bold; font-size: 12px; 
+            letter-spacing: 0.1em; background: #f0fff4; padding: 6px 12px; 
+            border-radius: 4px; border: 1px solid #c6f6d5; font-family: sans-serif;
+        }
+        .doc-header { margin-bottom: 60px; border-bottom: 1px solid #1a202c; padding-bottom: 15px; }
+        .doc-title { font-size: 32px; font-weight: normal; margin: 0; color: #1a202c; }
+        .field-section { margin-bottom: 40px; }
+        .field-label { font-family: sans-serif; font-size: 12px; color: #718096; margin-bottom: 8px; display: block; }
+        .field-value-lg { font-size: 36px; color: #000; line-height: 1.2; }
+        .field-value-md { font-size: 20px; color: #1a202c; }
+        .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 40px; }
+        .issuer-footer { margin-top: 80px; padding-top: 30px; border-top: 1px solid #1a202c; display: flex; justify-content: space-between; align-items: flex-end; }
+        .hankyo { width: 60px; height: 60px; border: 2px solid #e53e3e; color: #e53e3e; text-align: center; line-height: 60px; font-size: 24px; font-weight: bold; border-radius: 2px; transform: rotate(-5deg); user-select: none; }
+    `;
+    document.head.appendChild(style);
 }
 
 (window as any).initTobari = initViewer;
