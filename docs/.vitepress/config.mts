@@ -25,6 +25,7 @@ export default defineConfig({
                 items: [
                     { text: 'Schema Spec', link: '/SCHEMA_SPEC' },
                     { text: 'Holder Binding', link: '/HOLDER_BINDING' },
+                    { text: 'Encryption & Consent', link: '/ENCRYPTION_STRATEGY' },
                     { text: 'Long-Term Validation', link: '/LONG_TERM_VALIDATION' },
                     { text: 'CWOC Spec', link: '/CWOC_SPEC' },
                     { text: 'FATF Analysis', link: '/FATF_ANALYSIS' }

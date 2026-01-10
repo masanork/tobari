@@ -1,56 +1,49 @@
 # CLI Tools
 
-Tobari は、開発や運用のための強力なコマンドラインツールを提供しています。
+Tobari provides powerful command-line tools for development and operations.
 
-## 概要
+## Overview
 
-| コマンド | パッケージ | 説明 |
-| :--- | :--- | :--- |
-| `present:cli` | `codec` | 選択的開示(SD)と署名(Device Auth)を行い VP を作成 |
-| `verify:cli` | `codec` | Tobari ドキュメントまたは VP の検証 |
-| `tobari-gen` | `codec` | スキーマとデータから Tobari ファイルを生成 |
+The toolkit includes the following main components:
 
-## 使い方詳細
+### 1. `civ` (Citizen Identity Verification)
+A Rust-based CLI for reading and verifying various hardware identity cards.
+- **Hardware Support**: JPKI (My Number), ePassport (ICAO 9303), MyKad, Thai ID, etc.
+- **Demo Mode**: Simulate card reading without physical hardware.
+- **Output**: Detailed identity information in text or JSON format.
 
-### 1. 提示データの作成 (`present:cli`)
+### 2. `tobari` (Form & Credential Processor)
+The primary CLI for processing schema-driven forms and generating machine-readable documents.
+- **Form Generation**: Generate interactive HTML forms from YAML schemas.
+- **Signing**: Sign form data using ECDSA (P-384) or BBS+ signatures.
+- **Selective Disclosure**: Create SD-CBOR presentations from signed documents.
 
-原本（Issuer Signed）から、必要な項目だけを抽出して署名します。
+## Installation
 
+### From Source
 ```bash
-bun run present:cli <source.cose> <output.cose> [options]
+# Install civ
+cd packages/civ
+cargo install --path .
+
+# Install tobari processor
+bun install
+# (Linking/Alias configuration)
 ```
 
-**主なオプション:**
-- `--fields`: 開示するフィールド ID（カンマ区切り）。指定しない場合は全開示。
-- `--device-key`: ホルダーの秘密鍵 (JWK)。指定しない場合は一時的な鍵を生成。
-- `--nonce`: リプレイ攻撃防止用の値。
-- `--audience`: 検証者の識別子。
+## Basic Usage
 
-### 2. 検証 (`verify:cli`)
-
-原本または提示データの真正性を検証します。
-
+### Verify an Identity Card (Demo Mode)
 ```bash
-bun run verify:cli <target.cose> [issuer_pubkey.json]
+civ --demo id --type jpki --pin 1234
 ```
 
-- 公開鍵が指定された場合、Issuer の署名を検証します。
-- ドキュメントに Device 署名が含まれる場合、Holder Binding の検証も自動的に行われます。
-
-### 3. ビューアの生成 (`bundle-viewer`)
-
-.cose ファイルを内包した、自己検証機能付きの HTML ファイルを生成します。
-
+### Generate a Form
 ```bash
-bun run packages/codec/src/bundle-viewer.ts <source.cose>
+tobari gen --schema examples/ininjo/ininjo.yaml --output ininjo.html
 ```
 
----
-
-## 開発用スクリプト
-
-`scripts/build_examples.ts` を実行することで、`examples/` 以下のすべてのデモデータを一括生成し、それぞれに対応する HTML ビューアをビルドできます。
-
+### Process and Sign Data
 ```bash
-bun run scripts/build_examples.ts
+tobari sign --data data.json --key private.key --output signed.cbor
 ```
