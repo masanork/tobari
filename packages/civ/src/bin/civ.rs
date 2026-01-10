@@ -100,26 +100,8 @@ pub struct MockReader {
 #[cfg(not(target_arch = "wasm32"))]
 impl MockReader {
     pub fn new() -> Self {
-        use civ::mock::*;
-        use civ::apdu::file_ids as f;
-        let mut mock = MockSmartCard::new();
-        
-        // JPKI
-        mock.add_backend(f::DF_JPKI.to_vec(), Box::new(JpkiBackend::new()));
-        mock.add_backend(f::DF_INPUT_SUPPORT.to_vec(), Box::new(JpkiBackend::new()));
-        mock.add_backend(f::DF_SURFACE.to_vec(), Box::new(JpkiBackend::new()));
-        
-        // DL
-        mock.add_backend(civ::jpdl::file_ids::DF_DL.to_vec(), Box::new(DriversLicenseBackend::new()));
-        mock.add_backend(civ::jpdl::file_ids::DF_DL_PHOTO.to_vec(), Box::new(DriversLicenseBackend::new()));
-        
-        // RC
-        mock.add_backend(civ::jprc::file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new()));
-        mock.add_backend(civ::jprc::file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new()));
-        
-        // Passport
-        mock.add_backend(civ::passport::file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("123456")));
-        
+        use civ::mock::MockSmartCard;
+        let mock = MockSmartCard::new();
         Self { mock: Arc::new(Mutex::new(mock)) }
     }
 }

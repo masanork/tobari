@@ -37,28 +37,8 @@ pub struct CivContext {
 impl CivContext {
     /// Initialize with a Mock Reader
     pub fn new_mock() -> Self {
-        use crate::mock::*;
-        use crate::apdu::file_ids as f;
-        let mut mock = MockSmartCard::new();
-        
-        // JPKI
-        mock.add_backend(f::DF_JPKI.to_vec(), Box::new(JpkiBackend::new()));
-        mock.add_backend(f::DF_INPUT_SUPPORT.to_vec(), Box::new(JpkiBackend::new()));
-        mock.add_backend(f::DF_SURFACE.to_vec(), Box::new(JpkiBackend::new()));
-        
-        // DL
-        mock.add_backend(crate::jpdl::file_ids::DF_DL.to_vec(), Box::new(DriversLicenseBackend::new()));
-        mock.add_backend(crate::jpdl::file_ids::DF_DL_PHOTO.to_vec(), Box::new(DriversLicenseBackend::new()));
-        
-        // RC
-        mock.add_backend(crate::jprc::file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new()));
-        mock.add_backend(crate::jprc::file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new()));
-        
-        // Passport
-        mock.add_backend(crate::passport::file_ids::DF_ICAO.to_vec(), Box::new(PassportBackend::new("123456"))); // Default MRZ
-
-        // PIV
-        mock.add_backend(crate::piv::file_ids::DF_PIV.to_vec(), Box::new(PivBackend::new()));
+        use crate::mock::MockSmartCard;
+        let mock = MockSmartCard::new();
 
         Self {
             reader: WasmReader::Mock(Arc::new(Mutex::new(mock))),
