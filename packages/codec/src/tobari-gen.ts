@@ -22,6 +22,10 @@ export interface TobariDoc {
     issuerSigned: IssuerSigned;
     // self-described schema for the viewer
     fields: any[];
+    // Encrypted/Signed visual assets
+    visuals?: {
+        font?: string; // Base64 font-face CSS
+    };
 }
 
 export async function generateSignedTobari(
@@ -34,6 +38,7 @@ export async function generateSignedTobari(
         devicePublicKey?: CryptoKey;
         useLtvMock?: boolean;
         encryptionPublicKey?: Uint8Array; // HPKE Public Key
+        embeddedFont?: string;           // Pre-subsetted font CSS
     } = {}
 ): Promise<Uint8Array> {
     const schema = yaml.load(schemaYaml) as any;
@@ -111,7 +116,8 @@ export async function generateSignedTobari(
             },
             issuerAuth
         },
-        fields: schema.fields
+        fields: schema.fields,
+        visuals: options.embeddedFont ? { font: options.embeddedFont } : undefined
     };
 
     const { encodeCanonical } = await import('@tobari/crypto/cbor');

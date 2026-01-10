@@ -51,6 +51,14 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         currentDebugData = { doc, mso, revealed: disclosedData, isSignatureValid, coseArray };
         (window as any).currentDebugData = currentDebugData;
 
+        // 2. Inject Decrypted Font if present
+        if (doc.visuals && doc.visuals.font) {
+            console.log("🎨 Applying decrypted font from document...");
+            const style = document.createElement('style');
+            style.textContent = doc.visuals.font;
+            document.head.appendChild(style);
+        }
+
         // Render document
         render(doc, disclosedData, mso);
 
