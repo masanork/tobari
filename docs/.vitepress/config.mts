@@ -18,7 +18,7 @@ export default defineConfig({
                 text: 'Introduction',
                 items: [
                     { text: 'Architecture', link: '/ARCHITECTURE' },
-                    { text: 'Getting Started', link: '/README' } // Will map to project README if copied or linked
+                    { text: 'Getting Started', link: '/getting-started' } // Will map to project README if copied or linked
                 ]
             },
             {
