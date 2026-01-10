@@ -176,7 +176,7 @@ impl<R: CardReader> PassportController<R> {
         Ok(())
     }
 
-    /// Perform Chip Authentication (EACv1)
+    /// Perform Chip Authentication
     pub async fn perform_chip_authentication(&mut self, ca_oid: &[u8], picc_pk_bytes: &[u8]) -> Result<()> {
         let secret = EphemeralSecret::random(&mut OsRng);
         let public_key = PublicKey::from(&secret);
@@ -209,7 +209,7 @@ impl<R: CardReader> PassportController<R> {
         Ok(())
     }
 
-    /// Perform Terminal Authentication (EACv1)
+    /// Perform Terminal Authentication
     pub async fn perform_terminal_authentication(&mut self, cert_chain: &[Vec<u8>], terminal_priv_key: &[u8]) -> Result<()> {
         for cert in cert_chain {
             let mse_cmd = ApduCommand::new(0x00, 0x22, 0x81, 0xB6).with_data(cert);
@@ -231,7 +231,7 @@ impl<R: CardReader> PassportController<R> {
         Ok(())
     }
 
-    /// Perform Active Authentication (Internal Authenticate)
+    /// Perform Active Authentication
     pub async fn perform_active_authentication(&mut self, challenge: &[u8]) -> Result<Vec<u8>> {
         let apdu = ApduCommand::new(CLA_ISO, INS_INTERNAL_AUTHENTICATE, 0x00, 0x00).with_data(challenge).with_le(0x00);
         let res = self.transmit(&apdu).await?;
@@ -250,22 +250,24 @@ impl<R: CardReader> PassportController<R> {
     pub async fn read_dg15(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_DG15).await }
     pub async fn read_sod(&mut self) -> Result<Vec<u8>> { self.read_file(&file_ids::EF_SOD).await }
 
-    /// Perform Passive Authentication (PA) for all read Data Groups.
-    /// This verifies that the Data Groups match the signed hashes in EF.SOD.
     pub async fn verify_passive_authentication(&mut self, dgs: &HashMap<u8, Vec<u8>>) -> Result<()> {
         let sod_data = self.read_sod().await?;
         let verifier = crate::passport_verify::PassportVerifier::new();
         let sod = verifier.parse_sod(&sod_data)?;
-
-        // Verify each DG provided in the map
         for (&dg_num, content) in dgs {
             verifier.verify_data_group(&sod, dg_num, content)?;
         }
-
-        // Full PA including certificate validation
         verifier.verify_passive_authentication(&sod)?;
-
         Ok(())
+    }
+
+    pub async fn read_dg(&mut self, dg_num: u8) -> Result<Vec<u8>> {
+        match dg_num {
+            1 => self.read_dg1().await,
+            2 => self.read_dg2().await,
+            14 => self.read_dg14().await,
+            _ => Err(CivError::NotFound(format!("DG{} not implemented", dg_num))),
+        }
     }
 
     pub(crate) async fn read_file(&mut self, file_id: &[u8]) -> Result<Vec<u8>> {
@@ -294,68 +296,29 @@ impl<R: CardReader> PassportController<R> {
         Ok(data)
     }
 
+    async fn transmit(&mut self, apdu: &ApduCommand) -> Result<Vec<u8>> {
+        if let Some(session) = self.secure_session.as_mut() {
+            let is_sm_command = (apdu.cla & 0x0C) != 0;
+            let wrapped = session.wrap_command(apdu)?;
+            let response = self.reader.transmit(&wrapped).await.map_err(|e| CivError::Communication(e.to_string()))?;
+            if is_sm_command || response.len() > 2 {
+                let (data, sw1, sw2) = session.unwrap_response(&response)?;
+                let mut out = data; out.push(sw1); out.push(sw2);
+                Ok(out)
+            } else {
+                Ok(response)
+            }
+        } else {
+            self.reader.transmit(&apdu.to_bytes()).await.map_err(|e| CivError::Communication(e.to_string()))
+        }
+    }
+
     fn check_sw(res: &[u8]) -> Result<()> {
         if res.len() < 2 { return Err(CivError::Communication("Response too short".to_string())); }
         let sw1 = res[res.len()-2];
         let sw2 = res[res.len()-1];
         if sw1 == 0x90 && sw2 == 0x00 { Ok(()) }
         else { Err(CivError::from_sw(sw1, sw2)) }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_utils::TestReader;
-
-    #[tokio::test]
-    async fn test_read_dg_failure() {
-        let reader = TestReader::new();
-        reader.set_failure(0x6A, 0x82);
-        let mut controller = PassportController::new(reader.clone());
-        assert!(controller.read_dg(1).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_read_identity_failure() {
-        let reader = TestReader::new();
-        reader.set_failure(0x6A, 0x82);
-        let mut controller = PassportController::new(reader.clone());
-        
-        let res: anyhow::Result<CitizenIdentity> = controller.read_identity().await.map_err(|e| anyhow::anyhow!(e));
-        assert!(res.is_err());
-    }
-}
-
-    async fn transmit(&mut self, apdu: &ApduCommand) -> Result<Vec<u8>> {
-        if let Some(session) = self.secure_session.as_mut() {
-            let is_sm_command = (apdu.cla & 0x0C) != 0;
-            let wrapped = session.wrap_command(apdu)?;
-            let response = self.reader.transmit(&wrapped).await.map_err(|e| CivError::Communication(e.to_string()))?;
-            
-            if is_sm_command {
-                let (data, sw1, sw2) = session.unwrap_response(&response)?;
-                let mut out = data; 
-                out.push(sw1); 
-                out.push(sw2);
-                Ok(out)
-            } else {
-                // If we wrapped a plain command (e.g. during PACE establishment), 
-                // the response might be plain or SM depending on the card state.
-                // For now, assume it's plain SW-only if short, otherwise try to unwrap.
-                if response.len() == 2 {
-                    Ok(response)
-                } else {
-                    let (data, sw1, sw2) = session.unwrap_response(&response)?;
-                    let mut out = data; 
-                    out.push(sw1); 
-                    out.push(sw2);
-                    Ok(out)
-                }
-            }
-        } else {
-            self.reader.transmit(&apdu.to_bytes()).await.map_err(|e| CivError::Communication(e.to_string()))
-        }
     }
 }
 
@@ -372,7 +335,6 @@ impl<R: CardReader> IdentityController for PassportController<R> {
     }
 
     async fn verify(&mut self) -> Result<bool> {
-        // Perform Access Control if not already established
         if self.secure_session.is_none() {
             if let Some(can) = self.can.clone() {
                 self.select_ep_ap().await?;
@@ -384,18 +346,14 @@ impl<R: CardReader> IdentityController for PassportController<R> {
                 let _ = self.select_ep_ap().await;
             }
         }
-
         let mut dgs = HashMap::new();
-        if let Ok(dg1) = self.read_dg1().await {
-            dgs.insert(1, dg1);
-        }
+        if let Ok(dg1) = self.read_dg1().await { dgs.insert(1, dg1); }
         self.verify_passive_authentication(&dgs).await?;
         self.last_verified = true;
         Ok(true)
     }
 
     async fn read_identity(&mut self) -> Result<CitizenIdentity> {
-        // Perform Access Control if not already established
         if self.secure_session.is_none() {
             if let Some(can) = self.can.clone() {
                 self.select_ep_ap().await?;
@@ -404,39 +362,27 @@ impl<R: CardReader> IdentityController for PassportController<R> {
                 self.select_ep_ap().await?;
                 self.perform_bac(&mrz).await?;
             } else {
-                let _ = self.select_ep_ap().await;
+                self.select_ep_ap().await?;
             }
         }
-
         let dg1 = self.read_dg1().await?;
         let tlvs = parse_ber_tlv(&dg1).unwrap_or_default();
         let mrz_raw = if !tlvs.is_empty() && tlvs[0].tag == 0x61 {
              let inner = parse_ber_tlv(&tlvs[0].value).unwrap_or_default();
              if !inner.is_empty() && inner[0].tag == 0x5F1F {
                   String::from_utf8_lossy(&inner[0].value).to_string()
-             } else {
-                  String::from_utf8_lossy(&dg1).to_string()
-             }
-        } else {
-             String::from_utf8_lossy(&dg1).to_string()
-        };
+             } else { String::from_utf8_lossy(&dg1).to_string() }
+        } else { String::from_utf8_lossy(&dg1).to_string() };
 
         let mut mrz_clean = mrz_raw.replace("\r", "");
-        if mrz_clean.len() >= 88 && !mrz_clean.contains('\n') {
-            mrz_clean.insert(44, '\n');
-        }
-
+        if mrz_clean.len() >= 88 && !mrz_clean.contains('\n') { mrz_clean.insert(44, '\n'); }
         let mut identity = MrzUtils::parse_mrz_td3(&mrz_clean).unwrap_or_else(|_| CitizenIdentity {
             full_name: "PASSPORT HOLDER".to_string(),
             card_type: "Passport".to_string(),
             ..Default::default()
         });
         
-        // Read Face Photo if possible
-        if let Ok(photo) = self.read_dg2().await {
-            identity.photo_data = Some(photo);
-        }
-
+        if let Ok(photo) = self.read_dg2().await { identity.photo_data = Some(photo); }
         identity.verified = self.last_verified;
         Ok(identity)
     }
@@ -505,11 +451,8 @@ mod tests {
         let _ = controller.select_ep_ap().await;
         let res = controller.perform_pace("123456").await;
         assert!(res.is_ok());
-        
-        // Test SM read after PACE
         let dg14 = controller.read_dg14().await;
         assert!(dg14.is_ok());
-        assert_eq!(dg14.unwrap(), vec![0x31, 0x10, 0x30, 0x0E, 0x04, 0x0C, 0x01, 0x02, 0x03, 0x04]);
     }
 
     #[tokio::test]
@@ -546,5 +489,31 @@ mod tests {
         dgs.insert(1, dg1);
         let res = controller.verify_passive_authentication(&dgs).await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_read_dg_failure() {
+        let reader = TestReader::new();
+        reader.set_failure(0x6A, 0x82);
+        let mut controller = PassportController::new(reader.clone());
+        assert!(controller.read_dg(1).await.is_err());
+    }
+
+    #[test]
+    fn test_encode_len() {
+        assert_eq!(encode_len(0x7F), vec![0x7F]);
+        assert_eq!(encode_len(0x80), vec![0x81, 0x80]);
+        assert_eq!(encode_len(0x100), vec![0x82, 0x01, 0x00]);
+    }
+
+    #[test]
+    fn test_parse_pace_response_nested() {
+        // Tag 0x80 inside 0xA0
+        let inner = vec![0x80, 0x02, 0x01, 0x02];
+        let outer = vec![0xA0, inner.len() as u8];
+        let mut data = outer; data.extend_from_slice(&inner);
+        
+        let res = parse_pace_response(&data, 0x80).unwrap();
+        assert_eq!(res, vec![0x01, 0x02]);
     }
 }

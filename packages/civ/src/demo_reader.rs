@@ -134,3 +134,37 @@ impl CardReader for DemoReader {
         Ok(data)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_demo_reader_jpki_flow() {
+        let mut reader = DemoReader::new();
+        
+        // Select Input Support DF
+        let sel_df = vec![0x00, 0xA4, 0x04, 0x0C, file_ids::DF_INPUT_SUPPORT.len() as u8];
+        let mut sel_df_full = sel_df; sel_df_full.extend_from_slice(&file_ids::DF_INPUT_SUPPORT);
+        let res = reader.transmit(&sel_df_full).await.unwrap();
+        assert_eq!(&res[res.len()-2..], &[0x90, 0x00]);
+
+        // Select MyNumber EF
+        let sel_ef = vec![0x00, 0xA4, 0x02, 0x0C, 0x02, 0x00, 0x01];
+        let res = reader.transmit(&sel_ef).await.unwrap();
+        assert_eq!(&res[res.len()-2..], &[0x90, 0x00]);
+
+        // Read Binary
+        let read = vec![0x00, 0xB0, 0x00, 0x00, 0x00];
+        let res = reader.transmit(&read).await.unwrap();
+        assert!(res.len() > 2);
+        assert_eq!(&res[res.len()-2..], &[0x90, 0x00]);
+    }
+
+    #[tokio::test]
+    async fn test_demo_reader_invalid_ins() {
+        let mut reader = DemoReader::new();
+        let res = reader.transmit(&[0x00, 0xFF, 0x00, 0x00]).await.unwrap();
+        assert_eq!(res[res.len()-2], 0x6D);
+    }
+}

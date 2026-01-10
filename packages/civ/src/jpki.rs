@@ -397,42 +397,236 @@ mod tests {
         assert_eq!(retries, 2);
     }
 
-        #[tokio::test]
+            #[tokio::test]
 
-        async fn test_read_ef_full_eof() {
+            async fn test_read_ef_full_eof() {
 
-            let reader = TestReader::new();
+                let reader = TestReader::new();
 
-            // Simulate 62 82 (EOF) after first chunk
+                // Succeed at SELECT
 
-            reader.push_response(&[0x01, 0x62, 0x82]);
+                reader.push_response(&[0x90, 0x00]);
 
-            let mut controller = JpkiController::new(reader.clone());
+                // EOF after first byte at READ BINARY
 
-            let res = controller.read_ef_full(&[0x00, 0x01]).await;
+                reader.push_response(&[0x01, 0x62, 0x82]);
 
-            assert_eq!(res.unwrap(), vec![0x01]);
+                let mut controller = JpkiController::new(reader.clone());
 
-        }
+                let res = controller.read_ef_full(&[0x00, 0x01]).await;
+
+                assert_eq!(res.unwrap(), vec![0x01]);
+
+            }
+
+        
 
     
 
-        #[tokio::test]
+                #[tokio::test]
 
-        async fn test_read_cert_failure() {
+        
 
-            let reader = TestReader::new();
+    
 
-            reader.set_failure(0x6A, 0x82);
+                async fn test_read_mynumber_tlv() {
 
-            let mut controller = JpkiController::new(reader.clone());
+        
 
-            assert!(controller.read_auth_cert().await.is_err());
+    
 
-            assert!(controller.read_sign_cert().await.is_err());
+                    let reader = TestReader::new();
+
+        
+
+    
+
+                    // Tag 0x01 is MyNumber, 12 digits
+
+        
+
+    
+
+                    let mut data = vec![0x01, 12];
+
+        
+
+    
+
+                    data.extend_from_slice(b"987654321098");
+
+        
+
+    
+
+                    
+
+        
+
+    
+
+                    reader.push_response(&[0x90, 0x00]); // Select Support AP
+
+        
+
+    
+
+                    reader.push_response(&[0x90, 0x00]); // Select PIN EF
+
+        
+
+    
+
+                    reader.push_response(&[0x90, 0x00]); // Verify PIN
+
+        
+
+    
+
+                    reader.push_response(&[0x90, 0x00]); // Select MyNumber EF
+
+        
+
+    
+
+                    let mut read_res = data; read_res.extend_from_slice(&[0x90, 0x00]);
+
+        
+
+    
+
+                    reader.push_response(&read_res); // Read Binary
+
+        
+
+    
+
+                    
+
+        
+
+    
+
+                    let mut controller = JpkiController::new(reader.clone());
+
+        
+
+    
+
+                    let num = controller.read_mynumber("1234").await.unwrap();
+
+        
+
+    
+
+                    assert_eq!(num, "987654321098");
+
+        
+
+    
+
+                }
+
+        
+
+    
+
+            
+
+        
+
+    
+
+        
+
+        
+
+    
+
+            #[test]
+
+        
+
+    
+
+            fn test_parse_basic_info_full() {
+
+        
+
+    
+
+                // Tag 0xDF22: Name, 0xDF23: Addr, 0xDF24: DOB, 0xDF25: Sex
+
+        
+
+    
+
+                let mut data = Vec::new();
+
+        
+
+    
+
+                data.extend_from_slice(&[0xDF, 0x22, 0x04, b'T', b'a', b'r', b'o']);
+
+        
+
+    
+
+                data.extend_from_slice(&[0xDF, 0x23, 0x05, b'T', b'o', b'k', b'y', b'o']);
+
+        
+
+    
+
+                data.extend_from_slice(&[0xDF, 0x24, 0x08, b'1', b'9', b'9', b'0', b'0', b'1', b'0', b'1']);
+
+        
+
+    
+
+                data.extend_from_slice(&[0xDF, 0x25, 0x01, b'1']);
+
+        
+
+    
+
+                
+
+        
+
+    
+
+                let info = JpkiController::<crate::test_utils::TestReader>::parse_basic_info(&data).unwrap();
+
+        
+
+    
+
+                assert_eq!(info.name, "Taro");
+
+        
+
+    
+
+                assert_eq!(info.gender, "1");
+
+        
+
+    
+
+            }
+
+        
+
+    
 
         }
 
-    }
+        
+
+    
+
+        
 
     

@@ -532,8 +532,48 @@ mod tests {
         assert!(controller.select_dl_ap().await.is_ok());
         assert!(controller.verify_pin1("123456").await.is_ok());
         
-        let res = controller.verify_integrity().await;
-        assert!(res.is_ok());
-        assert!(!res.unwrap()); // Should be false
-    }
-}
+                let res = controller.verify_integrity().await;
+        
+                assert!(res.is_ok());
+        
+                assert!(!res.unwrap()); // Should be false
+        
+            }
+        
+        
+        
+                #[tokio::test]
+        
+        
+        
+                async fn test_verify_pin_error_extra() {
+        
+        
+        
+                    let reader = TestReader::new();
+        
+        
+        
+                    let _mock = setup_dl_mock(&reader);
+        
+        
+        
+                    let mut controller = DriversLicenseController::new(reader.clone());
+        
+        
+        
+                    assert!(controller.verify_pin1("wrong").await.is_err());
+        
+        
+        
+                }
+        
+        
+        
+            }
+        
+        
+        
+            
+        
+        
