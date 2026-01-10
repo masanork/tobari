@@ -44,7 +44,7 @@
 #### A. PIN Verification
 1. `SELECT DF`: JPKI-AP
 2. `SELECT EF`: `00 18` (Auth) or `00 1B` (Sign)
-3. `VERIFY`: `00 20 00 80 <Len> <PIN_Bytes>`
+3. `VERIFY`: `00 20 00 80 [Len] [PIN_Bytes]`
    - **SW 9000**: Success
    - **SW 63Cx**: Failure (x retries left). **STOP if x<=1.**
    - **SW 63C0**: Locked (Requires municipal reset).
@@ -56,7 +56,7 @@
    - Select JPKI-AP.
    - Select Sign PIN IEF (`00 1B`) -> `VERIFY`.
    - Select Sign Key EF (`00 17`).
-4. **Sign**: `80 2A 00 80 <Len> <DigestInfo> 00`
+4. **Sign**: `80 2A 00 80 [Len] [DigestInfo] 00`
    - Returns: 256 bytes RSA signature.
 
 ## 5. Input Assistance App (`Card-AP`)
@@ -72,9 +72,9 @@
 ### 5.2 Flows
 1. `SELECT DF`: Card-AP (`...04 08`)
 2. `SELECT EF`: `00 11` (PIN IEF)
-3. `VERIFY`: `00 20 00 80 04 <PIN>` (4 digits)
+3. `VERIFY`: `00 20 00 80 04 [PIN]` (4 digits)
 4. `SELECT EF`: `00 01` (My Number) or `00 02` (4-Info)
-5. `READ BIN`: `00 B0 <P1> <P2> <Len>`
+5. `READ BIN`: `00 B0 [P1] [P2] [Len]`
 
 ## 6. Surface (Visual) App (`Surface-AP`)
 **AID:** `D3 92 10 00 31 00 01 01 04 02`
@@ -89,9 +89,9 @@
 ### 6.2 Flows
 1. `SELECT DF`: Surface-AP (`...04 02`)
 2. `SELECT EF`: `00 13` (PIN IEF)
-3. `VERIFY`: `00 20 00 80 0C <MyNumber>` (12 digits, ASCII)
+3. `VERIFY`: `00 20 00 80 0C [MyNumber]` (12 digits, ASCII)
 4. `SELECT EF`: `00 02` (Photo)
-5. `READ BIN`: `00 B0 <P1> <P2> <Len>` (Loop for full data)
+5. `READ BIN`: `00 B0 [P1] [P2] [Len]` (Loop for full data)
 
 ## 7. Data Structures
 
