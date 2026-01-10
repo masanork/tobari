@@ -290,7 +290,14 @@ impl<R: CardReader> IdentityController for JpkiController<R> {
         let info = self.read_attributes(&pin).await.unwrap_or_default();
         let my_number = self.read_mynumber(&pin).await.unwrap_or_default();
 
-        let formatted_dob = crate::utils::DateUtils::parse_yyyymmdd(&info.birth_date).unwrap_or(info.birth_date);
+        let formatted_dob = crate::utils::DateUtils::parse_yyyymmdd(&info.birth_date).unwrap_or(info.birth_date.clone());
+
+        let mut photo_data = None;
+        if !my_number.is_empty() {
+            if let Ok(photo) = self.read_face_photo(&my_number).await {
+                photo_data = Some(photo);
+            }
+        }
 
         Ok(CitizenIdentity {
             full_name: info.name,
@@ -304,7 +311,7 @@ impl<R: CardReader> IdentityController for JpkiController<R> {
             card_type: "MyNumberCard".to_string(),
             issuing_authority: Some("JPN".to_string()),
             expiration_date: None,
-            photo_data: None, // Requires PIN B and separate reading
+            photo_data,
             verified: false, // Updated by verify()
             attributes: std::collections::HashMap::new(),
         })

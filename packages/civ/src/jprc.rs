@@ -240,6 +240,7 @@ impl<R: CardReader> IdentityController for ResidenceCardController<R> {
 
     async fn read_identity(&mut self) -> Result<CitizenIdentity> {
         let info = self.read_df2_info().await?;
+        let photo_data = self.read_photo().await.ok();
         
         Ok(CitizenIdentity {
             full_name: "Unknown".to_string(), // Name not available in DF2
@@ -253,7 +254,7 @@ impl<R: CardReader> IdentityController for ResidenceCardController<R> {
             card_type: "ResidenceCard".to_string(),
             issuing_authority: Some("JPN".to_string()),
             expiration_date: None,
-            photo_data: None,
+            photo_data,
             verified: false,
             attributes: std::collections::HashMap::new(),
         })
