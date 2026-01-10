@@ -67,7 +67,7 @@ export default defineConfig({
 
         footer: {
             message: 'Released under the MIT License.',
-            copyright: 'Copyright © 2024-present Tobari Project'
+            copyright: 'Copyright © 2026-present Tobari Project'
         },
 
         editLink: {
