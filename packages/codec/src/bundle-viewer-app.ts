@@ -58,8 +58,8 @@ async function buildAppViewer() {
     </script>
 </body></html>`;
 
-    fs.writeFileSync('docs/viewer.html', html);
-    console.log("✅ Generated docs/viewer.html for GitHub Pages.");
+    fs.writeFileSync('docs/public/viewer.html', html);
+    console.log("✅ Generated docs/public/viewer.html for GitHub Pages.");
 }
 
 buildAppViewer();
