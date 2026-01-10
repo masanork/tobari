@@ -274,8 +274,8 @@ mod tests {
 
     fn setup_rc_mock(reader: &TestReader) -> Arc<Mutex<MockSmartCard>> {
         let mut mock = MockSmartCard::new();
-        mock.add_backend(file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new()));
-        mock.add_backend(file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new()));
+        mock.add_backend(file_ids::DF1.to_vec(), Box::new(ResidenceCardBackend::new_df1()));
+        mock.add_backend(file_ids::DF2.to_vec(), Box::new(ResidenceCardBackend::new_df2()));
         
         let mock = Arc::new(Mutex::new(mock));
         let mock_clone = mock.clone();

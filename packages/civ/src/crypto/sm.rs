@@ -483,6 +483,21 @@ mod tests {
     }
 
     #[test]
+    fn test_sm_command_roundtrip_aes256() {
+        let k_enc = [0x10u8; 32];
+        let k_mac = [0x20u8; 32];
+        let mut reader_sm = AesSecureMessaging::new(&k_enc, &k_mac, 0).unwrap();
+        let mut card_sm = AesSecureMessaging::new(&k_enc, &k_mac, 0).unwrap();
+
+        let apdu = ApduCommand::new(0x00, 0xB0, 0x00, 0x10).with_le(0x10);
+        let wrapped = reader_sm.wrap_command(&apdu).unwrap();
+        let wrapped_cmd = ApduCommand::from_bytes(&wrapped).unwrap();
+        let plain = card_sm.unwrap_command_from_reader(&wrapped_cmd).unwrap();
+
+        assert_eq!(plain.to_bytes(), apdu.to_bytes());
+    }
+
+    #[test]
     fn test_sm_unpad_error() {
         let bad_data = vec![0x00, 0x00, 0x00]; // No 0x80
         assert!(unpad_iso9797_m2(&bad_data).is_err());

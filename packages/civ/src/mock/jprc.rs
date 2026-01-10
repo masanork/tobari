@@ -2,22 +2,36 @@ use std::collections::HashMap;
 use crate::apdu::ApduCommand;
 use crate::mock::common::MockBackend;
 
+pub enum ResidenceCardType {
+    DF1, // Visual
+    DF2, // Back side
+}
+
 pub struct ResidenceCardBackend {
     files: HashMap<Vec<u8>, Vec<u8>>,
     current_ef: Option<Vec<u8>>,
 }
 
 impl ResidenceCardBackend {
-    pub fn new() -> Self {
+    pub fn new_df1() -> Self {
+        let mut files = HashMap::new();
+        // DF1/EF02: Photo (Tag D1)
+        files.insert(vec![0x00, 0x02], vec![0xD1, 0x03, 0xAA, 0xBB, 0xCC]);
+        Self { files, current_ef: None }
+    }
+
+    pub fn new_df2() -> Self {
         let mut files = HashMap::new();
         let addr_bytes = "東京都".as_bytes();
         let mut ef_addr = vec![0xD4, addr_bytes.len() as u8];
         ef_addr.extend_from_slice(addr_bytes);
         files.insert(vec![0x00, 0x01], ef_addr);
+
         let perm_bytes = "許可".as_bytes();
         let mut ef_perm = vec![0xD5, perm_bytes.len() as u8];
         ef_perm.extend_from_slice(perm_bytes);
         files.insert(vec![0x00, 0x02], ef_perm);
+
         files.insert(vec![0x00, 0x04], vec![0xD7, 0x01, b'0']);
         Self { files, current_ef: None }
     }
@@ -33,7 +47,7 @@ impl ResidenceCardBackend {
 
 impl Default for ResidenceCardBackend {
     fn default() -> Self {
-        Self::new()
+        Self::new_df2() // Default to DF2 for backward compatibility in tests
     }
 }
 

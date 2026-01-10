@@ -286,8 +286,8 @@ impl<R: CardReader> IdentityController for JpkiController<R> {
 
     async fn read_identity(&mut self) -> Result<CitizenIdentity> {
         let pin = self.auth_pin.clone().unwrap_or_default();
-        let info = self.read_attributes(&pin).await.unwrap_or_default();
-        let my_number = self.read_mynumber(&pin).await.unwrap_or_default();
+        let info = self.read_attributes(&pin).await?;
+        let my_number = self.read_mynumber(&pin).await?;
 
         let formatted_dob = crate::utils::DateUtils::parse_yyyymmdd(&info.birth_date).unwrap_or(info.birth_date.clone());
 

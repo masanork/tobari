@@ -143,5 +143,5 @@ Verify and harden **Extended Length APDU** support. Although `civ`'s APDU builde
 | **2000-2010** | RSA 1024, 3DES, SHA-1 | EstEID (Gen1), MyKad (Gen1), ICAO BAC, **Juki-Card** | Legacy (BAC supported) |
 | **2011-2015** | RSA 2048, SHA-256 | EstEID (Gen2), US PIV (RSA) | **Good** |
 | **2016-2020** | RSA 2048, SHA-256 | **JPKI (Current)**, ICAO PACE (Early) | **Good (JPKI)** |
-| **2021-2025** | ECC P-256/384, AES | **EU eID (PACE)**, EstEID (Gen3), US PIV (ECC) | **Needs PACE** |
+| **2021-2025** | ECC P-256/384, AES | **EU eID (PACE)**, EstEID (Gen3), US PIV (ECC) | **Good (PACE)** |
 | **2026+** | PQC (Kyber), ECC Hybrid | German PQC Pilot, **US PIV (PQC Pilot)** | Future Research |
