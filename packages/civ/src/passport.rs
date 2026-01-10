@@ -334,7 +334,8 @@ impl<R: CardReader> PassportController<R> {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<R: CardReader> IdentityController for PassportController<R> {
     async fn provide_pin(&mut self, pin_type: &str, pin: &str) -> Result<()> {
         match pin_type {

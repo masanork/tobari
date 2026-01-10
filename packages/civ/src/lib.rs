@@ -16,6 +16,8 @@ pub mod demo_reader;
 pub mod transport;
 pub mod utils;
 pub mod test_utils;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 pub use models::{CitizenIdentity, IdentityController};
 pub use jpki::JpkiController;
@@ -23,4 +25,5 @@ pub use jpdl::DriversLicenseController;
 pub use jprc::ResidenceCardController;
 pub use passport::PassportController;
 pub use reader::CardReader;
+#[cfg(not(target_arch = "wasm32"))]
 pub use native_reader::PcscReader;

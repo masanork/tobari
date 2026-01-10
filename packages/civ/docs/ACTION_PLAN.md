@@ -11,10 +11,10 @@ Establish a reliable testing baseline independent of physical hardware.
     - [x] Implement full **Passport** mock scenarios (BAC/PACE handshake, DG reading, Active Authentication).
     - [x] Implement full **PIV** mock scenarios (Authentication, Signing).
     - [ ] Add specific error simulation (SW 63C0 for PIN retries, 6982 for Auth Required).
-- [ ] **Integration Testing**:
-    - [ ] Ensure `cargo test` runs all mock scenarios in GitHub Actions.
-    - [ ] Achieve >80% code coverage for core controller logic.
-    - [ ] Add `cargo-tarpaulin` for code coverage visualization.
+- [x] **Integration Testing**:
+    - [x] Ensure `cargo test` runs all mock scenarios in GitHub Actions.
+    - [x] Achieve >80% code coverage for core controller logic.
+    - [x] Add `cargo-tarpaulin` for code coverage visualization.
 
 ## Phase 2: Internal Quality & API Stability (Priority: High)
 Refine the internal architecture for better maintainability and error reporting.
@@ -38,9 +38,9 @@ Refine the internal architecture for better maintainability and error reporting.
 ## Phase 3: Usability & Developer Experience (Priority: Medium)
 Make the library intuitive and easy to integrate for external developers.
 
-- [ ] **Documentation & Examples**:
+- [x] **Documentation & Examples**:
     - [ ] Standardize Rustdoc comments for all public APIs.
-    - [ ] Create a `examples/` directory with runnable code snippets for each card type (e.g., `read_jpki.rs`, `read_passport.rs`).
+    - [x] Create a `examples/` directory with runnable code snippets for each card type (e.g., `read_jpki.rs`, `read_passport.rs`).
 - [x] **Unified Identity Model**:
     - [x] Design a common trait/struct that maps disparate card data to a standardized JSON schema (e.g., "Full Name", "Birth Date", "Address").
 
@@ -49,7 +49,7 @@ Expand the reach of `civ` beyond the Rust ecosystem.
 
 - [ ] **FFI & Cross-Language Support**:
     - [ ] Investigate `uniffi-rs` for generating Kotlin (Android) and Swift (iOS) bindings.
-    - [ ] Ensure the WASM interface is robust and well-documented for web developers.
+    - [x] Ensure the WASM interface is robust and well-documented for web developers.
 - [ ] **Secure Messaging Consolidation**:
     - [ ] Unify SM (Secure Messaging) logic for AES (PACE) and 3DES (BAC) into a common crypto module.
 
