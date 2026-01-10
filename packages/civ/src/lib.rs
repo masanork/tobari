@@ -19,6 +19,7 @@ pub mod transport;
 pub mod utils;
 pub mod test_utils;
 pub mod trust;
+pub mod gaiji;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 

@@ -28,7 +28,7 @@ export async function generateSignedTobari(
     schemaYaml: string,
     data: any,
     privateKey: CryptoKey,
-    options: { kid?: string; alg?: number; devicePublicKey?: CryptoKey } = {}
+    options: { kid?: string; alg?: number; devicePublicKey?: CryptoKey; useLtvMock?: boolean } = {}
 ): Promise<Uint8Array> {
     const schema = yaml.load(schemaYaml) as any;
     // Use the schema ID itself as the mdoc Namespace
@@ -48,7 +48,7 @@ export async function generateSignedTobari(
             // In a real WebAuthn scenario, we would only have the public key here.
             // But for this mock-reusing logic, we need to get the public key from the pair or re-export.
             // Simplified: Generate a temporary pair from the same JWK or just use a known-good public key import.
-            
+
             // Correct way to import public part of an EC JWK:
             const pubJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
             devicePublicKey = await crypto.subtle.importKey(
@@ -72,10 +72,27 @@ export async function generateSignedTobari(
     // 1. Transform data to mdoc format (MSO + SignedItems)
     const { mso, issuerSignedItems } = await transformToMdocData(schema.id, data, schema.fields, namespace, devicePublicKey);
 
+    // Prepare LTV Mock if requested
+    let countersignSetup;
+    if (options.useLtvMock) {
+        console.log("Generating LTV Mock (TSA) Countersignature...");
+        const tsaKeyPair = await crypto.subtle.generateKey(
+            { name: "ECDSA", namedCurve: "P-256" },
+            true,
+            ["sign", "verify"]
+        );
+        countersignSetup = {
+            alg: -7 as any, // ES256
+            privateKey: tsaKeyPair.privateKey,
+            kid: "mock-tsa-2026"
+        };
+    }
+
     // 2. Sign the MSO
     const issuerAuth = await signCoseSign1(mso, privateKey, {
         alg: options.alg || (COSE_ALG.ES384 as any),
-        kid: options.kid
+        kid: options.kid,
+        countersignSetup: countersignSetup
     });
 
     // 3. Construct the TobariDoc (mdoc-inspired)

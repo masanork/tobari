@@ -48,7 +48,7 @@ export async function initViewer(base64Data: string, issuerPublicKeyJwk?: any) {
         const items = doc.issuerSigned.nameSpaces[namespace] || [];
         const disclosedData = await revealMdocData(mso, items, namespace);
 
-        currentDebugData = { doc, mso, revealed: disclosedData, isSignatureValid };
+        currentDebugData = { doc, mso, revealed: disclosedData, isSignatureValid, coseArray };
         (window as any).currentDebugData = currentDebugData; // Expose for renderers
 
         // Render using the embedded template (if any) or auto-renderer
@@ -885,6 +885,32 @@ function renderIninjo(data: any, mso: any): string {
     // Mock certificate info as we don't parse X.509 in client yet, or use provider info
     const signerInfo = provider ? `OU=${provider.serviceName}, O=${provider.serviceName}運営` : 'OU=電子委任状サービス, O=電子委任状株式会社';
 
+    // Check for RFC 9338 Countersignature (LTV)
+    const debugData = (window as any).currentDebugData;
+    const coseArray = debugData?.coseArray;
+    let ltvInfo = '';
+
+    if (coseArray && coseArray[1]) {
+        const unprotected = coseArray[1];
+        // Label 12 is Countersignature0 (RFC 9338)
+        const cs0 = (unprotected instanceof Map) ? unprotected.get(12) : (unprotected[12] || unprotected['12']);
+
+        if (cs0) {
+            ltvInfo = `
+                <tr><td style="padding: 6px 0; color: #555; font-weight: bold;">長期署名 (LTV)</td>
+                <td style="padding: 6px 0;">
+                    <span style="color: #2b6cb0; font-weight: bold;">あり (RFC 9338)</span>
+                    <div style="font-size: 11px; color: #718096; margin-top: 2px;">Timestamped by Mock TSA 2026</div>
+                </td></tr>
+            `;
+        } else {
+            ltvInfo = `
+                <tr><td style="padding: 6px 0; color: #999;">長期署名 (LTV)</td>
+                <td style="padding: 6px 0; color: #999;">なし</td></tr>
+            `;
+        }
+    }
+
     const mandator = getValue('mandator') || getValue('principal');
     const mandatary = getValue('mandatary') || getValue('agent');
     const authority = getValue('delegatedAuthority') || getValue('mandate');
@@ -967,6 +993,7 @@ function renderIninjo(data: any, mso: any): string {
                      </td></tr>
                      <tr><td style="padding: 6px 0; color: #555; font-weight: bold;">署名証明書</td><td style="padding: 6px 0;">${signerInfo}</td></tr>
                      <tr><td style="padding: 6px 0; color: #555; font-weight: bold;">署名タイムスタンプ</td><td style="padding: 6px 0;">${safeIsoDate(mso.validityInfo.signed)}</td></tr>
+                     ${ltvInfo}
                  </table>
             </div>
 

@@ -33,7 +33,8 @@ async function main() {
 
     // 5. Generate COSE
     const binary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
-        kid: "iss-ininjo-p384"
+        kid: "iss-ininjo-p384",
+        useLtvMock: true
     });
 
     const outputPath = path.resolve(__dirname, 'ininjo.cose');
