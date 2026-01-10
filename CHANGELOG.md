@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.5] - 2026-01-10
+
+### Features
+- **Ininjo (Power of Attorney)**:
+  - **Compliance**: Fully aligned schema and layout with Digital Agency's official specifications (Law enforcement examples).
+  - **Viewer**: Enhanced rendering to support "Analysis Display Example" layout, including provider info and signature verification status.
+  - **Security**: Upgraded to **P-384** curve for higher security and implemented flexible curve detection in Viewer.
+- **CIV / Passport**:
+  - **EAC/PACE**: Hardened PACE protocol logic and fixed synchronization issues between controller and mock.
+  - **ZKP**: Added circuit prototypes for privacy-preserving passport verification (Age Verification etc.).
+
+## [0.3.4] - 2026-01-09
+
+### Features
+- **SCAC (Self-Hosted Crypto Account Credential)**:
+  - **New Credential**: Implemented SCAC for proving ownership of crypto accounts across multiple chains without revealing wallet addresses.
+  - **Privacy**: Integrated **BBS+ Signature** (BBS 2023) and **Selective Disclosure** flow for unlinkable presentations.
+  - **Protocol**: Implemented full `bbs-signature-2023` suite and ZKP generation for identity proofs.
+- **CIV Security**:
+  - **Passive Authentication**: Implemented full hash verification for EF.SOD and Data Groups (DG1/DG2/DG13 etc.).
+  - **Mock**: Completed robust mock framework for JPKI, Passport, and Drivers License to simulate various edge cases.
+
 ## [0.3.3] - 2026-01-08
 
 ### Features
