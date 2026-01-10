@@ -43,6 +43,19 @@ fn test_cli_id_demo_passport_verify() {
 }
 
 #[test]
+fn test_cli_id_demo_mynamenkyo() {
+    let mut cmd = Command::cargo_bin("civ").unwrap();
+    cmd.arg("--demo")
+        .arg("id")
+        .arg("--type=mynamenkyo")
+        .arg("--pin=1234")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Card Type: MyNaMenkyo"))
+        .stdout(predicate::str::contains("ID Number: 123456789012"));
+}
+
+#[test]
 fn test_cli_jpki_cert() {
     let mut cmd = Command::cargo_bin("civ").unwrap();
     cmd.arg("--demo")

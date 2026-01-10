@@ -1,4 +1,4 @@
-# JPKI (My Number Card) APDU specs
+# My Number Card (JPKI) Specification
 
 ## 1. System Overview
 - **Standards:** ISO/IEC 14443 Type B (NFC), ISO/IEC 7816-4 (APDU)

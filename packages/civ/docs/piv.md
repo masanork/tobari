@@ -1,4 +1,4 @@
-# PIV (Personal Identity Verification) APDU specs
+# Personal Identity Verification (PIV) Specification
 
 ## 1. System Overview
 - **Standards:** NIST SP 800-73-5, ISO/IEC 7816-4

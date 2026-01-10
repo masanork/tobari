@@ -1,4 +1,4 @@
-# Malaysia MyKad APDU specs
+# Malaysia MyKad Specification
 
 ## 1. System Overview
 - **Standards:** ISO/IEC 7816-4, ISO 14443-3A (Contactless/Touch 'n Go)
