@@ -229,7 +229,8 @@ impl BacSession {
             mac_input.extend_from_slice(val);
         }
 
-        let expected_mac = retail_mac(&self.k_mac, &mac_input)?;
+        let mac_input_padded = pad_iso9797(&mac_input, 8);
+        let expected_mac = retail_mac(&self.k_mac, &mac_input_padded)?;
         if expected_mac.as_slice() != do8e.as_slice() {
             return Err(anyhow!("SM Command MAC Mismatch"));
         }
@@ -498,8 +499,8 @@ pub fn mock_mutual_auth_response(k_enc: &[u8; 16], k_mac: &[u8; 16], cmd_data: &
     data.extend_from_slice(&mac);
 
     let mut ssc_bytes = [0u8; 8];
-    ssc_bytes[0..4].copy_from_slice(&rnd_ifd[4..8]);
-    ssc_bytes[4..8].copy_from_slice(&rnd_icc[4..8]);
+    ssc_bytes[0..4].copy_from_slice(&rnd_icc[4..8]);
+    ssc_bytes[4..8].copy_from_slice(&rnd_ifd[4..8]);
     let ssc = u64::from_be_bytes(ssc_bytes);
 
     Ok((data, ssc))

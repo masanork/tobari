@@ -16,7 +16,6 @@ fn test_cli_id_demo_jpki() {
 }
 
 #[test]
-#[ignore]
 fn test_cli_id_demo_passport() {
     let mut cmd = Command::cargo_bin("civ").unwrap();
     cmd.arg("--demo")
@@ -30,7 +29,6 @@ fn test_cli_id_demo_passport() {
 }
 
 #[test]
-#[ignore]
 fn test_cli_id_demo_passport_verify() {
     let mut cmd = Command::cargo_bin("civ").unwrap();
     cmd.arg("--demo")

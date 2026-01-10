@@ -347,6 +347,19 @@ impl<R: CardReader> IdentityController for PassportController<R> {
     }
 
     async fn verify(&mut self) -> Result<bool> {
+        // Perform Access Control if not already established
+        if self.secure_session.is_none() {
+            if let Some(can) = self.can.clone() {
+                self.select_ep_ap().await?;
+                self.perform_pace(&can).await?;
+            } else if let Some(mrz) = self.mrz.clone() {
+                self.select_ep_ap().await?;
+                self.perform_bac(&mrz).await?;
+            } else {
+                let _ = self.select_ep_ap().await;
+            }
+        }
+
         let mut dgs = HashMap::new();
         if let Ok(dg1) = self.read_dg1().await {
             dgs.insert(1, dg1);
