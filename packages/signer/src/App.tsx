@@ -44,11 +44,12 @@ function App() {
   };
 
   const handleRegister = async () => {
-    setStatus("Registering credential... Please touch your device.");
+    setStatus("Registering hardware-bound key... Please touch your device.");
     setError(null);
     try {
-      const credId = await invoke<string>("perform_register");
-      setStatus(`Registered. Credential ID: ${credId.substring(0, 10)}... Now sign.`);
+      const responseStr = await invoke<string>("perform_register");
+      const response = JSON.parse(responseStr);
+      setStatus(`Key registered! ID: ${response.credentialId.substring(0, 10)}... You can now sign.`);
     } catch (e) {
       setError("Registration failed: " + e);
       setStatus("Error");
