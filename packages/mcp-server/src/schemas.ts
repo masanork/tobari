@@ -59,6 +59,12 @@ export const ListAvailableDocumentsSchema = z.object({
     rootPath: z.string().optional().describe("Optional path to scan. Defaults to the Tobari examples directory."),
 });
 
+export const GenerateExampleDocumentSchema = z.object({
+    exampleName: z.string().describe("Name of the example directory (e.g., 'juminhyo', 'bank-cert', 'service-request')"),
+    pqc: z.boolean().optional().describe("Enable PQC (Post-Quantum Cryptography) signatures (adds --pqc flag)"),
+    encrypt: z.boolean().optional().describe("Enable encryption (adds --encrypt flag)"),
+});
+
 export const GeneratePassportZkpInputSchema = z.object({
     path: z.string().describe("Path to the Passport Tobari file"),
     ageThreshold: z.number().default(18).describe("Age threshold to prove (default: 18)"),

@@ -17,6 +17,30 @@ Large Language Models (LLMs) are excellent at processing text, but they cannot i
 - **Signature Verification**: Tools for the AI to check if the document integrity is maintained.
 - **Presentation Creation**: Instruct the AI to generate a sub-credential (Verifiable Presentation) containing only necessary fields.
 
+## Tools Reference
+
+The server exposes two categories of tools: **Core Tools** for handling credentials, and **Demo Tools** for development and simulation.
+
+### Core Tools (Business Logic)
+| Tool Name | Description |
+| :--- | :--- |
+| `read_tobari_file` | Reads and parses a Tobari file (.cose/.html). Verifies issuer signatures if a key is provided. |
+| `create_presentation` | Creates a selective disclosure VP (Verifiable Presentation) from a document. |
+| `verify_presentation` | Verifies a VP, checking both Issuer and Device (Holder) signatures. Supports PQC. |
+| `analyze_service_request` | Analyzes a Service Request file to understand what credentials are required. |
+| `sign_with_jpki` | Signs data using a physical My Number Card (macOS/Windows/Linux). |
+| `read_mynumber` | Reads My Number from a physical card. |
+| `read_photo` | Reads the face photo from a physical card. |
+
+### Development & Demo Tools
+These tools are prefixed with `demo_` and are intended for testing, prototyping, and simulating ecosystem actors.
+
+| Tool Name | Description |
+| :--- | :--- |
+| `demo_list_examples` | Lists sample documents and keys available in the project's `examples/` directory. |
+| `demo_generate_example` | Runs generation scripts (e.g., `gen-tobari.ts`) to create fresh sample data. Supports `--pqc` and `--encrypt`. |
+| `demo_start_server` | Starts a local web server (port 22081) to simulate an administrative submission portal. |
+
 ## Getting Started
 
 ### Installation
@@ -47,9 +71,17 @@ The MCP server never shares the user's private keys or full raw documents with t
 This demo shows how to attach an ML-DSA-65 countersignature on the issuer side and verify it via `verify_presentation`.
 
 ### 1) Generate a PQC-signed credential
-```bash
-bun examples/juminhyo/gen-tobari.ts --pqc
+You can ask the Agent to do this using `demo_generate_example`:
+```json
+{
+  "name": "demo_generate_example",
+  "arguments": {
+    "exampleName": "juminhyo",
+    "pqc": true
+  }
+}
 ```
+(Or manually run: `bun examples/juminhyo/gen-tobari.ts --pqc`)
 
 This creates:
 - `examples/juminhyo/juminhyo.cose`

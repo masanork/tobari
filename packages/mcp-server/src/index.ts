@@ -12,9 +12,13 @@ import {
     handleAssemblePresentation,
     handleVerifyPresentation,
     handleAnalyzeServiceRequest,
-    handleListAvailableDocuments,
     handleGeneratePassportZkpInput
 } from "./tools/tobari.js";
+import {
+    handleDemoListExamples,
+    handleDemoGenerateExample,
+    handleDemoStartServer
+} from "./tools/demo.js";
 import {
     handleSignWithJpki,
     handleReadMyNumber,
@@ -25,7 +29,6 @@ import {
     handleSignWithWebAuthn,
     handleRegisterWebAuthn
 } from "./tools/webauthn.js";
-import { handleStartDemoServer } from "./tools/demo_submission.js";
 
 const server = new Server(
     {
@@ -177,13 +180,39 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 }
             },
             {
-                name: "list_available_documents",
-                description: "Lists available Tobari documents and service requests found in the project's examples or specified directory. Use this to discover files without asking the user for paths.",
+                name: "demo_list_examples",
+                description: "Lists available Tobari example documents and service requests found in the project's examples directory. Useful for discovering test data.",
                 inputSchema: {
                     type: "object",
                     properties: {
-                        rootPath: { type: "string", description: "Root directory to scan (optional)" }
+                        rootPath: { type: "string", description: "Optional path to scan. Defaults to the Tobari examples directory." }
                     }
+                }
+            },
+            {
+                name: "demo_generate_example",
+                description: "Generates a sample Tobari document by running the generation script in the specified example directory. Use this to prepare data for demos.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        exampleName: { type: "string", description: "Name of the example directory (e.g., 'juminhyo', 'bank-cert')" },
+                        pqc: { type: "boolean", description: "Enable PQC (Post-Quantum Cryptography) signatures (adds --pqc flag)" },
+                        encrypt: { type: "boolean", description: "Enable encryption (adds --encrypt flag)" }
+                    },
+                    required: ["exampleName"]
+                }
+            },
+            {
+                name: "generate_example_document",
+                description: "Generates a sample Tobari document by running the generation script in the specified example directory.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        exampleName: { type: "string", description: "Name of the example directory (e.g., 'juminhyo', 'bank-cert')" },
+                        pqc: { type: "boolean", description: "Enable PQC (Post-Quantum Cryptography) signatures (adds --pqc flag)" },
+                        encrypt: { type: "boolean", description: "Enable encryption (adds --encrypt flag)" }
+                    },
+                    required: ["exampleName"]
                 }
             },
             {
@@ -289,7 +318,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 }
             },
             {
-                name: "start_demo_server",
+                name: "demo_start_server",
                 description: "Starts a local demo server (submission portal) on port 22081. This server accepts VP submissions and displays a 'Success' screen. Returns the server URL.",
                 inputSchema: {
                     type: "object",
@@ -314,8 +343,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleVerifyPresentation(request.params.arguments);
         case "analyze_service_request":
             return handleAnalyzeServiceRequest(request.params.arguments);
-        case "list_available_documents":
-            return handleListAvailableDocuments(request.params.arguments);
+        case "demo_list_examples":
+            return handleDemoListExamples(request.params.arguments);
+        case "demo_generate_example":
+            return handleDemoGenerateExample(request.params.arguments);
+        case "demo_start_server":
+            return handleDemoStartServer(request.params.arguments);
         case "generate_passport_zkp_input":
             return handleGeneratePassportZkpInput(request.params.arguments);
         case "sign_with_webauthn":
@@ -330,8 +363,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleReadBasicInfo(request.params.arguments);
         case "read_photo":
             return handleReadPhoto(request.params.arguments);
-        case "start_demo_server":
-            return handleStartDemoServer(request.params.arguments);
+        case "demo_start_server": // Deprecated alias if needed? No, clean break.
+            // Support legacy name just in case? No, strict rename.
+            return handleDemoStartServer(request.params.arguments);
         default:
             throw new Error(`Tool not found: ${request.params.name}`);
     }
