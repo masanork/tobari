@@ -18,6 +18,21 @@ class PassportKDF {
         return (SymmetricKey(data: kEnc), SymmetricKey(data: kMac))
     }
     
+    /// Derives Kpi (Password Key) for PACE from MRZ or CAN
+    static func derivePaceKey(password: String, isCan: Bool = false) -> SymmetricKey {
+        // 1. Calculate SHA-1 hash of the password
+        // Password is MRZ (part) or CAN (6 digits)
+        var data = password.data(using: .utf8)!
+        
+        // 2. Map password to Kpi
+        // For PACE with MRZ/CAN, we use the specific counter 00000003
+        var seedData = Data(Insecure.SHA1.hash(data: data))
+        seedData = seedData.prefix(16)
+        
+        let kPace = deriveKey(seed: seedData, counter: [0x00, 0x00, 0x00, 0x03])
+        return SymmetricKey(data: kPace)
+    }
+    
     private static func deriveKey(seed: Data, counter: [UInt8]) -> Data {
         var data = seed
         data.append(contentsOf: counter)
