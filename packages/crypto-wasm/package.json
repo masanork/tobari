@@ -14,7 +14,6 @@
         "test": "cargo test"
     },
     "devDependencies": {
-        "wasm-pack": "^0.12.0",
         "typescript": "^5.0.0"
     }
 }
