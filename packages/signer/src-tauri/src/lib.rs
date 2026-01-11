@@ -661,7 +661,7 @@ fn bbs_generate_key() -> Result<BbsKeyPair, SignerError> {
     })
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run() {
     let args = Cli::parse();
 
