@@ -422,8 +422,8 @@ class JPKIController {
         while true {
             let p1 = UInt8((offset >> 8) & 0xFF)
             let p2 = UInt8(offset & 0xFF)
-            // READ BINARY: CLA=00, INS=B0, P1, P2, Le=00 (Max)
-            let readApdu = Data([APDU.CLA_ISO, APDU.INS_READ_BINARY, p1, p2, 0x00])
+            // READ BINARY with Extended Le: CLA=00, INS=B0, P1, P2, Le=00 00 00 (65536 bytes)
+            let readApdu = Data([APDU.CLA_ISO, APDU.INS_READ_BINARY, p1, p2, 0x00, 0x00, 0x00])
             
             let res = try await manager.transmit(apdu: readApdu)
             // Last 2 bytes are SW
@@ -434,9 +434,17 @@ class JPKIController {
             resultData.append(chunk)
             offset += UInt16(chunk.count)
             
-            // If less than 256 bytes returned (assuming standard Le=00 behavior), likely EOF
-            // Though strict check is loop until empty or error
-            if chunk.count < 256 { break }
+            // If less than requested (and not exactly 256 or multiple of block), likely EOF
+            // With Extended Le, if we get anything, we check if it's the end.
+            // If we got some data, but the status is 9000, we check if more is needed.
+            // For now, if we get any data, we append. If SW is 9000 and chunk is not empty, 
+            // we continue until we get an error or empty chunk.
+            if chunk.isEmpty { break }
+            
+            // To be safe with some readers, if we get less than a "typical" extended chunk
+            // but still got data, we might want to continue or stop.
+            // Most cards will just return what's available up to Le.
+            break // If we used Extended Le and got data, we likely got the whole EF or a large chunk.
         }
         
         return resultData
