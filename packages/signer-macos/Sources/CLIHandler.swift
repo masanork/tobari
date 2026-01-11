@@ -79,9 +79,75 @@ class CLIHandler {
                 exit(1)
             }
         }
+
+        if args.contains("--read-face-photo") {
+             guard let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --read-face-photo --pin <PIN>\n", stderr)
+                exit(1)
+            }
+            let pin = args[pinIndex + 1]
+            
+            fputs("Reading Face Photo from JPKI Card...\n", stderr)
+            let manager = SmartCardManager()
+            let jpki = JPKIController(manager: manager)
+            
+            do {
+                let photoData = try await jpki.readFacePhoto(pin: pin)
+                let photoBase64 = photoData.base64EncodedString()
+                print("{\"photo\": \"\(photoBase64)\"}")
+                exit(0)
+            } catch {
+                fputs("Error: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
         
-        // JPKI Signing is temporarily disabled due to Extended APDU compatibility issues on macOS
-        // if args.contains("--sign-jpki") { ... }
+        if args.contains("--sign-jpki") {
+             guard let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --sign-jpki --pin <PIN> --request <JSON>\n", stderr)
+                exit(1)
+            }
+            let pin = args[pinIndex + 1]
+
+            guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --sign-jpki --pin <PIN> --request <JSON>\n", stderr)
+                exit(1)
+            }
+            
+            let jsonStr = args[reqIndex + 1]
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let request = try? JSONDecoder().decode(SignRequest.self, from: jsonData) else {
+                fputs("Invalid JSON request\n", stderr)
+                exit(1)
+            }
+            
+            guard let challengeData = fromBase64URL(request.challenge) else {
+                fputs("Invalid Base64URL challenge\n", stderr)
+                exit(1)
+            }
+
+            fputs("Signing with JPKI Card...\n", stderr)
+            let manager = SmartCardManager()
+            let jpki = JPKIController(manager: manager)
+
+            do {
+                let signature = try await jpki.computeAuthSignature(pin: pin, data: challengeData)
+                // Return signature and dummy public key
+                let response = SignResponse(
+                    signature: signature.base64EncodedString()
+                        .replacingOccurrences(of: "+", with: "-")
+                        .replacingOccurrences(of: "/", with: "_")
+                        .replacingOccurrences(of: "=", with: ""),
+                    publicKey: "" // JPKI Cert extraction not yet implemented in CLI
+                )
+                let responseData = try JSONEncoder().encode(response)
+                print(String(data: responseData, encoding: .utf8)!)
+                exit(0)
+            } catch {
+                fputs("Error: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
 
         guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
             fputs("Usage: tobari-signer-macos --request '<json>' | --scan-card | --read-attributes --pin <PIN> | --read-mynumber --pin <PIN>\n", stderr)

@@ -1,10 +1,11 @@
 # Tobari Action Board
 
-**Last Updated:** 2026-01-10  
+**Last Updated:** 2026-01-11
 **Scope:** Tobari全体（MCP/Signer/SCAC/Compliance/civ）
 
 ## Now (今月)
 - [ ] **MCP ↔ Tobari Signer（Tauri/FIDO）結合の完了**
+  - [x] **macOS Native Integration**: `mcp-server` が `signer-macos` を直接呼び出し、JPKI署名/読取（基本4情報・マイナンバー・顔写真）をPCSCなしで実行可能に
   - [ ] `packages/mcp-server/src/tools/tobari.ts` の外部署名フローを実機で動作確認
   - [ ] `packages/signer` のCLI引数/出力JSONの仕様を明文化
   - [ ] macOS/Windowsでのビルド導線と`TOBARI_SIGNER_PATH`導入手順を整備

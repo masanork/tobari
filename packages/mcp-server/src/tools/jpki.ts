@@ -2,7 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { spawn } from "child_process";
-import { DEFAULT_MYNA_PATH } from "../utils.js";
+import { DEFAULT_MYNA_PATH, DEFAULT_SIGNER_MACOS_PATH } from "../utils.js";
 import {
     SignWithJPKISchema,
     ReadMyNumberSchema,
@@ -31,11 +31,62 @@ function resolveMynaPath(p: string): string {
     return p.startsWith("~") ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
+function isMacOS(): boolean {
+    return process.platform === 'darwin';
+}
+
+function toBase64Url(buffer: Buffer): string {
+    return buffer.toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+}
+
 export async function handleSignWithJpki(toolArgs: any) {
     try {
         const args = SignWithJPKISchema.parse(toolArgs);
-        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
+        
+        // MacOS Native path
+        if (isMacOS() && !args.mynaPath) {
+             const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+             const dataBuffer = Buffer.from(args.data, 'base64');
+             const challenge = toBase64Url(dataBuffer);
+             
+             // Construct Request JSON
+             const requestJson = JSON.stringify({
+                 challenge: challenge,
+                 rp_id: "mcp-server-cli", // Dummy
+                 message: "Sign via MCP"
+             });
+             
+             const cmdArgs = ["--sign-jpki", "--pin", args.pin, "--request", requestJson];
+             const output = await runCivCommand(signerPath, cmdArgs);
+             const result = JSON.parse(output); // { signature: "base64url", publicKey: "" }
+             
+             // Convert Signature back to Base64 (Standard) if needed, but MCP usually handles strings.
+             // JPKI spec signature is binary. Base64 is safe.
+             // signer-macos returns Base64URL.
+             let sigB64 = result.signature
+                 .replace(/-/g, '+')
+                 .replace(/_/g, '/');
+             while (sigB64.length % 4 !== 0) sigB64 += '=';
+             
+             return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            signature: sigB64,
+                            format: args.format || "der",
+                            digest: args.digest || "sha256",
+                            detached: args.detached !== false
+                        }, null, 2),
+                    },
+                ],
+            };
+        }
 
+        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
         const dataBuffer = Buffer.from(args.data, 'base64');
         const tmpDir = os.tmpdir();
         const inputFile = path.join(tmpDir, `civ-input-${Date.now()}.bin`);
@@ -51,22 +102,6 @@ export async function handleSignWithJpki(toolArgs: any) {
 
             const signatureBuffer = await fs.readFile(outputFile);
             const signatureBase64 = signatureBuffer.toString('base64');
-
-            // Civ output is raw signature bytes (or hex? file output is raw bytes in my impl).
-            // Myna output was CMS/DER. Civ currently just signs the hash (raw RS or DER encoded?).
-            // JpkiController::compute_digital_signature returns `Vec<u8>`.
-            // Inside JpkiController: `sign_data` calls `card.transmit(COMPUTE_DIGITAL_SIGNATURE)`.
-            // The card returns raw signature usually?
-            // Actually `sign_data` output depends on card.
-            // JPKI spec says APDU response is the signature.
-            // `rawEcdsaToDer` might be needed if it's raw P-256 (64 bytes).
-            // JpkiController::sign_data just returns res.
-            // But we can assume it's usable.
-
-            // Format "der" or "pem" requested. myna handled this.
-            // Civ just outputs what the card returns.
-            // We might need post-processing here if strict format is required by requester.
-            // For now, return what we got.
 
             return {
                 content: [
@@ -96,8 +131,24 @@ export async function handleSignWithJpki(toolArgs: any) {
 export async function handleReadMyNumber(toolArgs: any) {
     try {
         const args = ReadMyNumberSchema.parse(toolArgs);
-        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
+        
+        if (isMacOS() && !args.mynaPath) {
+             const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+             const cmdArgs = ["--read-mynumber", "--pin", args.pin];
+             const output = await runCivCommand(signerPath, cmdArgs);
+             const result = JSON.parse(output); // { myNumber: "..." }
+             
+             return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({ mynumber: result.myNumber }, null, 2),
+                    },
+                ],
+            };
+        }
 
+        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
         const cmdArgs = ["jpki", "num", "--pin", args.pin, "--json"];
         if (args.demo) cmdArgs.unshift("--demo");
 
@@ -123,19 +174,37 @@ export async function handleReadMyNumber(toolArgs: any) {
 export async function handleReadBasicInfo(toolArgs: any) {
     try {
         const args = ReadBasicInfoSchema.parse(toolArgs);
-        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
+        
+        if (isMacOS() && !args.mynaPath) {
+             const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+             const cmdArgs = ["--read-attributes", "--pin", args.pin];
+             const output = await runCivCommand(signerPath, cmdArgs);
+             const result = JSON.parse(output); // Swift keys: name, address, birthDate, gender
+             
+             // Normalize to match Civ output (snake_case)
+             const normalized = {
+                 name: result.name,
+                 address: result.address,
+                 birth_date: result.birthDate,
+                 gender: result.gender
+             };
+             
+             return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify(normalized, null, 2),
+                    },
+                ],
+            };
+        }
 
+        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
         const cmdArgs = ["jpki", "attr", "--pin", args.pin, "--json"];
         if (args.demo) cmdArgs.unshift("--demo");
 
         const jsonOutput = await runCivCommand(civPath, cmdArgs);
         const info = JSON.parse(jsonOutput);
-
-        // Remove empty photo field if present to keep it clean (or map fields if needed)
-        // Civ BasicInfo: name, address, birth_date, gender, face_photo
-        // Myna keys were: name, address, birth, sex, name_image, ...
-        // We should probably normalize or just return what civ gives if the consumer adapts.
-        // Given this is a refactor, we stick to what civ gives.
 
         return {
             content: [
@@ -156,17 +225,25 @@ export async function handleReadBasicInfo(toolArgs: any) {
 export async function handleReadPhoto(toolArgs: any) {
     try {
         const args = ReadPhotoSchema.parse(toolArgs);
+        
+        if (isMacOS() && !args.mynaPath) {
+             const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+             const cmdArgs = ["--read-face-photo", "--pin", args.pin];
+             const output = await runCivCommand(signerPath, cmdArgs);
+             const result = JSON.parse(output); // { photo: "base64" }
+             
+             return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({ photo: result.photo, format: "jpeg2000" }, null, 2),
+                    },
+                ],
+            };
+        }
+
         const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
-
-        const cmdArgs = ["jpki", "attr", "--pin", args.pin, "--json"]; // photo implies we want photo but --json handles output
-        // Wait, civ requires --photo <path> to output file?
-        // Or if we use --json, `face_photo` is included in JSON as base64.
-        // We just need to trigger photo extraction.
-        // My implementation in civ.rs:
-        // if photo.is_some() || json { ... attempts photo extraction ... }
-        // So passing --json is enough to trigger extraction and get base64 in JSON.
-        // We don't need --photo <path> if we just want JSON response.
-
+        const cmdArgs = ["jpki", "attr", "--pin", args.pin, "--json"];
         if (args.demo) cmdArgs.unshift("--demo");
 
         const jsonOutput = await runCivCommand(civPath, cmdArgs);

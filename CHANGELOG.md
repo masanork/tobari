@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.9] - 2026-01-11
+
+### Features
+- **Signer (macOS)**:
+  - **Native JPKI Support**: Fully implemented JPKI signing, My Number reading, and Face Photo retrieval using macOS **CryptoTokenKit**.
+  - **Stability**: Replaced unstable PCSC calls with native system APIs to resolve Extended APDU issues on macOS.
+  - **Testing**: Added comprehensive mock-based unit tests for all JPKI operations in `signer-macos`.
+- **MCP Server**:
+  - **Smart Platform Detection**: Automatically detects macOS environment and switches to the native `signer-macos` tool for JPKI operations.
+  - **Seamless Integration**: Unified JPKI tool interfaces (`sign_with_jpki`, `read_mynumber`, `read_photo`) to work transparently across platforms (Native on macOS, `civ` on Linux/Windows).
+
 ## [0.3.8] - 2026-01-10
 
 ### Features
