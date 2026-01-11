@@ -1,6 +1,6 @@
 import * as path from "path";
 import * as fs from "fs/promises";
-import { decryptHPKE, deriveHPKEKeyPair } from "@tobari/crypto/hpke";
+import { decryptHPKE, decryptHPKEHybrid, deriveHPKEKeyPair } from "@tobari/crypto/hpke";
 
 export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
 export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/civ");
@@ -8,6 +8,7 @@ export const DEFAULT_SIGNER_MACOS_PATH = path.join(PROJECT_ROOT, "packages/signe
 
 const DEMO_HPKE_SECRET = "tobari-demo-secret-key-32-bytes-long!!";
 const DEMO_HPKE_INFO = "tobari-storage-v1";
+const DEMO_PQC_PRIVATE_KEY_PATH = path.join(PROJECT_ROOT, "examples/juminhyo/recipient-pqc-private-key.json");
 
 /**
  * Helper to read a Tobari file (HTML or COSE) and return its binary buffer.
@@ -111,6 +112,24 @@ async function decryptIfNeeded(input: Uint8Array): Promise<Uint8Array> {
     const info = new TextEncoder().encode(DEMO_HPKE_INFO);
     const secret = new TextEncoder().encode(DEMO_HPKE_SECRET);
     const keyPair = await deriveHPKEKeyPair(secret);
+
+    if (wrapper.alg === "HPKE-P256-MLKEM768-SHA256-AES128GCM") {
+        try {
+            const pqcContent = await fs.readFile(DEMO_PQC_PRIVATE_KEY_PATH, "utf-8");
+            const pqcJson = JSON.parse(pqcContent);
+            const pqcPrivateKey = new Uint8Array(Buffer.from(pqcJson.privateKey, "base64url"));
+            const plaintext = await decryptHPKEHybrid(
+                keyPair!.privateKey,
+                pqcPrivateKey,
+                ciphertext,
+                info
+            );
+            return new Uint8Array(plaintext);
+        } catch (e: any) {
+            throw new Error(`Missing or invalid PQC private key for hybrid decrypt: ${e.message}`);
+        }
+    }
+
     const plaintext = await decryptHPKE(keyPair!.privateKey, ciphertext, info);
     return new Uint8Array(plaintext);
 }
