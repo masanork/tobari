@@ -8,7 +8,9 @@
     "main": "./pkg/tobari_crypto_wasm.js",
     "types": "./pkg/tobari_crypto_wasm.d.ts",
     "scripts": {
-        "build": "wasm-pack build --target web --out-name tobari_crypto_wasm",
+        "build": "npm run build:core && npm run build:full",
+        "build:core": "wasm-pack build --target web --out-dir pkg/core --out-name tobari_crypto_wasm_core -- --no-default-features",
+        "build:full": "wasm-pack build --target web --out-dir pkg/full --out-name tobari_crypto_wasm_full -- --features pqc_dsa",
         "test": "cargo test"
     },
     "devDependencies": {
