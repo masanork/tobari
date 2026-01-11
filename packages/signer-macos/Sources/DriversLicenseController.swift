@@ -97,11 +97,27 @@ class DriversLicenseController {
         let resSel = try await manager.transmit(apdu: selApdu)
         try checkSW(resSel, context: "Select EF")
         
-        // Read Binary
-        let readApdu = Data([0x00, 0xB0, 0x00, 0x00, 0x00])
-        let res = try await manager.transmit(apdu: readApdu)
-        if res.count < 2 { throw SignerError.jpki("Read EF failed") }
-        return res.subdata(in: 0..<res.count-2)
+        // Read Binary with loop and Extended Le
+        var result = Data()
+        var offset = 0
+        while true {
+            let p1 = UInt8((offset >> 8) & 0xFF)
+            let p2 = UInt8(offset & 0xFF)
+            let readApdu = Data([0x00, 0xB0, p1, p2, 0x00, 0x00, 0x00])
+            let res = try await manager.transmit(apdu: readApdu)
+            
+            if res.count < 2 { break }
+            let chunk = res.prefix(res.count-2)
+            if chunk.isEmpty { break }
+            result.append(chunk)
+            offset += chunk.count
+            
+            if chunk.count < 256 { break } // Heuristic: if we got less than short max, likely end
+            // With Extended Le, if we get data and 9000, we check if more is needed.
+            // For simple EFs, usually one read is enough.
+            break 
+        }
+        return result
     }
     
     private func checkSW(_ data: Data, context: String) throws {

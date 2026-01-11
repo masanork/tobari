@@ -51,7 +51,9 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
 
       - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@tarpaulin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
 
       - name: Generate Code Coverage
         run: cargo tarpaulin --verbose --timeout 120 --out Xml
