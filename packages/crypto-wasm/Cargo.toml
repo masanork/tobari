@@ -28,3 +28,4 @@ pqc_dsa = ["dep:ml-dsa"]
 pqc_kem = ["dep:ml-kem", "dep:kem"]
 
 [package.metadata.wasm-pack.profile.release]
+wasm-opt = false
