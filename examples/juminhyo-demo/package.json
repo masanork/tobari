@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tobari/civ": "file:../../packages/civ/pkg",
+    "@tobari/civ": "workspace:*",
     "@tobari/codec": "workspace:*",
     "@tobari/crypto": "workspace:*",
     "react": "^18.3.1",
