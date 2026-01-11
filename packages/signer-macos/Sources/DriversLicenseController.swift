@@ -79,6 +79,9 @@ class DriversLicenseController {
         let expiryDate = tlvs.first?.findString(tag: 0x17, encoding: sjis) ?? "Unknown"
         let licenseNumber = tlvs.first?.findString(tag: 0x16, encoding: .ascii) ?? "Unknown"
         
+        // Tag 0x18: Color Class (e.g. "優良", "一般")
+        let colorClass = tlvs.first?.findString(tag: 0x18, encoding: sjis) ?? ""
+        
         return LicenseInfo(
             name: name,
             address: address,
@@ -86,7 +89,7 @@ class DriversLicenseController {
             licenseNumber: licenseNumber,
             issueDate: issueDate,
             expiryDate: expiryDate,
-            colorClass: "" // TODO: Extract from tag 0x18
+            colorClass: colorClass
         )
     }
     
