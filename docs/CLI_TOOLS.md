@@ -18,6 +18,12 @@ The primary CLI for processing schema-driven forms and generating machine-readab
 - **Signing**: Sign form data using ECDSA (P-384) or BBS+ signatures.
 - **Selective Disclosure**: Create SD-CBOR presentations from signed documents.
 
+### 3. `signer-macos` (Native Apple Integrator)
+A specialized tool for macOS that leverages Secure Enclave and native APIs.
+- **Passkey (WebAuthn)**: Register and sign using iCloud Keychain sync'ed credentials.
+- **Secure Enclave**: Hardware-bound signing and ECIES decryption.
+- **JPKI (CTK)**: Direct communication with My Number Cards via CryptoTokenKit.
+
 ## Installation
 
 ### From Source
@@ -26,12 +32,22 @@ The primary CLI for processing schema-driven forms and generating machine-readab
 cd packages/civ
 cargo install --path .
 
-# Install tobari processor
-bun install
-# (Linking/Alias configuration)
+# Install signer-macos
+cd packages/signer-macos
+./bin/build.sh # Or compile via swiftc manually
 ```
 
 ## Basic Usage
+
+### Passkey Registration (macOS)
+```bash
+tobari-signer-macos --register-passkey --request '{"rp_id":"example.com","challenge":"..."}'
+```
+
+### JPKI Digital Signature (macOS)
+```bash
+tobari-signer-macos --sign-jpki --pin <6-16 digits PIN> --type sign --request '{"challenge":"..."}'
+```
 
 ### Verify an Identity Card (Demo Mode)
 ```bash

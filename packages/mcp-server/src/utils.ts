@@ -6,6 +6,30 @@ export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).p
 export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/civ");
 export const DEFAULT_SIGNER_MACOS_PATH = path.join(PROJECT_ROOT, "packages/signer-macos/bin/tobari-signer-macos");
 
+/**
+ * Find the best available native signer binary.
+ */
+export function getNativeSignerPath(): string | undefined {
+    const possiblePaths = [
+        DEFAULT_SIGNER_MACOS_PATH,
+        path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/release/tobari-signer"),
+        path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
+        path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/debug/tobari-signer"),
+        path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/debug/tobari-signer.exe")
+    ];
+
+    const envPath = process.env.TOBARI_SIGNER_PATH;
+    if (envPath) return envPath;
+
+    // Direct check since fs.existsSync is fast
+    for (const p of possiblePaths) {
+        try {
+            if (fs.statSync(p).isFile()) return p;
+        } catch { }
+    }
+    return undefined;
+}
+
 const DEMO_HPKE_SECRET = "tobari-demo-secret-key-32-bytes-long!!";
 const DEMO_HPKE_INFO = "tobari-storage-v1";
 const DEMO_PQC_PRIVATE_KEY_PATH = path.join(PROJECT_ROOT, "examples/juminhyo/recipient-pqc-private-key.json");

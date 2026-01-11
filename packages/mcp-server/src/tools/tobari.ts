@@ -4,7 +4,7 @@ import { spawn } from "child_process";
 import { decode, encode, Decoder } from "cbor-x";
 import { verifyTobari, verifyPresentation } from "@tobari/codec/validator";
 import { createPresentation, signDeviceAuth, getDeviceAuthToBeSigned, assembleDeviceAuth } from "@tobari/codec/sd";
-import { readTobariFileAsBuffer, decodeSignatureInput, rawEcdsaToDer, PROJECT_ROOT, DEFAULT_SIGNER_MACOS_PATH } from "../utils.js";
+import { readTobariFileAsBuffer, decodeSignatureInput, rawEcdsaToDer, PROJECT_ROOT, DEFAULT_SIGNER_MACOS_PATH, getNativeSignerPath } from "../utils.js";
 import {
     ReadTobariFileSchema,
     CreatePresentationSchema,
@@ -387,44 +387,17 @@ export async function handleCreatePresentation(toolArgs: any) {
                     devicePrivateKey,
                     deviceAlg
                 );
-            } else {
-                const { toBeSigned, protectedHeaderBytes } = await getDeviceAuthToBeSigned(
-                    disclosedDoc.docType,
-                    deviceNameSpacesBytes,
-                    sessionTranscript,
-                    deviceAlg
-                );
-
-                const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
-                const possiblePaths = [
-                    DEFAULT_SIGNER_MACOS_PATH,
-                    path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer"),
-                    path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
-                    path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer"),
-                    path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer.exe")
-                ];
-
-                let signerPath = args.signerPath || process.env.TOBARI_SIGNER_PATH;
-                if (signerPath) {
-                    try {
-                        await fs.access(signerPath);
-                    } catch {
-                        signerPath = undefined;
-                    }
-                }
-
-                if (!signerPath) {
-                    for (const p of possiblePaths) {
-                        try {
-                            await fs.access(p);
-                            signerPath = p;
-                            break;
-                        } catch { }
-                    }
-                }
-
-                if (!signerPath && args.fallbackToEphemeral) {
-                    const keyPair = await crypto.subtle.generateKey(
+                            } else {
+                                const { toBeSigned, protectedHeaderBytes } = await getDeviceAuthToBeSigned(
+                                    disclosedDoc.docType,
+                                    deviceNameSpacesBytes,
+                                    sessionTranscript,
+                                    deviceAlg
+                                );
+            
+                                let signerPath = args.signerPath || getNativeSignerPath();
+            
+                                if (!signerPath && args.fallbackToEphemeral) {                    const keyPair = await crypto.subtle.generateKey(
                         { name: "ECDSA", namedCurve: "P-384" },
                         true,
                         ["sign"]
@@ -456,11 +429,11 @@ export async function handleCreatePresentation(toolArgs: any) {
                         user_verification: "preferred"
                     };
 
+                    const isMacSigner = signerPath === DEFAULT_SIGNER_MACOS_PATH;
                     const signArgs = isMacSigner 
-                        ? ["--request", JSON.stringify(signRequest)]
-                        : ["--request", JSON.stringify(signRequest)]; // Currently same for both, but could differ.
+                        ? ["--sign-passkey", "--request", JSON.stringify(signRequest)]
+                        : ["--request", JSON.stringify(signRequest)];
                     
-                    // On macOS, explicitly use keychain if using signer-macos
                     const spawnEnv = isMacSigner 
                         ? { ...process.env, TOBARI_SIGNER_USE_KEYCHAIN: "1" }
                         : process.env;
@@ -489,13 +462,27 @@ export async function handleCreatePresentation(toolArgs: any) {
 
                     const signatureBytes = new Uint8Array(Buffer.from(output.signature, 'base64url'));
 
-                    deviceAuth = await assembleDeviceAuth(
-                        protectedHeaderBytes,
-                        disclosedDoc.docType,
-                        deviceNameSpacesBytes,
-                        sessionTranscript,
-                        signatureBytes
-                    );
+                    if (output.authData && output.clientDataJSON) {
+                        const authDataBytes = new Uint8Array(Buffer.from(output.authData, 'base64url'));
+                        const { assembleWebAuthnDeviceAuth } = await import("@tobari/codec/sd");
+                        deviceAuth = await assembleWebAuthnDeviceAuth(
+                            protectedHeaderBytes,
+                            disclosedDoc.docType,
+                            deviceNameSpacesBytes,
+                            sessionTranscript,
+                            signatureBytes,
+                            authDataBytes,
+                            output.clientDataJSON
+                        );
+                    } else {
+                        deviceAuth = await assembleDeviceAuth(
+                            protectedHeaderBytes,
+                            disclosedDoc.docType,
+                            deviceNameSpacesBytes,
+                            sessionTranscript,
+                            signatureBytes
+                        );
+                    }
                 }
             }
 

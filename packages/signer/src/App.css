@@ -104,6 +104,50 @@ h1 {
   display: flex;
   gap: 1rem;
   justify-content: space-between;
+  align-items: flex-start;
+}
+
+.btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 2;
+}
+
+.card-input-section {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.card-input-section input {
+  flex: 1;
+  padding: 0.6em;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #111;
+  color: white;
+}
+
+.card-data-preview {
+  background: #2a2a2a;
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  text-align: left;
+  font-size: 0.9em;
+  border-left: 4px solid #24c8db;
+}
+
+.card-data-preview h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1.1em;
+  color: #24c8db;
+}
+
+.card-data-preview p {
+  margin: 0.2rem 0;
 }
 
 button {
@@ -114,12 +158,13 @@ button {
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: all 0.2s;
   flex: 1;
 }
 
 button:hover {
   border-color: #646cff;
+  filter: brightness(1.1);
 }
 
 button:disabled {
@@ -137,11 +182,17 @@ button:disabled {
   color: #fff;
 }
 
+.sign-btn.primary {
+  background-color: #24c8db;
+  color: #000;
+}
+
 .error-container {
   color: #ff6b6b;
   background: #3a1a1a;
   padding: 1rem;
   border-radius: 8px;
+  margin-bottom: 1rem;
 }
 
 @media (prefers-color-scheme: light) {
@@ -166,5 +217,14 @@ button:disabled {
   .error-container {
      background: #ffe0e0;
      color: #d00000;
+  }
+  .card-input-section input {
+    background: #fff;
+    border-color: #ccc;
+    color: #333;
+  }
+  .card-data-preview {
+    background: #f0f8ff;
+    color: #333;
   }
 }
