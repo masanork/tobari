@@ -31,9 +31,10 @@
   - [ ] Draft minimal Travel Rule interface.
 
 ### MCP Enhancements (Demo Automation)
-- [ ] **End-to-End Demo Support**
+- [x] **End-to-End Demo Support**
   - [x] Update `list_available_documents` to return issuer key paths (classic/pqc).
   - [x] Remove `generate_example_document` (build-time generation instead of MCP-triggered scripts).
+  - [x] Add VP preview metadata (sizes/docTypes/disclosed fields) for demo readability.
 
 ## 📅 Next (1-2 Months)
 
