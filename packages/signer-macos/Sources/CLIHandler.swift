@@ -156,11 +156,15 @@ class CLIHandler {
         }
         
         if args.contains("--read-mynumber") {
-             guard let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count else {
-                fputs("Usage: tobari-signer-macos --read-mynumber --pin <PIN>\n", stderr)
-                exit(1)
+            let pin: String
+            if let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count {
+                pin = args[pinIndex + 1]
+            } else {
+                guard let p = SecurityUtils.promptForPIN(title: "My Number Card", message: "Enter your 4-digit PIN for text input assistance") else {
+                    exit(1)
+                }
+                pin = p
             }
-            let pin = args[pinIndex + 1]
             
             debugLog("Reading My Number from JPKI Card...")
             let manager = SmartCardManager()
@@ -317,18 +321,30 @@ class CLIHandler {
         }
         
         if args.contains("--sign-jpki") {
-             guard let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count else {
+            let signType = args.contains("--type") ? args[args.firstIndex(of: "--type")! + 1] : "auth"
+            
+            let pin: String
+            if let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count {
+                pin = args[pinIndex + 1]
+            } else {
+                let msg = signType == "sign" ? "Enter your 6-16 character Digital Signature PIN" : "Enter your 4-digit PIN for User Authentication"
+                guard let p = SecurityUtils.promptForPIN(title: "JPKI Signature", message: msg) else {
+                    exit(1)
+                }
+                pin = p
+            }
+
+            guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
                 fputs("Usage: tobari-signer-macos --sign-jpki --pin <PIN> --request <JSON> [--type auth|sign]\n", stderr)
                 exit(1)
             }
-            let pin = args[pinIndex + 1]
-
-            guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
-                fputs("Usage: tobari-signer-macos --sign-jpki --pin <PIN> --request <JSON>\n", stderr)
+            
+            // Native UX: Ask for Touch ID before card access
+            let authenticated = await SecurityUtils.authenticateUser(reason: "Authenticate to sign with My Number Card")
+            if !authenticated {
+                fputs("Authentication failed or cancelled\n", stderr)
                 exit(1)
             }
-            
-            let signType = args.contains("--type") ? args[args.firstIndex(of: "--type")! + 1] : "auth"
             
             let jsonStr = args[reqIndex + 1]
             guard let jsonData = jsonStr.data(using: .utf8),
