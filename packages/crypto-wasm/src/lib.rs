@@ -9,6 +9,14 @@ use sha2::Sha256;
 use hkdf::Hkdf;
 use rand::prelude::*;
 use serde_json::json;
+use ml_dsa::{
+    MlDsa65,
+    KeyGen,
+    Signature as MlSignature,
+    SigningKey as MlSigningKey,
+    VerifyingKey as MlVerifyingKey
+};
+use ml_dsa::signature::{Signer, Verifier};
 
 #[wasm_bindgen]
 pub fn get_version() -> String {
@@ -83,4 +91,40 @@ pub fn derive_p256_keypair(seed: &[u8]) -> Result<Vec<u8>, JsValue> {
     let mut result = pk.to_sec1_bytes().to_vec();
     result.extend_from_slice(&sk.to_bytes());
     Ok(result)
+}
+
+// ML-DSA-65 (FIPS-204)
+#[wasm_bindgen]
+pub fn ml_dsa_65_generate_keypair() -> Result<Vec<u8>, JsValue> {
+    let mut rng = StdRng::from_entropy();
+    let kp = MlDsa65::key_gen(&mut rng);
+    let sk_bytes = kp.signing_key().encode();
+    let vk_bytes = kp.verifying_key().encode();
+
+    let mut out = Vec::with_capacity(sk_bytes.len() + vk_bytes.len());
+    out.extend_from_slice(sk_bytes.as_slice());
+    out.extend_from_slice(vk_bytes.as_slice());
+    Ok(out)
+}
+
+#[wasm_bindgen]
+pub fn ml_dsa_65_sign(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>, JsValue> {
+    let sk_array = <&ml_dsa::EncodedSigningKey<MlDsa65>>::try_from(private_key)
+        .map_err(|_| JsValue::from_str("Invalid private key length"))?;
+    let signing_key = MlSigningKey::<MlDsa65>::decode(sk_array);
+    let signature = signing_key.sign(message);
+    Ok(signature.encode().to_vec())
+}
+
+#[wasm_bindgen]
+pub fn ml_dsa_65_verify(public_key: &[u8], message: &[u8], signature_bytes: &[u8]) -> Result<bool, JsValue> {
+    let vk_array = <&ml_dsa::EncodedVerifyingKey<MlDsa65>>::try_from(public_key)
+        .map_err(|_| JsValue::from_str("Invalid public key length"))?;
+    let verifying_key = MlVerifyingKey::<MlDsa65>::decode(vk_array);
+
+    let sig_array = <&ml_dsa::EncodedSignature<MlDsa65>>::try_from(signature_bytes)
+        .map_err(|_| JsValue::from_str("Invalid signature length"))?;
+    let signature = MlSignature::<MlDsa65>::decode(sig_array)
+        .ok_or_else(|| JsValue::from_str("Invalid signature data"))?;
+    Ok(verifying_key.verify(message, &signature).is_ok())
 }

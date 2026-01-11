@@ -197,6 +197,8 @@ export async function handleCreatePresentation(toolArgs: any) {
             devicePrivateKey = keyPair.privateKey;
         }
 
+        const deviceAlg = args.deviceAlg ?? -35;
+
         for (const req of args.requests) {
             const filePath = req.path;
             const fileBuffer = await readTobariFileAsBuffer(filePath);
@@ -215,13 +217,15 @@ export async function handleCreatePresentation(toolArgs: any) {
                     disclosedDoc.docType,
                     deviceNameSpacesBytes,
                     sessionTranscript,
-                    devicePrivateKey
+                    devicePrivateKey,
+                    deviceAlg
                 );
             } else {
                 const { toBeSigned, protectedHeaderBytes } = await getDeviceAuthToBeSigned(
                     disclosedDoc.docType,
                     deviceNameSpacesBytes,
-                    sessionTranscript
+                    sessionTranscript,
+                    deviceAlg
                 );
 
                 let signerPath = process.env.TOBARI_SIGNER_PATH;

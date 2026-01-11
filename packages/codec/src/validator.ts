@@ -99,26 +99,27 @@ export async function verifyPresentation(
                     y = deviceKeyMap[-3] || deviceKeyMap['-3'];
                 }
 
-                                                                const jwk = {
-
-                                                                    kty: "EC", crv: "P-384", x: Buffer.from(x).toString('base64url'), y: Buffer.from(y).toString('base64url')
-
-                                                                };
-
-                                                                
-
-                                                                const deviceKey = await crypto.subtle.importKey(
-
-                                                
-
-                                
-
-                
-                    "jwk", jwk, { name: "ECDSA", namedCurve: "P-384" }, true, ["verify"]
-                );
-
                 const coseArray = decode(doc.deviceSigned.deviceAuth);
                 const [protectedHeaderBytes, _, payloadBytes, signature] = coseArray;
+                const protectedHeader = decode(protectedHeaderBytes);
+                const alg = protectedHeader instanceof Map ? protectedHeader.get(1) : protectedHeader[1];
+                const curve = alg === -7 ? "P-256" : "P-384";
+                const hashName = alg === -7 ? "SHA-256" : "SHA-384";
+
+                const jwk = {
+                    kty: "EC",
+                    crv: curve,
+                    x: Buffer.from(x).toString('base64url'),
+                    y: Buffer.from(y).toString('base64url')
+                };
+
+                const deviceKey = await crypto.subtle.importKey(
+                    "jwk",
+                    jwk,
+                    { name: "ECDSA", namedCurve: curve },
+                    true,
+                    ["verify"]
+                );
 
                 // 4. Verify Payload Content (DeviceAuthentication)
                 const deviceAuthPayload = decode(payloadBytes);
@@ -148,7 +149,7 @@ export async function verifyPresentation(
                 // console.error(`[VERIFY] docType=${doc.docType} sigLen=${signature.length} payloadLen=${payloadBytes.length}`);
 
                 result.deviceValid = await crypto.subtle.verify(
-                    { name: "ECDSA", hash: { name: "SHA-384" } },
+                    { name: "ECDSA", hash: { name: hashName } },
                     deviceKey,
                     signature,
                     toBeVerified as any

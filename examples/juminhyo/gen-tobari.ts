@@ -15,11 +15,8 @@ async function main() {
     const yamlDataPath = path.resolve(__dirname, 'juminhyo-data.yaml');
     const sampleData = yaml.load(fs.readFileSync(yamlDataPath, 'utf-8'));
 
-    const keyPair = await crypto.subtle.generateKey(
-        { name: "ECDSA", namedCurve: "P-384" },
-        true,
-        ["sign", "verify"]
-    );
+    const { privateKey: issuerPrivateKey } = await loadOrCreateIssuerKeyPair();
+    const devicePublicKey = await loadOrCreateDevicePublicKey();
 
     const encrypt = process.argv.includes('--encrypt') || isLockedBuild;
     let encryptionPublicKey: Uint8Array | undefined;
@@ -54,8 +51,9 @@ async function main() {
         }
     }
 
-    const binary = await generateSignedTobari(schemaYaml, sampleData, keyPair.privateKey, {
+    const binary = await generateSignedTobari(schemaYaml, sampleData, issuerPrivateKey, {
         kid: "iss-local-p384",
+        devicePublicKey,
         encryptionPublicKey,
         embeddedFont
     });
@@ -66,3 +64,59 @@ async function main() {
 }
 
 main().catch(console.error);
+
+async function loadOrCreateIssuerKeyPair(): Promise<{ privateKey: CryptoKey }> {
+    const issuerPrivKeyPath = path.resolve(__dirname, 'issuer-private-key.json');
+    const issuerPubKeyPath = path.resolve(__dirname, 'issuer-key.json');
+
+    if (fs.existsSync(issuerPrivKeyPath)) {
+        const jwk = JSON.parse(fs.readFileSync(issuerPrivKeyPath, 'utf-8'));
+        const privateKey = await crypto.subtle.importKey(
+            "jwk",
+            jwk,
+            { name: "ECDSA", namedCurve: "P-384" },
+            true,
+            ["sign"]
+        );
+        const pubJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, ext: true, key_ops: ["verify"] };
+        fs.writeFileSync(issuerPubKeyPath, JSON.stringify(pubJwk, null, 2));
+        return { privateKey };
+    }
+
+    const keyPair = await crypto.subtle.generateKey(
+        { name: "ECDSA", namedCurve: "P-384" },
+        true,
+        ["sign", "verify"]
+    );
+
+    const privateJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+    const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+    fs.writeFileSync(issuerPrivKeyPath, JSON.stringify(privateJwk, null, 2));
+    fs.writeFileSync(issuerPubKeyPath, JSON.stringify(publicJwk, null, 2));
+    return { privateKey: keyPair.privateKey };
+}
+
+async function loadOrCreateDevicePublicKey(): Promise<CryptoKey> {
+    const deviceKeyPath = path.resolve(__dirname, 'device-key-p256.json');
+
+    if (fs.existsSync(deviceKeyPath)) {
+        const jwk = JSON.parse(fs.readFileSync(deviceKeyPath, 'utf-8'));
+        const pubJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
+        return await crypto.subtle.importKey(
+            "jwk",
+            pubJwk,
+            { name: "ECDSA", namedCurve: "P-256" },
+            true,
+            ["verify"]
+        );
+    }
+
+    const keyPair = await crypto.subtle.generateKey(
+        { name: "ECDSA", namedCurve: "P-256" },
+        true,
+        ["sign", "verify"]
+    );
+    const privateJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+    fs.writeFileSync(deviceKeyPath, JSON.stringify(privateJwk, null, 2));
+    return keyPair.publicKey;
+}

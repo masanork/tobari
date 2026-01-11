@@ -3,7 +3,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, State};
 // Note: civ crate needs to be available. PcscReader is only available on native targets.
 #[cfg(not(target_arch = "wasm32"))]
 use civ::{JpkiController, PcscReader};
@@ -60,6 +60,7 @@ struct Cli {
 
 struct AppState {
     request: Mutex<Option<SignRequest>>,
+    allow_credentials: Mutex<Option<Vec<CredentialDescriptor>>>,
 }
 
 #[derive(Debug)]
@@ -80,51 +81,192 @@ fn get_assertion(
     rp_id: String,
     challenge_bytes: Vec<u8>,
 ) -> Result<AssertionResult, String> {
-    let mut manager = authenticator::Authenticator::new();
-    // Set timeout
-    // manager.set_timeout(...)
+    use authenticator::authenticatorservice::{AuthenticatorService, SignArgs};
+    use authenticator::ctap2::server::{
+        AuthenticationExtensionsClientInputs, PublicKeyCredentialDescriptor,
+        UserVerificationRequirement,
+    };
+    use authenticator::statecallback::StateCallback;
+    use std::sync::mpsc::channel;
+    use std::thread;
+    use std::time::Duration;
 
-    // Convert allow_credentials if present
+    let mut manager =
+        AuthenticatorService::new().map_err(|e| format!("Authenticator init error: {:?}", e))?;
+    manager.add_detected_transports();
+
     let allowed_creds = request
         .allow_credentials
         .as_ref()
         .map(|creds| {
             creds
                 .iter()
-                .map(|c| authenticator::state::Descriptor {
-                    media_type: authenticator::state::MediaType::PublicKey,
+                .map(|c| PublicKeyCredentialDescriptor {
                     id: URL_SAFE_NO_PAD.decode(&c.id).unwrap_or_default(),
-                    transports: None,
+                    transports: Vec::new(),
                 })
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 
-    // This is a simplified call. `authenticator` crate usually requires a callback for user presence.
-    // For platform authenticators (TouchID/Windows Hello), it might just work or require specific flags.
-
-    // NOTE: As of `authenticator` 0.4/0.5, direct platform support might be tricky without a UI callback.
-    // We will try `interactive` mode if available.
-
-    let flags = authenticator::state::GetAssertionFlags {
-        user_presence: true,
-        user_verification: matches!(request.user_verification.as_deref(), Some("required")),
-        ..Default::default()
+    let user_verification_req = match request.user_verification.as_deref() {
+        Some("required") => UserVerificationRequirement::Required,
+        Some("discouraged") => UserVerificationRequirement::Discouraged,
+        _ => UserVerificationRequirement::Preferred,
     };
 
-    // We rely on the `authenticator` crate's finding mechanism.
-    // In a real app, we might want to iterate transports.
-    // For now, let's try to get an assertion from any transport.
-    match manager.get_assertion(&rp_id, &challenge_bytes, &allowed_creds, flags, |_status| {
-        // println!("Status: {:?}", status);
-    }) {
-        Ok(assertion) => Ok(AssertionResult {
-            credential_id: assertion.credential_id,
-            authenticator_data: assertion.authenticator_data,
-            signature: assertion.signature,
-            user_handle: assertion.user_handle,
-        }),
+    let client_data_hash: [u8; 32] = challenge_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "Invalid client_data_hash length".to_string())?;
+
+    let ctap_args = SignArgs {
+        client_data_hash,
+        origin: format!("https://{}", rp_id),
+        relying_party_id: rp_id,
+        allow_list: allowed_creds,
+        user_verification_req,
+        user_presence_req: true,
+        extensions: AuthenticationExtensionsClientInputs::default(),
+        pin: None,
+        use_ctap1_fallback: false,
+    };
+
+    let (status_tx, status_rx) = channel();
+    thread::spawn(move || {
+        while let Ok(status) = status_rx.recv() {
+            eprintln!("[authenticator] status: {:?}", status);
+        }
+    });
+
+    let (sign_tx, sign_rx) = channel();
+    let callback = StateCallback::new(Box::new(move |rv| {
+        let _ = sign_tx.send(rv);
+    }));
+
+    let timeout_ms = 60_000;
+    manager
+        .sign(timeout_ms, ctap_args, status_tx, callback)
+        .map_err(|e| format!("Authenticator sign error: {:?}", e))?;
+
+    let sign_result = sign_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|e| {
+            let _ = manager.cancel();
+            format!("Authenticator timed out: {:?}", e)
+        })?;
+
+    match sign_result {
+        Ok(assertion_result) => {
+            let assertion = assertion_result.assertion;
+            let credential_id = assertion
+                .credentials
+                .as_ref()
+                .map(|c| c.id.clone())
+                .unwrap_or_default();
+            Ok(AssertionResult {
+                credential_id,
+                authenticator_data: assertion.auth_data.to_vec(),
+                signature: assertion.signature,
+                user_handle: assertion.user.map(|u| u.id),
+            })
+        }
         Err(e) => Err(format!("Authenticator error: {:?}", e)),
+    }
+}
+
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "macos", feature = "macos-authenticator"),
+    all(target_os = "linux", feature = "linux-authenticator")
+))]
+fn register_credential(
+    request: SignRequest,
+    rp_id: String,
+    client_data_hash: [u8; 32],
+) -> Result<Vec<u8>, String> {
+    use authenticator::authenticatorservice::{AuthenticatorService, RegisterArgs};
+    use authenticator::ctap2::server::{
+        AuthenticationExtensionsClientInputs, PublicKeyCredentialParameters,
+        PublicKeyCredentialUserEntity, ResidentKeyRequirement, RelyingParty,
+        UserVerificationRequirement,
+    };
+    use authenticator::statecallback::StateCallback;
+    use std::sync::mpsc::channel;
+    use std::thread;
+
+    let mut manager =
+        AuthenticatorService::new().map_err(|e| format!("Authenticator init error: {:?}", e))?;
+    manager.add_detected_transports();
+
+    let user_verification_req = match request.user_verification.as_deref() {
+        Some("required") => UserVerificationRequirement::Required,
+        Some("discouraged") => UserVerificationRequirement::Discouraged,
+        _ => UserVerificationRequirement::Preferred,
+    };
+
+    let rp = RelyingParty {
+        id: rp_id.clone(),
+        name: Some(rp_id.clone()),
+    };
+
+    let user = PublicKeyCredentialUserEntity {
+        id: Sha256::digest(rp_id.as_bytes()).to_vec(),
+        name: Some("tobari-user".to_string()),
+        display_name: Some("Tobari User".to_string()),
+    };
+
+    let pub_cred_params = vec![PublicKeyCredentialParameters::try_from(-7)
+        .map_err(|e| format!("COSE alg error: {:?}", e))?];
+
+    let ctap_args = RegisterArgs {
+        client_data_hash,
+        relying_party: rp,
+        origin: format!("https://{}", rp_id),
+        user,
+        pub_cred_params,
+        exclude_list: Vec::new(),
+        user_verification_req,
+        resident_key_req: ResidentKeyRequirement::Preferred,
+        extensions: AuthenticationExtensionsClientInputs::default(),
+        pin: None,
+        use_ctap1_fallback: false,
+    };
+
+    let (status_tx, status_rx) = channel();
+    thread::spawn(move || {
+        while let Ok(status) = status_rx.recv() {
+            eprintln!("[authenticator] status: {:?}", status);
+        }
+    });
+
+    let (reg_tx, reg_rx) = channel();
+    let callback = StateCallback::new(Box::new(move |rv| {
+        let _ = reg_tx.send(rv);
+    }));
+
+    let timeout_ms = 60_000;
+    manager
+        .register(timeout_ms, ctap_args, status_tx, callback)
+        .map_err(|e| format!("Authenticator register error: {:?}", e))?;
+
+    let reg_result = reg_rx
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .map_err(|e| {
+            let _ = manager.cancel();
+            format!("Authenticator register timed out: {:?}", e)
+        })?;
+
+    match reg_result {
+        Ok(attestation) => {
+            let cred_data = attestation
+                .att_obj
+                .auth_data
+                .credential_data
+                .ok_or("No credential data returned")?;
+            Ok(cred_data.credential_id)
+        }
+        Err(e) => Err(format!("Authenticator register error: {:?}", e)),
     }
 }
 
@@ -164,10 +306,15 @@ fn reject(app: AppHandle) {
 
 #[tauri::command]
 async fn perform_sign(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
-    let request = {
+    let mut request = {
         let lock = state.request.lock().map_err(|e| e.to_string())?;
         lock.clone().ok_or("No request found")?
     };
+    if let Ok(lock) = state.allow_credentials.lock() {
+        if let Some(creds) = lock.clone() {
+            request.allow_credentials = Some(creds);
+        }
+    }
 
     println!("Starting WebAuthn signing for RP ID: {}", request.rp_id);
 
@@ -211,6 +358,50 @@ async fn perform_sign(state: State<'_, AppState>, app: AppHandle) -> Result<(), 
     Ok(())
 }
 
+#[tauri::command]
+async fn perform_register(state: State<'_, AppState>) -> Result<String, String> {
+    let request = {
+        let lock = state.request.lock().map_err(|e| e.to_string())?;
+        lock.clone().ok_or("No request found")?
+    };
+
+    let rp_id = request.rp_id.clone();
+    let challenge_bytes = URL_SAFE_NO_PAD
+        .decode(&request.challenge)
+        .map_err(|e| e.to_string())?;
+
+    let origin = format!("https://{}", rp_id);
+    let client_data = serde_json::json!({
+        "type": "webauthn.create",
+        "challenge": request.challenge,
+        "origin": origin,
+        "crossOrigin": false
+    });
+    let client_data_json = client_data.to_string();
+    let client_data_hash = Sha256::digest(client_data_json.as_bytes());
+    let client_data_hash: [u8; 32] = client_data_hash
+        .as_slice()
+        .try_into()
+        .map_err(|_| "Invalid client_data_hash length".to_string())?;
+
+    if challenge_bytes.is_empty() {
+        return Err("Invalid challenge".to_string());
+    }
+
+    let credential_id = register_credential(request, rp_id, client_data_hash)?;
+    let credential_b64 = URL_SAFE_NO_PAD.encode(&credential_id);
+
+    {
+        let mut lock = state.allow_credentials.lock().map_err(|e| e.to_string())?;
+        *lock = Some(vec![CredentialDescriptor {
+            type_: "public-key".to_string(),
+            id: credential_b64.clone(),
+        }]);
+    }
+
+    Ok(credential_b64)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[tauri::command]
 async fn jpki_sign(request: JpkiSignRequest) -> Result<String, String> {
@@ -218,16 +409,13 @@ async fn jpki_sign(request: JpkiSignRequest) -> Result<String, String> {
     let mut controller = JpkiController::new(reader);
 
     controller.select_jpki_ap().await.map_err(|e| e.to_string())?;
-    
-    // Select User Authentication PIN (EF 0018 for Auth, usually)
-    // Actually, for digital signature (Sign), it is usually another EF (e.g. 001B).
-    // Let's assume Auth for now as per common use case for login.
-    let pin_ef = [0x00, 0x18]; 
-    controller.verify_pin(&pin_ef, &request.pin).await.map_err(|e| e.to_string())?;
 
     let challenge_bytes = URL_SAFE_NO_PAD.decode(&request.challenge).map_err(|e| e.to_string())?;
     
-    let signature = controller.compute_signature(&challenge_bytes).await.map_err(|e| e.to_string())?;
+    let signature = controller
+        .compute_auth_signature(&request.pin, &challenge_bytes)
+        .await
+        .map_err(|e| e.to_string())?;
     
     Ok(URL_SAFE_NO_PAD.encode(&signature))
 }
@@ -239,7 +427,10 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
     let mut controller = JpkiController::new(reader);
 
     let my_number = controller.read_mynumber(&request.pin).await.map_err(|e| e.to_string())?;
-    let info = controller.read_attributes(&request.pin, None, None).await.map_err(|e| e.to_string())?;
+    let info = controller
+        .read_attributes(&request.pin)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(MyNumberCardData {
         name: info.name,
@@ -274,10 +465,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             request: Mutex::new(sign_request),
+            allow_credentials: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_pending_request,
             perform_sign,
+            perform_register,
             reject,
             jpki_sign,
             read_my_number_card

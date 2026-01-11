@@ -1,10 +1,18 @@
 import Foundation
-import LocalAuthentication
 import CryptoKit
 import Security
 
 class SecureEnclaveSigner {
-    private let keyTag = "io.github.masanork.tobari.device-key.v1"
+    private let keyTagSecure = "io.github.masanork.tobari.device-key.v1.se"
+    private let keyTagSoftware = "io.github.masanork.tobari.device-key.v1.sw"
+    private let keyService = "io.github.masanork.tobari.signer"
+    private let useKeychain = ProcessInfo.processInfo.environment["TOBARI_SIGNER_USE_KEYCHAIN"] == "1"
+    private let deviceJwkPath = ProcessInfo.processInfo.environment["TOBARI_DEVICE_JWK_PATH"]
+
+    private enum DeviceSigningKey {
+        case secureEnclave(SecureEnclave.P256.Signing.PrivateKey)
+        case software(P256.Signing.PrivateKey)
+    }
     
     // Utility for Base64URL
     private func toBase64URL(_ data: Data) -> String {
@@ -14,13 +22,28 @@ class SecureEnclaveSigner {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    private func fromBase64URL(_ string: String) -> Data? {
+        var base64 = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 {
+            base64.append("=")
+        }
+        return Data(base64Encoded: base64)
+    }
+
     func sign(challenge: Data) throws -> (signature: String, publicKey: String) {
         // 1. Get Key
-        let privateKey = try getOrCreatePrivateKey()
+        let key = try getOrCreatePrivateKey()
         
         // 2. Prepare Public Key (JWK)
-        let pubKey = privateKey.publicKey
-        let rawPub = pubKey.rawRepresentation
+        let rawPub: Data
+        switch key {
+        case .secureEnclave(let privateKey):
+            rawPub = privateKey.publicKey.rawRepresentation
+        case .software(let privateKey):
+            rawPub = privateKey.publicKey.rawRepresentation
+        }
         let x = rawPub.subdata(in: 1..<33)
         let y = rawPub.subdata(in: 33..<65)
         
@@ -35,37 +58,71 @@ class SecureEnclaveSigner {
         
         // 3. Sign
         fputs("Debug: Requesting signature...\n", stderr)
-        let signature = try privateKey.signature(for: challenge)
+        let signature: P256.Signing.ECDSASignature
+        switch key {
+        case .secureEnclave(let privateKey):
+            signature = try privateKey.signature(for: challenge)
+        case .software(let privateKey):
+            signature = try privateKey.signature(for: challenge)
+        }
         fputs("Debug: Signature generated successfully.\n", stderr)
         
-        return (toBase64URL(signature.derRepresentation), jwk)
+        return (toBase64URL(signature.rawRepresentation), jwk)
     }
 
-    private func getOrCreatePrivateKey() throws -> SecureEnclave.P256.Signing.PrivateKey {
-        fputs("Debug: Attempting to retrieve existing key from Keychain...\n", stderr)
-        
-        let pwdQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: keyTag,
-            kSecReturnData as String: true
-        ]
-        
-        var pwdItem: CFTypeRef? = nil
-        let pwdStatus = SecItemCopyMatching(pwdQuery as CFDictionary, &pwdItem)
-        
-        // TODO: Remove this deletion logic once development stabilizes or make it a flag
-        if pwdStatus == errSecSuccess, let _ = pwdItem as? Data {
-            fputs("Debug: Found existing key in Keychain. DELETING for debugging (Clean State)...\n", stderr)
-            let deleteQuery: [String: Any] = [
+    private func getOrCreatePrivateKey() throws -> DeviceSigningKey {
+        if let path = deviceJwkPath {
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+               let jwk = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let d = jwk["d"] as? String,
+               let raw = fromBase64URL(d) {
+                let privateKey = try P256.Signing.PrivateKey(rawRepresentation: raw)
+                fputs("Debug: Using device key from TOBARI_DEVICE_JWK_PATH.\n", stderr)
+                return .software(privateKey)
+            } else {
+                fputs("Debug: Failed to load TOBARI_DEVICE_JWK_PATH. Falling back to generated key.\n", stderr)
+            }
+        }
+        if useKeychain {
+            fputs("Debug: Attempting to retrieve existing key from Keychain...\n", stderr)
+
+            let secureQuery: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
-                kSecAttrAccount as String: keyTag
+                kSecAttrService as String: keyService,
+                kSecAttrAccount as String: keyTagSecure,
+                kSecReturnData as String: true
             ]
-            SecItemDelete(deleteQuery as CFDictionary)
-            // Fall through to generation
-        } else if pwdStatus != errSecItemNotFound {
-            fputs("Debug: SecItemCopyMatching failed with status: \(pwdStatus)\n", stderr)
-        } else {
-            fputs("Debug: Key not found. Generating new key...\n", stderr)
+
+            var secureItem: CFTypeRef? = nil
+            let secureStatus = SecItemCopyMatching(secureQuery as CFDictionary, &secureItem)
+            if secureStatus == errSecSuccess, let data = secureItem as? Data {
+                if let key = try? SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: data) {
+                    fputs("Debug: Loaded Secure Enclave key from Keychain.\n", stderr)
+                    return .secureEnclave(key)
+                }
+            } else if secureStatus != errSecItemNotFound {
+                fputs("Debug: SecItemCopyMatching (secure) failed with status: \(secureStatus)\n", stderr)
+            }
+
+            let softwareQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: keyService,
+                kSecAttrAccount as String: keyTagSoftware,
+                kSecReturnData as String: true
+            ]
+
+            var softwareItem: CFTypeRef? = nil
+            let softwareStatus = SecItemCopyMatching(softwareQuery as CFDictionary, &softwareItem)
+            if softwareStatus == errSecSuccess, let data = softwareItem as? Data {
+                if let key = try? P256.Signing.PrivateKey(rawRepresentation: data) {
+                    fputs("Debug: Loaded software key from Keychain.\n", stderr)
+                    return .software(key)
+                }
+            } else if softwareStatus != errSecItemNotFound {
+                fputs("Debug: SecItemCopyMatching (software) failed with status: \(softwareStatus)\n", stderr)
+            } else {
+                fputs("Debug: Key not found. Generating new key...\n", stderr)
+            }
         }
         
         // Generate new key
@@ -80,23 +137,47 @@ class SecureEnclaveSigner {
         }
         
         fputs("Debug: Creating new SecureEnclave key...\n", stderr)
-        let privateKey = try SecureEnclave.P256.Signing.PrivateKey(accessControl: accessControl)
-        
-        // Save to Keychain
-        let saveQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: keyTag,
-            kSecValueData as String: privateKey.dataRepresentation
-        ]
-        
-        fputs("Debug: Saving new key to Keychain...\n", stderr)
-        let status = SecItemAdd(saveQuery as CFDictionary, nil)
-        if status != errSecSuccess {
-            fputs("Debug: SecItemAdd failed with status: \(status)\n", stderr)
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
+        do {
+            let privateKey = try SecureEnclave.P256.Signing.PrivateKey(accessControl: accessControl)
+
+            // Save to Keychain
+            let saveQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: keyService,
+                kSecAttrAccount as String: keyTagSecure,
+                kSecValueData as String: privateKey.dataRepresentation
+            ]
+
+            if useKeychain {
+                fputs("Debug: Saving new Secure Enclave key to Keychain...\n", stderr)
+                SecItemDelete(saveQuery as CFDictionary)
+                let status = SecItemAdd(saveQuery as CFDictionary, nil)
+                if status != errSecSuccess {
+                    fputs("Debug: SecItemAdd failed with status: \(status)\n", stderr)
+                    throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
+                }
+                fputs("Debug: Secure Enclave key saved successfully.\n", stderr)
+            }
+            return .secureEnclave(privateKey)
+        } catch {
+            fputs("Debug: Secure Enclave key creation failed. Falling back to software key.\n", stderr)
+            let privateKey = P256.Signing.PrivateKey()
+            let saveQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: keyService,
+                kSecAttrAccount as String: keyTagSoftware,
+                kSecValueData as String: privateKey.rawRepresentation
+            ]
+            if useKeychain {
+                SecItemDelete(saveQuery as CFDictionary)
+                let status = SecItemAdd(saveQuery as CFDictionary, nil)
+                if status != errSecSuccess {
+                    fputs("Debug: SecItemAdd failed with status: \(status)\n", stderr)
+                    throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
+                }
+                fputs("Debug: Software key saved successfully.\n", stderr)
+            }
+            return .software(privateKey)
         }
-        
-        fputs("Debug: Key saved successfully.\n", stderr)
-        return privateKey
     }
 }
