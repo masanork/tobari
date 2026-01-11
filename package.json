@@ -1,39 +1,42 @@
 {
-    "name": "tobari",
-    "version": "0.0.0",
-    "private": true,
-    "workspaces": [
-        "packages/*",
-        "examples/*"
-    ],
-    "scripts": {
-        "test": "bun test packages/**/*",
-        "test:e2e": "npx playwright test",
-        "build:examples": "bun run scripts/build_examples.ts",
-        "build:verifier": "bun run packages/codec/src/bundle-verifier.ts",
-        "build:viewer-app": "bun run packages/codec/src/bundle-viewer-app.ts",
-        "verify:cli": "bun run packages/codec/src/verify-cli.ts",
-        "present:cli": "bun run packages/codec/src/present-cli.ts",
-        "tobari:gen": "bun run packages/codec/src/tobari-gen-cli.ts",
-        "build": "bun run build:examples && bun run build:verifier && bun run build:viewer-app",
-        "ci": "bun run build && bun run test && npx playwright test",
-        "demo:zkp:passport": "cd examples/zkp/passport-circuit && bun run index.js",
-        "demo:zkp:bbs": "cd examples/zkp/bbs-scenarios && bun run scenario-employee-discount.ts",
-        "demo:zkp:dating": "cd examples/zkp/bbs-scenarios && bun run scenario-dating-app.ts",
-        "demo:scac": "cd examples/scac && bun run gen-scac.ts",
-        "demo:wallet": "bun run scripts/serve_demo.ts",
-        "demo:juminhyo": "cd examples/juminhyo-demo && bun run dev",
-        "docs:prepare": "mkdir -p docs/civ && cp packages/civ/docs/*.md docs/civ/ && cp README.md docs/getting-started.md",
-        "docs:dev": "bun run docs:prepare && vitepress dev docs",
-        "docs:build": "bun run docs:prepare && vitepress build docs",
-        "docs:preview": "vitepress preview docs"
-    },
-    "devDependencies": {
-        "@playwright/test": "^1.57.0",
-        "bun-types": "latest",
-        "playwright": "^1.57.0",
-        "typescript": "^5.0.0",
-        "vitepress": "^1.6.4",
-        "vue": "^3.5.26"
-    }
+  "name": "tobari",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "test": "bun test packages/**/*",
+    "test:e2e": "npx playwright test",
+    "build:examples": "bun run scripts/build_examples.ts",
+    "build:verifier": "bun run packages/codec/src/bundle-verifier.ts",
+    "build:viewer-app": "bun run packages/codec/src/bundle-viewer-app.ts",
+    "verify:cli": "bun run packages/codec/src/verify-cli.ts",
+    "present:cli": "bun run packages/codec/src/present-cli.ts",
+    "tobari:gen": "bun run packages/codec/src/tobari-gen-cli.ts",
+    "build": "bun run build:examples && bun run build:verifier && bun run build:viewer-app",
+    "ci": "bun run build && bun run test && npx playwright test",
+    "demo:zkp:passport": "cd examples/zkp/passport-circuit && bun run index.js",
+    "demo:zkp:bbs": "cd examples/zkp/bbs-scenarios && bun run scenario-employee-discount.ts",
+    "demo:zkp:dating": "cd examples/zkp/bbs-scenarios && bun run scenario-dating-app.ts",
+    "demo:scac": "cd examples/scac && bun run gen-scac.ts",
+    "demo:wallet": "bun run scripts/serve_demo.ts",
+    "demo:juminhyo": "cd examples/juminhyo-demo && bun run dev",
+    "docs:prepare": "mkdir -p docs/civ && cp packages/civ/docs/*.md docs/civ/ && cp README.md docs/getting-started.md",
+    "docs:dev": "bun run docs:prepare && vitepress dev docs",
+    "docs:build": "bun run docs:prepare && vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "bun-types": "latest",
+    "playwright": "^1.57.0",
+    "typescript": "^5.0.0",
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.26"
+  },
+  "trustedDependencies": [
+    "wasm-pack"
+  ]
 }
