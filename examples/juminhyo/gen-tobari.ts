@@ -1,4 +1,5 @@
 import { generateSignedTobari } from '../../packages/codec/src/tobari-gen';
+import { bundleViewer } from '../../packages/codec/src/bundle-viewer';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
@@ -12,7 +13,7 @@ async function main() {
     const pqcPublicKeyPath = readArgValue('--pqc-public-key');
     const suffix = isLockedBuild ? '.locked' : '';
     
-    console.log(`Generating juminhyo${suffix}.cose...`);
+    console.log(`Generating juminhyo${suffix}.cose and .html...`);
 
     const schemaPath = path.resolve(__dirname, 'juminhyo.yaml');
     const schemaYaml = fs.readFileSync(schemaPath, 'utf-8');
@@ -81,6 +82,34 @@ async function main() {
     const outputPath = path.resolve(__dirname, `juminhyo${suffix}.cose`);
     fs.writeFileSync(outputPath, binary);
     console.log(`✅ Generated: ${outputPath}`);
+
+    // Generate HTML Viewer
+    const htmlOutputPath = path.resolve(__dirname, `juminhyo${suffix}.html`);
+    const templatePath = path.resolve(process.cwd(), 'packages/codec/src/viewer-template.html'); // Assuming template exists here or handled by bundleViewer default?
+    // bundleViewer(binary, templatePath?) 
+    // Checking bundleViewer signature... it takes (binary, templateHtml?).
+    // We'll let it use default if we pass undefined, or we need to load it.
+    // Let's assume bundleViewer handles template loading if not provided, or we read it.
+    // Actually bundle-viewer.ts exports `bundleViewer`.
+    
+    // I need to find where the template is. Usually `packages/codec/dist/viewer-template.html` or similar.
+    // For dev, it might be in `examples/juminhyo-demo/dist/index.html`?
+    // Tobari architecture usually embeds a built viewer.
+    // Let's try to pass `undefined` and see if it has a default, otherwise I'll search.
+    
+    // Waiting, `bundleViewer` logic:
+    // It usually replaces a placeholder in a template.
+    // I'll assume I need to provide the template content.
+    
+    const viewerDist = path.resolve(process.cwd(), 'packages/viewer/dist/index.html'); // Hypothetical path
+    // Actually, based on file list, `packages/codec/src` has `viewer-template.html`? No.
+    // `examples/juminhyo-demo` is the viewer app.
+    // `scripts/build_examples.ts` builds it.
+    // Let's check `packages/codec/src/bundle-viewer.ts` to see what it expects.
+    
+    const html = await bundleViewer(binary);
+    fs.writeFileSync(htmlOutputPath, html);
+    console.log(`✅ Generated: ${htmlOutputPath}`);
 }
 
 main().catch(console.error);
