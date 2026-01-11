@@ -10,9 +10,9 @@
 - [x] **Device-bound Decryption (ECIES)**: Implemented full-stack decryption flow using Secure Enclave Key Agreement via `mcp-server` and `signer-macos`.
 - [x] **Hardware-backed Registration**: Added `register_device` tool to export Secure Enclave public keys for issuance.
 - [x] **Self-Issuance Workflow**: Implemented `issue_local_credential` to create hardware-bound "Master mdocs" from JPKI data, enabling card-less future interactions.
-- [ ] **JPKI Certificate JWK Conversion**: Implement extraction of public key from JPKI certificates for easier verification in `mcp-server`. (Partially implemented in CLI).
-  - [ ] **Investigate Protocol Mismatch**: `tobari-signer` (Tauri) returns WebAuthn assertion (AuthData + ClientDataHash signature), but mdoc expects direct signature over `DeviceAuthentication`.
-  - [ ] **Implement Solution**: Either support "Raw Key" mode in Tauri (if possible) OR extend Tobari VP format to carry WebAuthn context (AuthData/ClientDataJSON) for verification.
+- [ ] **MCP ↔ Tobari Signer (Tauri/FIDO) Coupling**
+  - [x] **Resolve Protocol Mismatch**: Extended Tobari VP format and `@tobari/codec` to natively support WebAuthn assertions (`authData` + `clientDataJSON`).
+  - [ ] **Implement in Tauri**: Update `tobari-signer` (Rust) to return raw WebAuthn assertions for assembly by MCP.
   - [x] Document build/install steps for macOS/Windows and `TOBARI_SIGNER_PATH` configuration.
 
 ### Performance & PQC

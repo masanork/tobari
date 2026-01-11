@@ -140,8 +140,19 @@ export async function verifyPresentation(
                 throw new Error(`No public key provided for docType: ${doc.docType}`);
             }
 
-            const mso = await (await import('@tobari/crypto/cose')).verifyFormToken(issuerAuthToken, publicKey) as MSO;
-            result.issuerValid = true;
+            let mso: MSO;
+            try {
+                mso = await (await import('@tobari/crypto/cose')).verifyFormToken(issuerAuthToken, publicKey) as MSO;
+                result.issuerValid = true;
+            } catch (e: any) {
+                // Return result even if issuer fails, to allow testing device binding
+                result.error = `Issuer signature verification failed: ${e.message}`;
+                // We still need a mock MSO to continue device verification in tests
+                // In a real scenario, we might want to return here, but for debugging/testing
+                // it's better to continue if doc structure is somewhat valid.
+                // For now, let's just re-throw to keep existing behavior but with better message.
+                throw new Error(`Issuer signature verification failed: ${e.message}`);
+            }
 
             // 1.1 Verify PQC Countersignature (optional)
             const pqcPublicKey =
@@ -175,7 +186,7 @@ export async function verifyPresentation(
                 }
 
                 const coseArray = decode(doc.deviceSigned.deviceAuth);
-                const [protectedHeaderBytes, _, payloadBytes, signature] = coseArray;
+                const [protectedHeaderBytes, , payloadBytes, signature] = coseArray;
                 const protectedHeader = decode(protectedHeaderBytes);
                 const alg = protectedHeader instanceof Map ? protectedHeader.get(1) : protectedHeader[1];
                 const curve = alg === -7 ? "P-256" : "P-384";
@@ -221,14 +232,52 @@ export async function verifyPresentation(
                 ];
                 const toBeVerified = encodeCanonical(sigStructure);
 
-                // console.error(`[VERIFY] docType=${doc.docType} sigLen=${signature.length} payloadLen=${payloadBytes.length}`);
+                // --- NEW: WebAuthn Support ---
+                const [, unprotectedHeader] = coseArray;
+                let authData: Uint8Array | undefined;
+                let clientDataJSON: string | undefined;
 
-                result.deviceValid = await crypto.subtle.verify(
-                    { name: "ECDSA", hash: { name: hashName } },
-                    deviceKey,
-                    signature,
-                    toBeVerified as any
-                );
+                if (unprotectedHeader instanceof Map) {
+                    authData = unprotectedHeader.get(-65537);
+                    clientDataJSON = unprotectedHeader.get(-65538);
+                } else if (unprotectedHeader && typeof unprotectedHeader === 'object') {
+                    authData = (unprotectedHeader as any).authData || (unprotectedHeader as any)[-65537];
+                    clientDataJSON = (unprotectedHeader as any).clientDataJSON || (unprotectedHeader as any)[-65538];
+                }
+
+                if (authData && clientDataJSON) {
+                    // WebAuthn Flow
+                    const clientDataHash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(clientDataJSON)));
+                    const challengeInJson = JSON.parse(clientDataJSON).challenge;
+                    
+                    // Verify challenge binding: hash(toBeVerified) === challengeInJson
+                    const mdocHash = new Uint8Array(await crypto.subtle.digest("SHA-256", toBeVerified as any));
+                    const mdocHashB64Url = Buffer.from(mdocHash).toString('base64url').replace(/=/g, '');
+                    
+                    if (challengeInJson !== mdocHashB64Url) {
+                        throw new Error("WebAuthn challenge mismatch: Presentation is not bound to this session");
+                    }
+
+                    // Verify signature over authData + clientDataHash
+                    const webauthnSignedData = new Uint8Array(authData.length + clientDataHash.length);
+                    webauthnSignedData.set(authData);
+                    webauthnSignedData.set(clientDataHash, authData.length);
+
+                    result.deviceValid = await crypto.subtle.verify(
+                        { name: "ECDSA", hash: { name: hashName } },
+                        deviceKey,
+                        signature,
+                        webauthnSignedData
+                    );
+                } else {
+                    // Standard ISO 18013-5 Flow
+                    result.deviceValid = await crypto.subtle.verify(
+                        { name: "ECDSA", hash: { name: hashName } },
+                        deviceKey,
+                        signature,
+                        toBeVerified as any
+                    );
+                }
             }
         } catch (e: any) {
             result.error = e.message;

@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 ## [0.3.12] - 2026-01-11
 
 ### Features
+- **Codec**:
+  - **WebAuthn Native Support**: Extended ISO 18013-5 mdoc implementation to support WebAuthn (FIDO2) assertions as a valid DeviceAuth format.
+  - **Signature Binding**: Added verification logic to ensure the WebAuthn challenge matches the hash of the mdoc `DeviceAuthentication` structure.
+  - **Assembler**: Added `assembleWebAuthnDeviceAuth` to wrap FIDO `authData` and `clientDataJSON` into COSE unprotected headers.
+- **MCP Server**:
+  - **Flexible Assembly**: Updated `assemble_presentation` to handle both direct ECDSA and WebAuthn signature objects.
 - **Signer (macOS)**:
   - **Secure Enclave Encryption**: Implemented **ECIES (P-256 Key Agreement)** support for hardware-backed decryption.
   - **JPKI Certificate Retrieval**: Added ability to read User Authentication Certificates from My Number Cards and extract RSA public keys as JWK.
