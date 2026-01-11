@@ -40,7 +40,6 @@ These tools are prefixed with `demo_` and are intended for testing, prototyping,
 | :--- | :--- |
 | `demo_list_examples` | Lists sample documents and keys available in the project's `examples/` directory. |
 | `demo_generate_example` | Runs generation scripts (e.g., `gen-tobari.ts`) to create fresh sample data. Supports `--pqc` and `--encrypt`. |
-| `demo_start_server` | Starts a local web server (port 22081) to simulate an administrative submission portal. |
 
 ### Encrypted Documents
 For encrypted Tobari files (including hybrid HPKE + PQC), pass a `decrypt` object to the relevant tools (`read_tobari_file`, `create_presentation`, `prepare_presentation`, `analyze_service_request`, `demo_list_examples`, `generate_passport_zkp_input`).
@@ -141,3 +140,16 @@ Use `preview_presentation` to inspect the VP without running a demo server:
 ```
 
 If you want to verify signatures at the same time, pass `issuerPublicKeys` (and optional `issuerPqcPublicKeys`).
+
+Optional output controls:
+```json
+{
+  "name": "preview_presentation",
+  "arguments": {
+    "vpBase64": "<base64-vp>",
+    "format": "readable",
+    "redact": true,
+    "maxStringLength": 120
+  }
+}
+```

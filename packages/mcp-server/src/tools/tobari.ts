@@ -268,6 +268,14 @@ export async function handleCreatePresentation(toolArgs: any) {
                 ];
 
                 let signerPath = args.signerPath || process.env.TOBARI_SIGNER_PATH;
+                if (signerPath) {
+                    try {
+                        await fs.access(signerPath);
+                    } catch {
+                        signerPath = undefined;
+                    }
+                }
+
                 if (!signerPath) {
                     for (const p of possiblePaths) {
                         try {
@@ -582,10 +590,11 @@ export async function handlePreviewPresentation(toolArgs: any) {
     try {
         const args = PreviewPresentationSchema.parse(toolArgs);
         const vpBytes = decodeBase64Flexible(args.vpBase64);
-        const vpDecoder = new Decoder({ useMaps: true });
-        const presentation = vpDecoder.decode(vpBytes);
+        const presentation = decode(vpBytes);
         const summary = summarizeVp(presentation);
-        const decodedVp = normalizeForJson(presentation);
+        const format = args.format ?? "readable";
+        const redact = !!args.redact;
+        const maxStringLength = args.maxStringLength ?? 200;
 
         let verification: any = null;
         if (args.issuerPublicKeys) {
@@ -597,12 +606,21 @@ export async function handlePreviewPresentation(toolArgs: any) {
             };
         }
 
+        let readable: any = null;
+        if (format !== "summary") {
+            readable = formatReadableVp(presentation, verification, { redact, maxStringLength });
+        }
+
+        const includeDecoded = format === "full" || !!args.includeDecoded;
+        const decodedVp = includeDecoded ? normalizeForJson(presentation) : undefined;
+
         return {
             content: [
                 {
                     type: "text",
                     text: JSON.stringify({
                         summary,
+                        readable,
                         decodedVp,
                         verification
                     }, null, 2),
@@ -788,6 +806,79 @@ function decodeBase64Flexible(input: string): Uint8Array {
     } catch {
         throw new Error("Invalid vpBase64: expected base64/base64url encoded DeviceResponse.");
     }
+}
+
+function formatReadableVp(
+    presentation: any,
+    verification: any,
+    options: { redact: boolean; maxStringLength: number }
+) {
+    if (!presentation || !Array.isArray(presentation.documents)) {
+        return { error: "VP does not contain documents." };
+    }
+
+    return {
+        documentCount: presentation.documents.length,
+        documents: presentation.documents.map((doc: any) => {
+            const docType = doc?.docType ?? "Unknown";
+            const fields = extractDisclosedFields(doc);
+            const result = verification?.results?.find((r: any) => r.docType === docType);
+            return {
+                docType,
+                issuerValid: result?.issuerValid ?? null,
+                deviceValid: result?.deviceValid ?? null,
+                pqcValid: result?.issuerPqcValid ?? null,
+                disclosed: redactValue(fields, options)
+            };
+        })
+    };
+}
+
+function extractDisclosedFields(doc: any): Record<string, any> {
+    const output: Record<string, any> = {};
+    if (!doc?.issuerSigned?.nameSpaces || !doc?.docType) return output;
+    const namespaces = doc.issuerSigned.nameSpaces;
+    const items = namespaces[doc.docType] || namespaces.get?.(doc.docType);
+    if (!items || !Array.isArray(items)) return output;
+
+    for (const itemBytes of items) {
+        try {
+            const item = decode(itemBytes);
+            if (Array.isArray(item) && item.length >= 4) {
+                const key = item[2];
+                const value = item[3];
+                output[String(key)] = value;
+            }
+        } catch {
+            // Ignore malformed item
+        }
+    }
+    return output;
+}
+
+function redactValue(value: any, options: { redact: boolean; maxStringLength: number }): any {
+    if (value instanceof Uint8Array) {
+        return `[bytes:${value.length}]`;
+    }
+    if (typeof value === "string") {
+        const truncated = value.length > options.maxStringLength
+            ? `${value.slice(0, options.maxStringLength)}…`
+            : value;
+        if (!options.redact) return truncated;
+        if (truncated.length <= 2) return "**";
+        return `${truncated[0]}***${truncated[truncated.length - 1]}`;
+    }
+    if (Array.isArray(value)) {
+        return value.map((v) => redactValue(v, options));
+    }
+    if (value && typeof value === "object") {
+        const obj: Record<string, any> = {};
+        for (const [k, v] of Object.entries(value)) {
+            obj[k] = redactValue(v, options);
+        }
+        return obj;
+    }
+    return value;
 }
 
 export async function handleListAvailableDocuments(toolArgs: any) {

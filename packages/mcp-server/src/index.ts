@@ -18,8 +18,7 @@ import {
 } from "./tools/tobari.js";
 import {
     handleDemoListExamples,
-    handleDemoGenerateExample,
-    handleDemoStartServer
+    handleDemoGenerateExample
 } from "./tools/demo.js";
 import {
     handleSignWithJpki,
@@ -226,7 +225,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                             additionalProperties: { type: "string" },
                             description: "Optional map of docType to path of issuer's PQC public key (base64url JSON)"
                         },
-                        verifierNonce: { type: "string", description: "Expected nonce to prevent replay attacks" }
+                        verifierNonce: { type: "string", description: "Expected nonce to prevent replay attacks" },
+                        format: { type: "string", description: "summary | readable (default) | full" },
+                        includeDecoded: { type: "boolean", description: "Include decoded VP JSON payload (may be large)." },
+                        redact: { type: "boolean", description: "Redact string values in readable output." },
+                        maxStringLength: { type: "number", description: "Max string length before truncation in readable output." }
                     },
                     required: ["vpBase64"]
                 }
@@ -426,14 +429,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     required: ["pin"]
                 }
             },
-            {
-                name: "demo_start_server",
-                description: "Starts a local demo server (submission portal) on port 22081. This server accepts VP submissions and displays a 'Success' screen. Returns the server URL.",
-                inputSchema: {
-                    type: "object",
-                    properties: {}
-                }
-            }
+            // No local demo server tools (MCP-only demo flow)
         ],
     };
 });
@@ -460,8 +456,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleDemoListExamples(request.params.arguments);
         case "demo_generate_example":
             return handleDemoGenerateExample(request.params.arguments);
-        case "demo_start_server":
-            return handleDemoStartServer(request.params.arguments);
+        // No demo_start_* handlers
         case "generate_passport_zkp_input":
             return handleGeneratePassportZkpInput(request.params.arguments);
         case "sign_with_webauthn":
@@ -476,9 +471,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleReadBasicInfo(request.params.arguments);
         case "read_photo":
             return handleReadPhoto(request.params.arguments);
-        case "demo_start_server": // Deprecated alias if needed? No, clean break.
-            // Support legacy name just in case? No, strict rename.
-            return handleDemoStartServer(request.params.arguments);
+        // No demo_start_* handlers
         default:
             throw new Error(`Tool not found: ${request.params.name}`);
     }
