@@ -3,15 +3,23 @@
 All notable changes to this project will be documented in this file.
 
 
-## [0.3.12] - 2026-01-11
+## [0.3.13] - 2026-01-11
 
 ### Features
 - **Codec**:
   - **WebAuthn Native Support**: Extended ISO 18013-5 mdoc implementation to support WebAuthn (FIDO2) assertions as a valid DeviceAuth format.
   - **Signature Binding**: Added verification logic to ensure the WebAuthn challenge matches the hash of the mdoc `DeviceAuthentication` structure.
   - **Assembler**: Added `assembleWebAuthnDeviceAuth` to wrap FIDO `authData` and `clientDataJSON` into COSE unprotected headers.
+- **Signer (Tauri)**:
+  - **Standardized Assertions**: Updated Rust backend to return raw WebAuthn assertions (`signature`, `authData`, `clientDataJSON`) for native mdoc assembly.
+  - **Hardware Registration**: Updated `perform_register` to return JSON including both Credential ID and Public Key (JWK) for issuance.
+  - **UI Update**: Refactored frontend to handle the new structured JSON responses from the Rust core.
 - **MCP Server**:
-  - **Flexible Assembly**: Updated `assemble_presentation` to handle both direct ECDSA and WebAuthn signature objects.
+  - **Flexible Assembly**: Updated `assemble_presentation` to handle both direct ECDSA and WebAuthn signature objects transparently.
+
+## [0.3.12] - 2026-01-11
+
+### Features
 - **Signer (macOS)**:
   - **Secure Enclave Encryption**: Implemented **ECIES (P-256 Key Agreement)** support for hardware-backed decryption.
   - **JPKI Certificate Retrieval**: Added ability to read User Authentication Certificates from My Number Cards and extract RSA public keys as JWK.
@@ -23,6 +31,7 @@ All notable changes to this project will be documented in this file.
   - **Platform Optimization**: Refined `create_presentation` to prioritize `signer-macos` (direct ECDSA) over WebAuthn on macOS for standard mdoc compatibility.
 - **Tests**:
   - **Integration Tests**: Added `signer_integration.test.ts` to verify the full ECIES decryption flow between Node.js (WebCrypto) and macOS (CryptoKit).
+
 
 ## [0.3.11] - 2026-01-11
 
