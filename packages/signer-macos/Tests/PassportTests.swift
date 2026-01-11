@@ -22,6 +22,7 @@ struct PassportTests {
         print("🚀 Starting Passport Tests...")
         await testPassportSelection()
         await testPassportReadDG1()
+        await testPassportPACE()
         print("✅ All Passport Tests Passed!")
     }
     
@@ -62,6 +63,52 @@ struct PassportTests {
             let dg1 = try await controller.readDG1()
             assertEqual(dg1.count, mockDG1.count, "DG1 length mismatch")
             assertEqual(dg1[2], 0x31, "DG1 content mismatch")
+        } catch {
+            print("❌ Unexpected Error: \(error)")
+            exit(1)
+        }
+    }
+
+    static func testPassportPACE() async {
+        print("Running testPassportPACE...")
+        let mock = MockSmartCardManager()
+        let controller = PassportController(manager: mock)
+        
+        let password = "CAN123456"
+        
+        mock.handler = { apdu in
+            let ins = apdu[1]
+            let p1 = apdu[2]
+            
+            if ins == 0x22 && p1 == 0xC1 { // MSE:Set AT
+                return Data([0x90, 0x00])
+            }
+            if ins == 0x86 { // General Authenticate
+                if apdu.count == 8 { // Step 1: Get Nonce
+                    // Header (7C 0A 80 08) + Mock Encrypted Nonce (8 bytes) + SW (90 00)
+                    // Note: This must be a multiple of 16 for AES decryption to not crash if it uses padding
+                    // Or we just return 16 bytes.
+                    var res = Data([0x7C, 0x12, 0x80, 0x10])
+                    res.append(Data(repeating: 0x00, count: 16)) 
+                    res.append(contentsOf: [0x90, 0x00])
+                    return res
+                } else { // Step 2+
+                    return Data([0x90, 0x00])
+                }
+            }
+            return Data([0x90, 0x00])
+        }
+        
+        do {
+            try await controller.selectPassportAP()
+            // We ignore errors here because the decryption will fail with 00s, 
+            // but we want to see if the command sequence is correct in the mock log.
+            _ = try? await controller.performPACE(password: password, isCan: true)
+            
+            // Should have seen MSE:Set AT, GA Step 1, and GA Step 2
+            assert(mock.requestLog.count >= 3, "Sequence too short")
+            assertEqual(mock.requestLog[1][1], 0x22, "Second command should be MSE:Set AT")
+            assertEqual(mock.requestLog[2][1], 0x86, "Third command should be General Authenticate")
         } catch {
             print("❌ Unexpected Error: \(error)")
             exit(1)
