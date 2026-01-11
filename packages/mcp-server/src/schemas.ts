@@ -5,6 +5,7 @@ import { DEFAULT_MYNA_PATH } from "./utils.js";
 export const ReadTobariFileSchema = z.object({
     path: z.string().describe("Absolute path to the Tobari file (.cose or .html)"),
     issuerPublicKeyPath: z.string().optional().describe("Absolute path to the issuer's public key (JWK/JSON format) for verification"),
+    issuerPqcPublicKeyPath: z.string().optional().describe("Absolute path to the issuer's PQC public key (base64url JSON)"),
 });
 
 export const CreatePresentationSchema = z.object({

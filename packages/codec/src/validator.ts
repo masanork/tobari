@@ -9,6 +9,50 @@ export interface VerificationResult {
     mso: MSO | null;
     doc: any;
     error?: string;
+    pqcValid?: boolean | null; // true=valid, false=invalid, null=not present/checked
+}
+
+async function verifyCountersignature(
+    issuerAuthCose: any[],
+    pqcPublicKey?: Uint8Array
+): Promise<boolean | null> {
+    if (!pqcPublicKey) return null;
+    
+    // Check if countersignature exists
+    if (!Array.isArray(issuerAuthCose) || issuerAuthCose.length !== 4) return null;
+    
+    const [, issuerUnprotected, , issuerSignature] = issuerAuthCose;
+    let countersign = null;
+    
+    if (issuerUnprotected instanceof Map) {
+        countersign = issuerUnprotected.get(COSE_HEADER_LABELS.Countersignature0);
+    } else if (issuerUnprotected && typeof issuerUnprotected === 'object') {
+        countersign = issuerUnprotected[COSE_HEADER_LABELS.Countersignature0];
+    }
+    
+    if (!countersign) return null;
+    
+    const [csProtectedBytes, , , csSignature] = countersign;
+    const csProtected = decode(csProtectedBytes);
+    const csAlg = csProtected instanceof Map ? csProtected.get(1) : csProtected[1];
+    
+    if (csAlg === COSE_ALG.MLDSA65) {
+        const { encodeCanonical } = await import('@tobari/crypto/cbor');
+        const csStructure = [
+            "CounterSignature0",
+            csProtectedBytes,
+            new Uint8Array(0),
+            issuerSignature
+        ];
+        const csToBeVerified = encodeCanonical(csStructure);
+        return await mlDsa65Verify(
+            pqcPublicKey,
+            csToBeVerified,
+            csSignature
+        );
+    }
+    
+    return false; // Found countersignature but algo mismatch or unsupported
 }
 
 /**
@@ -16,7 +60,8 @@ export interface VerificationResult {
  */
 export async function verifyTobari(
     input: Uint8Array | string,
-    publicKey: CryptoKey
+    publicKey: CryptoKey,
+    pqcPublicKey?: Uint8Array
 ): Promise<VerificationResult> {
     try {
         let binary: Uint8Array;
@@ -37,10 +82,18 @@ export async function verifyTobari(
         const issuerAuthToken = base64url.encode(doc.issuerSigned.issuerAuth);
         const mso = await verifyFormToken(issuerAuthToken, publicKey) as MSO;
 
+        // Verify PQC Countersignature if key provided
+        let pqcValid = null;
+        if (pqcPublicKey) {
+            const issuerAuthCose = decode(doc.issuerSigned.issuerAuth);
+            pqcValid = await verifyCountersignature(issuerAuthCose, pqcPublicKey);
+        }
+
         return {
             isValid: true,
             mso: mso,
-            doc: doc
+            doc: doc,
+            pqcValid
         };
     } catch (e: any) {
         return {
@@ -91,46 +144,17 @@ export async function verifyPresentation(
             result.issuerValid = true;
 
             // 1.1 Verify PQC Countersignature (optional)
-            const issuerAuthCose = decode(doc.issuerSigned.issuerAuth);
-            if (Array.isArray(issuerAuthCose) && issuerAuthCose.length === 4) {
-                const [, issuerUnprotected, , issuerSignature] = issuerAuthCose;
-                let countersign = null;
-                if (issuerUnprotected instanceof Map) {
-                    countersign = issuerUnprotected.get(COSE_HEADER_LABELS.Countersignature0);
-                } else if (issuerUnprotected && typeof issuerUnprotected === 'object') {
-                    countersign = issuerUnprotected[COSE_HEADER_LABELS.Countersignature0];
-                }
-
-                if (countersign) {
+            const pqcPublicKey =
+                issuerKeyEntry instanceof CryptoKey
+                    ? undefined
+                    : issuerKeyEntry?.pqcPublicKey;
+            
+            if (pqcPublicKey) {
+                const issuerAuthCose = decode(doc.issuerSigned.issuerAuth);
+                const pqcRes = await verifyCountersignature(issuerAuthCose, pqcPublicKey);
+                if (pqcRes !== null) {
                     result.issuerPqcPresent = true;
-                    const [csProtectedBytes, , , csSignature] = countersign;
-                    const csProtected = decode(csProtectedBytes);
-                    const csAlg = csProtected instanceof Map ? csProtected.get(1) : csProtected[1];
-
-                    if (csAlg === COSE_ALG.MLDSA65) {
-                        const pqcPublicKey =
-                            issuerKeyEntry instanceof CryptoKey
-                                ? undefined
-                                : issuerKeyEntry?.pqcPublicKey;
-                        if (pqcPublicKey) {
-                            const csStructure = [
-                                "CounterSignature0",
-                                csProtectedBytes,
-                                new Uint8Array(0),
-                                issuerSignature
-                            ];
-                            const csToBeVerified = encodeCanonical(csStructure);
-                            result.issuerPqcValid = await mlDsa65Verify(
-                                pqcPublicKey,
-                                csToBeVerified,
-                                csSignature
-                            );
-                        } else {
-                            result.issuerPqcValid = false;
-                        }
-                    } else {
-                        result.issuerPqcValid = false;
-                    }
+                    result.issuerPqcValid = pqcRes;
                 }
             }
 
@@ -213,3 +237,4 @@ export async function verifyPresentation(
     }
     return results;
 }
+

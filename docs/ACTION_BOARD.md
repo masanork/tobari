@@ -16,13 +16,13 @@
 - [ ] **WASM/Performance Optimization Plan**
   - [ ] Measure benchmarks for RSA verification (Passport/JPKI) and ZKP generation.
   - [ ] Investigate multi-threading and hardware acceleration support in Wasm.
-- [ ] **Post-Quantum Cryptography (PQC)**
-  - [ ] **Standardization**: Issuer = P-384, Device = P-256. PQC via COSE Countersign (Experimental).
-  - [ ] **PoC Implementation (ML-DSA-65)**:
-    - [ ] `tobari-gen`: Add IssuerAuth countersign generation.
-    - [ ] `validator`: Implement countersign verification and status display.
-    - [ ] Update `verify_presentation` tool to return PQC status.
-    - [ ] Documentation: Update demo steps for PQC keys.
+- [x] **Post-Quantum Cryptography (PQC)**
+  - [x] **Standardization**: Issuer = P-384, Device = P-256. PQC via COSE Countersign (Experimental).
+  - [x] **PoC Implementation (ML-DSA-65)**:
+    - [x] `tobari-gen`: Add IssuerAuth countersign generation.
+    - [x] `validator`: Implement countersign verification and status display.
+    - [x] Update `verify_presentation` tool to return PQC status.
+    - [x] Documentation: Update demo steps for PQC keys.
 
 ### Compliance & SCAC
 - [ ] **FATF/SCAC Operations Mapping**
