@@ -476,15 +476,24 @@ class JPKIController {
         var info = BasicInfo()
         let tlvs = TLVParser.parse(data: data)
         
-        // JPKI Basic Info uses nested tags under 0xDF20
-        guard let wrapper = tlvs.first?.find(tag: 0xDF20) else {
-            return info
+        // JPKI attributes can be siblings or nested under 0xDF20.
+        // We'll flatten the first level of nesting to be sure.
+        var allTlvs = tlvs
+        for tlv in tlvs {
+            if tlv.tag == 0xDF20 {
+                allTlvs.append(contentsOf: TLVParser.parse(data: tlv.value))
+            }
         }
         
-        if let name = wrapper.findString(tag: 0xDF22) { info.name = name }
-        if let address = wrapper.findString(tag: 0xDF23) { info.address = address }
-        if let birthDate = wrapper.findString(tag: 0xDF24) { info.birthDate = birthDate }
-        if let gender = wrapper.findString(tag: 0xDF25) { info.gender = gender }
+        func getString(tag: UInt32) -> String? {
+            guard let data = allTlvs.first(where: { $0.tag == tag })?.value else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        
+        if let name = getString(tag: 0xDF22) { info.name = name }
+        if let address = getString(tag: 0xDF23) { info.address = address }
+        if let birthDate = getString(tag: 0xDF24) { info.birthDate = birthDate }
+        if let gender = getString(tag: 0xDF25) { info.gender = gender }
         
         return info
     }
