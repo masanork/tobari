@@ -198,6 +198,66 @@ class CLIHandler {
             }
         }
 
+        if args.contains("--read-passport") {
+            guard let mrzIndex = args.firstIndex(of: "--mrz"), mrzIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --read-passport --mrz <MRZ>\n", stderr)
+                exit(1)
+            }
+            let mrz = args[mrzIndex + 1]
+            
+            let manager = SmartCardManager()
+            let controller = PassportController(manager: manager)
+            do {
+                try await controller.selectPassportAP()
+                try await controller.performBAC(mrz: mrz)
+                let dg1 = try await controller.readDG1()
+                let dg2 = try await controller.readDG2()
+                print("{\"dg1\": \"\(dg1.base64EncodedString())\", \"dg2\": \"\(dg2.base64EncodedString())\"}")
+                exit(0)
+            } catch {
+                printError(error)
+                exit(1)
+            }
+        }
+
+        if args.contains("--read-driver-license") {
+            guard let pin1Index = args.firstIndex(of: "--pin1"), pin1Index + 1 < args.count,
+                  let pin2Index = args.firstIndex(of: "--pin2"), pin2Index + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --read-driver-license --pin1 <PIN1> --pin2 <PIN2>\n", stderr)
+                exit(1)
+            }
+            let pin1 = args[pin1Index + 1]
+            let pin2 = args[pin2Index + 1]
+            
+            let manager = SmartCardManager()
+            let controller = DriversLicenseController(manager: manager)
+            do {
+                try await controller.selectDLAP()
+                try await controller.verifyPIN1(pin1)
+                try await controller.verifyPIN2(pin2)
+                let data = try await controller.readCommonData()
+                print("{\"data\": \"\(data.base64EncodedString())\"}")
+                exit(0)
+            } catch {
+                printError(error)
+                exit(1)
+            }
+        }
+
+        if args.contains("--read-residence-card") {
+            let manager = SmartCardManager()
+            let controller = ResidenceCardController(manager: manager)
+            do {
+                try await controller.selectJPRCAP()
+                let data = try await controller.readDF2Info()
+                print("{\"data\": \"\(data.base64EncodedString())\"}")
+                exit(0)
+            } catch {
+                printError(error)
+                exit(1)
+            }
+        }
+
         if args.contains("--register-passkey") {
             guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
                 fputs("Usage: tobari-signer-macos --register-passkey --request <JSON>\n", stderr)
@@ -309,7 +369,7 @@ class CLIHandler {
         }
 
         guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
-            fputs("Usage: tobari-signer-macos --request '<json>' | --scan-card | --read-attributes --pin <PIN> | --read-mynumber --pin <PIN> | --get-public-key\n", stderr)
+            fputs("Usage: tobari-signer-macos --request '<json>' | --scan-card | --read-attributes --pin <PIN> | --read-mynumber --pin <PIN> | --get-public-key | --read-passport --mrz <MRZ> | --read-driver-license --pin1 <PIN1> --pin2 <PIN2> | --read-residence-card\n", stderr)
             exit(1)
         }
         

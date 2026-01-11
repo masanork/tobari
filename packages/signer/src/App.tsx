@@ -290,24 +290,30 @@ function App() {
           )}
           {cardType === 'passport' && (
             <>
-              <p><strong>Name:</strong> {cardData.name}</p>
-              <p><strong>Nationality:</strong> {cardData.nationality}</p>
-              <p><strong>Passport No:</strong> {cardData.passport_number}</p>
-              <p><strong>Expiry:</strong> {cardData.expiry_date}</p>
+              <p><strong>MRZ Data (DG1):</strong> {cardData.dg1?.substring(0, 30)}...</p>
+              <p><strong>Photo Data (DG2):</strong> {cardData.dg2 ? "Present" : "Missing"}</p>
+              {cardData.dg2 && (
+                <img src={`data:image/jpeg;base64,${cardData.dg2}`} alt="Passport Face" style={{width: 100, marginTop: 10, borderRadius: 8}} />
+              )}
             </>
           )}
           {cardType === 'license' && (
             <>
-              <p><strong>Name:</strong> {cardData.name}</p>
-              <p><strong>Address:</strong> {cardData.address}</p>
-              <p><strong>License No:</strong> {cardData.license_number}</p>
-              <p><strong>Categories:</strong> {cardData.categories.join(", ")}</p>
+              {cardData.name ? (
+                <>
+                  <p><strong>Name:</strong> {cardData.name}</p>
+                  <p><strong>Address:</strong> {cardData.address}</p>
+                  <p><strong>License No:</strong> {cardData.license_number}</p>
+                </>
+              ) : (
+                <pre className="raw-json">{JSON.stringify(cardData, null, 2)}</pre>
+              )}
             </>
           )}
           {cardType === 'residence' && (
             <pre className="raw-json">{JSON.stringify(cardData, null, 2)}</pre>
           )}
-          {cardData.face_photo && (
+          {cardData.face_photo && cardType !== 'passport' && (
             <img src={`data:image/jpeg;base64,${cardData.face_photo}`} alt="Face" style={{width: 100, marginTop: 10, borderRadius: 8}} />
           )}
         </div>
