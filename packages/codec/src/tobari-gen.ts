@@ -1,5 +1,6 @@
 import { signCoseSign1 } from '@tobari/crypto/cose';
 import { COSE_ALG } from '@tobari/crypto/utils';
+import { HPKE_ALG_CLASSIC, HPKE_ALG_HYBRID, encryptHpkeWithAlg, type HpkeAlg } from '@tobari/crypto/hpke';
 import yaml from 'js-yaml';
 import fs from 'fs';
 import { transformToMdocData } from './sd';
@@ -47,6 +48,7 @@ export async function generateSignedTobari(
         embeddedFont?: Uint8Array;        // Raw font binary
         devicePqcPublicKey?: Uint8Array;  // PQC Device Key
         pqcEncrypt?: boolean;             // Simulate PQC Encryption
+        encryptionAlg?: HpkeAlg;          // Explicit alg override
     } = {}
 ): Promise<Uint8Array> {
     const schema = yaml.load(schemaYaml) as any;
@@ -148,24 +150,21 @@ export async function generateSignedTobari(
     // 4. Optional Encryption (HPKE)
     if (options.encryptionPublicKey) {
         console.log("Applying HPKE Encryption to payload...");
-        const { encryptHPKE, encryptHPKEHybrid } = await import('@tobari/crypto/hpke');
         const info = new TextEncoder().encode("tobari-storage-v1");
-        let ciphertext = await encryptHPKE(options.encryptionPublicKey, encoded, info);
-        
-        let alg = "HPKE-P256-SHA256-AES128GCM";
-        if (options.pqcEncrypt) {
-            if (!options.encryptionPqcPublicKey) {
-                throw new Error("pqcEncrypt requires encryptionPqcPublicKey (ML-KEM-768 public key)");
-            }
-            console.log("Applying HPKE + ML-KEM-768 hybrid encryption...");
-            ciphertext = await encryptHPKEHybrid(
-                options.encryptionPublicKey,
-                options.encryptionPqcPublicKey,
-                encoded,
-                info
-            );
-            alg = "HPKE-P256-MLKEM768-SHA256-AES128GCM";
+        const alg: HpkeAlg =
+            options.encryptionAlg
+                ?? (options.pqcEncrypt ? HPKE_ALG_HYBRID : HPKE_ALG_CLASSIC);
+        if (alg === HPKE_ALG_HYBRID && !options.encryptionPqcPublicKey) {
+            throw new Error("Hybrid HPKE requires encryptionPqcPublicKey (ML-KEM-768 public key)");
         }
+
+        const ciphertext = await encryptHpkeWithAlg({
+            alg,
+            publicKey: options.encryptionPublicKey,
+            pqcPublicKey: options.encryptionPqcPublicKey,
+            plaintext: encoded,
+            info
+        });
 
         // Wrap in a simple JSON for the demo viewer to detect encryption
         const wrapper = {
