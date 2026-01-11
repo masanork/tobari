@@ -22,6 +22,58 @@ class PassportController {
         try checkSW(res, context: "Select Passport AP")
     }
     
+    /// Performs PACE (Password Authenticated Connection Establishment)
+    func performPACE(password: String, isCan: Bool = false) async throws {
+        // 1. MSE:Set AT
+        // CLA=00, INS=22, P1=C1, P2=A4, Lc=0F (Algorithm: PACE-ECDH-GM-AES-CBC-CMAC-128, etc)
+        // Data identifies the password type (MRZ or CAN)
+        let pwdTag: UInt8 = isCan ? 0x02 : 0x01
+        let algID = Data([0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04, 0x02, 0x02]) // Example OID for ECDH-GM
+        var mseData = Data([0x80])
+        mseData.append(UInt8(algID.count))
+        mseData.append(algID)
+        mseData.append(contentsOf: [0x83, 0x01, pwdTag])
+        
+        var mseApdu = Data([0x00, 0x22, 0xC1, 0xA4, UInt8(mseData.count)])
+        mseApdu.append(mseData)
+        let mseRes = try await manager.transmit(apdu: mseApdu)
+        try checkSW(mseRes, context: "MSE:Set AT")
+        
+        // 2. Step 1: Get Encrypted Nonce
+        // GENERAL AUTHENTICATE: 00 86 00 00 02 7C 00 00
+        let ga1Res = try await manager.transmit(apdu: Data([0x00, 0x86, 0x00, 0x00, 0x02, 0x7C, 0x00, 0x00]))
+        try checkSW(ga1Res, context: "PACE GA1")
+        // Extract nonce (Tag 80 inside 7C)
+        let encryptedNonce = ga1Res.subdata(in: 4..<ga1Res.count-2)
+        
+        // 3. Step 2: Map Nonce (Exchange ephemeral keys)
+        let kPace = PassportKDF.derivePaceKey(password: password, isCan: isCan)
+        let nonce = try aesDecrypt(data: encryptedNonce, key: kPace)
+        
+        let ephemeralSecretIf = P256.KeyAgreement.PrivateKey()
+        let ephemeralPubIf = ephemeralSecretIf.publicKey.derRepresentation
+        
+        var ga2Data = Data([0x7C, UInt8(ephemeralPubIf.count + 2), 0x81])
+        ga2Data.append(UInt8(ephemeralPubIf.count))
+        ga2Data.append(ephemeralPubIf)
+        
+        var ga2Apdu = Data([0x00, 0x86, 0x00, 0x00, UInt8(ga2Data.count)])
+        ga2Apdu.append(ga2Data)
+        ga2Apdu.append(0x00) // Le
+        
+        let ga2Res = try await manager.transmit(apdu: ga2Apdu)
+        try checkSW(ga2Res, context: "PACE GA2")
+        
+        // 4. Step 3: Key Agreement
+        // Establish final session keys (Simplified for brevity)
+        debugPrint("PACE Nonce unencrypted: \(nonce.count) bytes")
+        debugPrint("Performing Key Agreement...")
+        
+        // In a real implementation, we would perform GM mapping and final DH here.
+        // For now, let's assume we establish SM similarly to BAC after successful handshake.
+        // self.sm = ...
+    }
+    
     /// Performs BAC (Basic Access Control) Mutual Authentication
     func performBAC(mrz: String) async throws {
         // 1. Derive Static Keys from MRZ

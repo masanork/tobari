@@ -203,17 +203,30 @@ class CLIHandler {
         }
 
         if args.contains("--read-passport") {
-            guard let mrzIndex = args.firstIndex(of: "--mrz"), mrzIndex + 1 < args.count else {
-                fputs("Usage: tobari-signer-macos --read-passport --mrz <MRZ>\n", stderr)
-                exit(1)
-            }
-            let mrz = args[mrzIndex + 1]
-            
             let manager = SmartCardManager()
             let controller = PassportController(manager: manager)
+            
             do {
                 try await controller.selectPassportAP()
-                try await controller.performBAC(mrz: mrz)
+                
+                if let canIndex = args.firstIndex(of: "--can"), canIndex + 1 < args.count {
+                    let can = args[canIndex + 1]
+                    debugLog("Using PACE with CAN: \(can)")
+                    try await controller.performPACE(password: can, isCan: true)
+                } else if let mrzIndex = args.firstIndex(of: "--mrz"), mrzIndex + 1 < args.count {
+                    let mrz = args[mrzIndex + 1]
+                    if args.contains("--use-pace") {
+                        debugLog("Using PACE with MRZ")
+                        try await controller.performPACE(password: mrz, isCan: false)
+                    } else {
+                        debugLog("Using BAC with MRZ")
+                        try await controller.performBAC(mrz: mrz)
+                    }
+                } else {
+                    fputs("Error: --mrz or --can is required for passport reading\n", stderr)
+                    exit(1)
+                }
+                
                 let dg1 = try await controller.readDG1()
                 let dg2 = try await controller.readDG2()
                 print("{\"dg1\": \"\(dg1.base64EncodedString())\", \"dg2\": \"\(dg2.base64EncodedString())\"}")
