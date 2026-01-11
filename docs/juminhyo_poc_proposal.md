@@ -99,8 +99,8 @@ PQC対応の有無によるWASMサイズ差を測定した（以下は wasm-pack
 
 | ビルド | 構成 | サイズ |
 | :--- | :--- | :--- |
-| core | 古典暗号のみ（P-256/HPKE等） | 141,508 bytes |
-| full | PQC対応（ML-DSA-65 + ML-KEM-768） | 281,694 bytes |
+| core | 古典暗号のみ（P-256/HPKE等） | 141,508 bytes（gzip: 52,507） |
+| full | PQC対応（ML-DSA-65 + ML-KEM-768） | 293,103 bytes（gzip: 90,902） |
 
 差分は **+140,186 bytes**（約1.99倍）であり、PQC機能の追加に伴いWASMサイズが増加することを確認した。
 
@@ -110,8 +110,8 @@ PQC対応の有無によるWASMサイズ差を測定した（以下は wasm-pack
 
 | 生成モード | .cose | .html |
 | :--- | ---: | ---: |
-| core（PQCなし / 暗号化なし） | 40,120 bytes | 275,953 bytes |
-| full（PQC + ハイブリッド暗号化） | 59,473 bytes | 503,881 bytes |
+| core（PQCなし / 暗号化なし） | 40,016 bytes（gzip: 37,831） | 276,077 bytes（gzip: 134,439） |
+| full（PQC + ハイブリッド暗号化） | 59,597 bytes（gzip: 45,191） | 504,309 bytes（gzip: 211,474） |
 
 HTMLには検証用WASMとビューアー資産が含まれるため、PQC有効時はWASMの差分がそのままサイズに反映される。加えて、暗号化時はペイロードがJSONラッパー化されるため、COSEサイズも増加する。
 
