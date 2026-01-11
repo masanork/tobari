@@ -30,7 +30,7 @@ export async function handleDemoListExamples(toolArgs: any) {
                     if (entry.name === "verifier-tool.html" || entry.name === "viewer-template.html") continue;
 
                     try {
-                        const buffer = await readTobariFileAsBuffer(fullPath);
+                        const buffer = await readTobariFileAsBuffer(fullPath, args.decrypt);
                         const cose = decode(buffer);
                         let docType = cose.docType || "Unknown";
 
@@ -117,7 +117,7 @@ export async function handleDemoGenerateExample(toolArgs: any) {
         if (args.pqc) cmdArgs.push("--pqc");
         if (args.encrypt) cmdArgs.push("--encrypt");
 
-        console.log(`Executing: bun ${cmdArgs.join(" ")}`);
+        console.error(`Executing: bun ${cmdArgs.join(" ")}`);
 
         const proc = spawn("bun", cmdArgs, { cwd: PROJECT_ROOT });
         
@@ -176,9 +176,9 @@ export async function handleDemoStartServer(toolArgs: any) {
             server.close();
         }
 
-        console.log("Loading trusted issuers for demo server...");
+        console.error("Loading trusted issuers for demo server...");
         trustedIssuers = await loadAllTrustedIssuers();
-        console.log(`Loaded ${Object.keys(trustedIssuers).length} trusted issuers.`);
+        console.error(`Loaded ${Object.keys(trustedIssuers).length} trusted issuers.`);
 
         server = http.createServer((req, res) => {
             // Enable CORS
@@ -213,7 +213,7 @@ export async function handleDemoStartServer(toolArgs: any) {
                 req.on('end', async () => {
                     try {
                         const data = JSON.parse(body);
-                        console.log("Received submission:", data);
+                        console.error("Received submission:", data);
 
                         // Process and Verify if VP
                         let verificationResult = null;

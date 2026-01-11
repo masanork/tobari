@@ -23,7 +23,7 @@
     "demo:scac": "cd examples/scac && bun run gen-scac.ts",
     "demo:wallet": "bun run scripts/serve_demo.ts",
     "demo:juminhyo": "cd examples/juminhyo-demo && bun run dev",
-    "docs:prepare": "mkdir -p docs/civ && cp packages/civ/docs/*.md docs/civ/ && cp README.md docs/getting-started.md",
+    "docs:prepare": "bun run scripts/prepare_docs.ts",
     "docs:dev": "bun run docs:prepare && vitepress dev docs",
     "docs:build": "bun run docs:prepare && vitepress build docs",
     "docs:preview": "vitepress preview docs"

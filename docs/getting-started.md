@@ -27,7 +27,7 @@ Through the **civ (Citizen Identity Verification)** library, it also securely co
    Supports Ideographic Variation Sequences (IVS), essential for Japanese names. Extracts and embeds only necessary glyphs from IPA MJ Mincho, achieving perfect rendering in just a few dozen KB.
 5. **Holder Binding (Device Signature)**:
    Supports device authentication compliant with ISO 18013-5 (mdoc) and OID4VP. Cryptographically guarantees that the presented data comes from the legitimate owner.
-   [Read more: docs/HOLDER_BINDING.md](docs/HOLDER_BINDING.md)
+   [Read more: docs/HOLDER_BINDING.md](HOLDER_BINDING.md)
 6. **Zero-Knowledge Proofs (ZKP)**:
    Supports ZK circuits (Circom) and BBS+ signatures for "Unlinkable Proofs" and proving "Over 18" without revealing birth dates.
 
@@ -36,7 +36,7 @@ Through the **civ (Citizen Identity Verification)** library, it also securely co
 Tobari goes beyond simple digital certificates, equipped with advanced privacy features to support Web3 and financial regulations (FATF Travel Rule).
 
 ### SCAC: Crypto Account Ownership Credential
-A credential model to comply with [FATF Unhosted Wallet Regulations](docs/FATF_ANALYSIS.md). It cryptographically binds a verified individual to self-custody wallets (Ethereum, Solana, etc.).
+A credential model to comply with [FATF Unhosted Wallet Regulations](FATF_ANALYSIS.md). It cryptographically binds a verified individual to self-custody wallets (Ethereum, Solana, etc.).
 
 ### ZKP Examples
 - **Passport Age Verification**: Proving age requirements without revealing the passport number.
@@ -62,11 +62,11 @@ bun run demo:scac
 
 Full documentation is available at [**https://masanork.github.io/tobari/**](https://masanork.github.io/tobari/) or in the `docs/` directory.
 
-- [Architecture Overview](docs/ARCHITECTURE.md)
-- [MCP Server (AI Integration)](docs/MCP_SERVER.md)
-- [Holder Binding](docs/HOLDER_BINDING.md)
-- [Schema Specification](docs/SCHEMA_SPEC.md)
-- [CLI Tools Reference](docs/CLI_TOOLS.md)
+- [Architecture Overview](ARCHITECTURE.md)
+- [MCP Server (AI Integration)](MCP_SERVER.md)
+- [Holder Binding](HOLDER_BINDING.md)
+- [Schema Specification](SCHEMA_SPEC.md)
+- [CLI Tools Reference](CLI_TOOLS.md)
 
 ## Quick Start
 
