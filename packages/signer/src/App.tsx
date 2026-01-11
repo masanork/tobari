@@ -26,6 +26,17 @@ function App() {
   const [pin, setPin] = useState<string>("");
   const [cardData, setCardData] = useState<MyNumberCardData | null>(null);
 
+  const formatError = (e: any): string => {
+    if (typeof e === 'string') return e;
+    if (e.type === "IncorrectPin") {
+      return `Incorrect PIN. ${e.details.retries} attempts remaining. Please be careful as the card will be locked after 3 or 5 failures.`;
+    }
+    if (e.type === "PinLocked") {
+      return "The PIN is locked. You must visit your local municipal office to reset it.";
+    }
+    return JSON.stringify(e);
+  };
+
   useEffect(() => {
     invoke<SignRequest | null>("get_pending_request")
       .then((req) => {
@@ -39,7 +50,7 @@ function App() {
         }
       })
       .catch((e) => {
-        setError("Failed to load request: " + e);
+        setError("Failed to load request: " + formatError(e));
       });
   }, []);
 
@@ -50,7 +61,7 @@ function App() {
       await invoke("perform_sign");
       setStatus("Signed successfully! Closing...");
     } catch (e: any) {
-      setError("Signing failed: " + (typeof e === 'string' ? e : JSON.stringify(e)));
+      setError("Signing failed: " + formatError(e));
       setStatus("Error");
     }
   };
@@ -68,7 +79,7 @@ function App() {
       });
       setStatus("JPKI Signed successfully! Closing...");
     } catch (e: any) {
-      setError("JPKI Signing failed: " + (typeof e === 'string' ? e : JSON.stringify(e)));
+      setError("JPKI Signing failed: " + formatError(e));
       setStatus("Error");
     }
   };
@@ -86,8 +97,8 @@ function App() {
       });
       setCardData(data);
       setStatus("Card read successfully!");
-    } catch (e) {
-      setError("Failed to read card: " + e);
+    } catch (e: any) {
+      setError("Failed to read card: " + formatError(e));
       setStatus("Error");
     }
   };
@@ -99,8 +110,8 @@ function App() {
       const responseStr = await invoke<string>("perform_register");
       const response = JSON.parse(responseStr);
       setStatus(`Key registered! ID: ${response.credentialId.substring(0, 10)}... You can now sign.`);
-    } catch (e) {
-      setError("Registration failed: " + e);
+    } catch (e: any) {
+      setError("Registration failed: " + formatError(e));
       setStatus("Error");
     }
   };
