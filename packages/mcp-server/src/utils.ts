@@ -1,6 +1,6 @@
 import * as path from "path";
 import * as fs from "fs/promises";
-import { decryptHPKE, decryptHPKEHybrid, deriveHPKEKeyPair } from "@tobari/crypto/hpke";
+import { decryptHpkeWithAlg, deriveHPKEKeyPair, HPKE_ALG_HYBRID, type HpkeAlg } from "@tobari/crypto/hpke";
 
 export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
 export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/civ");
@@ -113,24 +113,24 @@ async function decryptIfNeeded(input: Uint8Array): Promise<Uint8Array> {
     const secret = new TextEncoder().encode(DEMO_HPKE_SECRET);
     const keyPair = await deriveHPKEKeyPair(secret);
 
-    if (wrapper.alg === "HPKE-P256-MLKEM768-SHA256-AES128GCM") {
+    let pqcPrivateKey: Uint8Array | undefined;
+    if (wrapper.alg === HPKE_ALG_HYBRID) {
         try {
             const pqcContent = await fs.readFile(DEMO_PQC_PRIVATE_KEY_PATH, "utf-8");
             const pqcJson = JSON.parse(pqcContent);
-            const pqcPrivateKey = new Uint8Array(Buffer.from(pqcJson.privateKey, "base64url"));
-            const plaintext = await decryptHPKEHybrid(
-                keyPair!.privateKey,
-                pqcPrivateKey,
-                ciphertext,
-                info
-            );
-            return new Uint8Array(plaintext);
+            pqcPrivateKey = new Uint8Array(Buffer.from(pqcJson.privateKey, "base64url"));
         } catch (e: any) {
             throw new Error(`Missing or invalid PQC private key for hybrid decrypt: ${e.message}`);
         }
     }
 
-    const plaintext = await decryptHPKE(keyPair!.privateKey, ciphertext, info);
+    const plaintext = await decryptHpkeWithAlg({
+        alg: wrapper.alg as HpkeAlg,
+        privateKey: keyPair!.privateKey,
+        pqcPrivateKey,
+        data: ciphertext,
+        info
+    });
     return new Uint8Array(plaintext);
 }
 

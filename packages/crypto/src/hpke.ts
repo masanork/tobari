@@ -9,6 +9,10 @@ import initFull, {
   hpke_p256_mlkem768_decrypt
 } from "../../crypto-wasm/pkg/full/tobari_crypto_wasm_full.js";
 
+export const HPKE_ALG_CLASSIC = "HPKE-P256-SHA256-AES128GCM";
+export const HPKE_ALG_HYBRID = "HPKE-P256-MLKEM768-SHA256-AES128GCM";
+export type HpkeAlg = typeof HPKE_ALG_CLASSIC | typeof HPKE_ALG_HYBRID;
+
 let coreInitialized: Promise<any> | null = null;
 let fullInitialized: Promise<any> | null = null;
 
@@ -57,6 +61,38 @@ export async function deriveHPKEKeyPair(seed: Uint8Array) {
     publicKey: binary.slice(0, 65),
     privateKey: binary.slice(65, 97)
   };
+}
+
+export async function encryptHpkeWithAlg(params: {
+  alg: HpkeAlg;
+  publicKey: Uint8Array;
+  pqcPublicKey?: Uint8Array;
+  plaintext: Uint8Array;
+  info: Uint8Array;
+}): Promise<Uint8Array> {
+  if (params.alg === HPKE_ALG_HYBRID) {
+    if (!params.pqcPublicKey) {
+      throw new Error("HPKE hybrid encrypt requires pqcPublicKey");
+    }
+    return encryptHPKEHybrid(params.publicKey, params.pqcPublicKey, params.plaintext, params.info);
+  }
+  return encryptHPKE(params.publicKey, params.plaintext, params.info);
+}
+
+export async function decryptHpkeWithAlg(params: {
+  alg: HpkeAlg;
+  privateKey: Uint8Array;
+  pqcPrivateKey?: Uint8Array;
+  data: Uint8Array;
+  info: Uint8Array;
+}): Promise<Uint8Array> {
+  if (params.alg === HPKE_ALG_HYBRID) {
+    if (!params.pqcPrivateKey) {
+      throw new Error("HPKE hybrid decrypt requires pqcPrivateKey");
+    }
+    return decryptHPKEHybrid(params.privateKey, params.pqcPrivateKey, params.data, params.info);
+  }
+  return decryptHPKE(params.privateKey, params.data, params.info);
 }
 
 export async function encryptHPKEHybrid(
