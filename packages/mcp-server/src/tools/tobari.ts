@@ -656,18 +656,41 @@ export async function handleAssemblePresentation(toolArgs: any) {
 
         for (let i = 0; i < preparedDocs.length; i++) {
             const p = preparedDocs[i];
-            const inputSignature = decodeSignatureInput(args.signatures[i], signatureEncoding);
-            const signature = signatureFormat === "raw-ecdsa"
-                ? rawEcdsaToDer(inputSignature)
-                : inputSignature;
+            const sigInput = args.signatures[i];
+            
+            let deviceAuth: Uint8Array;
 
-            const deviceAuth = await assembleDeviceAuth(
-                new Uint8Array(Buffer.from(p.protectedHeaderBytes, 'base64')),
-                p.docType,
-                new Uint8Array(Buffer.from(p.deviceNameSpacesBytes, 'base64')),
-                p.sessionTranscript,
-                signature
-            );
+            // Check if it's a WebAuthn signature (Object with signature, authData, clientDataJSON)
+            if (typeof sigInput === 'object' && sigInput.authData && sigInput.clientDataJSON) {
+                const signature = decodeSignatureInput(sigInput.signature, signatureEncoding);
+                const authData = decodeSignatureInput(sigInput.authData, signatureEncoding);
+                const clientDataJSON = sigInput.clientDataJSON;
+
+                const { assembleWebAuthnDeviceAuth } = await import("@tobari/codec/sd");
+                deviceAuth = await assembleWebAuthnDeviceAuth(
+                    new Uint8Array(Buffer.from(p.protectedHeaderBytes, 'base64')),
+                    p.docType,
+                    new Uint8Array(Buffer.from(p.deviceNameSpacesBytes, 'base64')),
+                    p.sessionTranscript,
+                    signature,
+                    authData,
+                    clientDataJSON
+                );
+            } else {
+                const inputSignature = decodeSignatureInput(sigInput as string, signatureEncoding);
+                const signature = signatureFormat === "raw-ecdsa"
+                    ? rawEcdsaToDer(inputSignature)
+                    : inputSignature;
+
+                const { assembleDeviceAuth } = await import("@tobari/codec/sd");
+                deviceAuth = await assembleDeviceAuth(
+                    new Uint8Array(Buffer.from(p.protectedHeaderBytes, 'base64')),
+                    p.docType,
+                    new Uint8Array(Buffer.from(p.deviceNameSpacesBytes, 'base64')),
+                    p.sessionTranscript,
+                    signature
+                );
+            }
 
             documents.push({
                 docType: p.docType,

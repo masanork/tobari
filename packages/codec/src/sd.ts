@@ -300,6 +300,43 @@ export async function assembleDeviceAuth(
 }
 
 /**
+ * Assembles a COSE_Sign1 structure from a WebAuthn assertion.
+ * The authData and clientDataJSON are stored in the unprotected header.
+ */
+export async function assembleWebAuthnDeviceAuth(
+    protectedHeaderBytes: Uint8Array,
+    docType: string,
+    deviceNamespacesBytes: Uint8Array,
+    sessionTranscript: any[],
+    signature: Uint8Array,
+    authData: Uint8Array,
+    clientDataJSON: string
+): Promise<Uint8Array> {
+    const { encodeCanonical } = await import('@tobari/crypto/cbor');
+
+    const deviceAuthentication = [
+        "DeviceAuthentication",
+        sessionTranscript,
+        docType,
+        deviceNamespacesBytes
+    ];
+    const payloadBytes = encodeCanonical(deviceAuthentication);
+
+    const unprotectedHeader = new Map<number, any>();
+    unprotectedHeader.set(-65537, authData);
+    unprotectedHeader.set(-65538, clientDataJSON);
+
+    const coseSign1 = [
+        protectedHeaderBytes,
+        unprotectedHeader,
+        payloadBytes,
+        signature
+    ];
+
+    return encodeCanonical(coseSign1);
+}
+
+/**
  * Creates a DeviceAuth signature (COSE_Sign1) over the DeviceAuthentication structure.
  */
 export async function signDeviceAuth(
