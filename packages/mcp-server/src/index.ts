@@ -16,10 +16,7 @@ import {
     handleGeneratePassportZkpInput,
     handleListAvailableDocuments
 } from "./tools/tobari.js";
-import {
-    handleDemoListExamples,
-    handleDemoGenerateExample
-} from "./tools/demo.js";
+import { handleDemoListExamples } from "./tools/demo.js";
 import {
     handleSignWithJpki,
     handleReadMyNumber,
@@ -293,32 +290,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 }
             },
             {
-                name: "demo_generate_example",
-                description: "Generates a sample Tobari document by running the generation script in the specified example directory. Use this to prepare data for demos.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        exampleName: { type: "string", description: "Name of the example directory (e.g., 'juminhyo', 'bank-cert')" },
-                        pqc: { type: "boolean", description: "Enable PQC (Post-Quantum Cryptography) signatures (adds --pqc flag)" },
-                        encrypt: { type: "boolean", description: "Enable encryption (adds --encrypt flag)" }
-                    },
-                    required: ["exampleName"]
-                }
-            },
-            {
-                name: "generate_example_document",
-                description: "Generates a sample Tobari document by running the generation script in the specified example directory.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        exampleName: { type: "string", description: "Name of the example directory (e.g., 'juminhyo', 'bank-cert')" },
-                        pqc: { type: "boolean", description: "Enable PQC (Post-Quantum Cryptography) signatures (adds --pqc flag)" },
-                        encrypt: { type: "boolean", description: "Enable encryption (adds --encrypt flag)" }
-                    },
-                    required: ["exampleName"]
-                }
-            },
-            {
                 name: "generate_passport_zkp_input",
                 description: "Generates JSON input for the Passport ZK circuit (age verification + nullifier) from a Tobari Passport document.",
                 inputSchema: {
@@ -454,8 +425,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleListAvailableDocuments(request.params.arguments);
         case "demo_list_examples":
             return handleDemoListExamples(request.params.arguments);
-        case "demo_generate_example":
-            return handleDemoGenerateExample(request.params.arguments);
         // No demo_start_* handlers
         case "generate_passport_zkp_input":
             return handleGeneratePassportZkpInput(request.params.arguments);

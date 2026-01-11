@@ -32,8 +32,8 @@
 
 ### MCP Enhancements (Demo Automation)
 - [ ] **End-to-End Demo Support**
-  - [ ] Update `list_available_documents` to return issuer key paths (classic/pqc).
-  - [ ] Create `generate_example_document` tool to trigger `gen-tobari.ts` scripts.
+  - [x] Update `list_available_documents` to return issuer key paths (classic/pqc).
+  - [x] Remove `generate_example_document` (build-time generation instead of MCP-triggered scripts).
 
 ## 📅 Next (1-2 Months)
 
