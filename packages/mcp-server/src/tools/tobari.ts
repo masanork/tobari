@@ -35,10 +35,31 @@ export async function handleReadTobariFile(toolArgs: any) {
                 false,
                 ["verify"]
             );
+            
+            let pqcPublicKey: Uint8Array | undefined;
+            if (args.issuerPqcPublicKeyPath) {
+                try {
+                    const pqcContent = await fs.readFile(args.issuerPqcPublicKeyPath, "utf-8");
+                    const pqcJson = JSON.parse(pqcContent);
+                    if (pqcJson.publicKey) {
+                        pqcPublicKey = new Uint8Array(Buffer.from(pqcJson.publicKey, 'base64url'));
+                    }
+                } catch (e: any) {
+                    console.warn(`Failed to load PQC key from ${args.issuerPqcPublicKeyPath}: ${e.message}`);
+                }
+            }
 
             try {
-                const result = await verifyTobari(fileBuffer, cryptoKey);
+                const result = await verifyTobari(fileBuffer, cryptoKey, pqcPublicKey);
                 isValid = result.isValid;
+                
+                if (result.isValid && result.pqcValid !== null) {
+                    if (result.pqcValid) {
+                        isValid = "Valid (Classic + PQC)";
+                    } else {
+                        isValid = "Valid (Classic) but PQC INVALID";
+                    }
+                }
             } catch (e: any) {
                 isValid = `Verification failed: ${e.message}`;
             }

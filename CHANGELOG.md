@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.10] - 2026-01-11
+
+### Features
+- **Post-Quantum Cryptography (PQC)**:
+  - **Full PoC Lifecycle**: Completed the end-to-end flow for **ML-DSA-65** countersignatures (Generation in `tobari-gen` -> Verification in `validator`).
+  - **CLI Support**: Updated `verify-cli` to accept PQC public keys and verify hybrid signatures (Classic + PQC).
+  - **MCP Integration**: Updated `read_tobari_file` and `verify_presentation` tools to report PQC verification status ("Valid (Classic + PQC)").
+
 ## [0.3.9] - 2026-01-11
 
 ### Features

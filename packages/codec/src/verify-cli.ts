@@ -7,9 +7,10 @@ import { decode } from 'cbor-x';
 async function main() {
     const filePath = process.argv[2];
     const jwkPath = process.argv[3];
+    const pqcKeyPath = process.argv[4]; // Optional
 
     if (!filePath) {
-        console.log("\nUsage: bun run verify-cli.ts <path-to-cose> [path-to-public-key-jwk]");
+        console.log("\nUsage: bun run verify-cli.ts <path-to-cose> [path-to-public-key-jwk] [path-to-pqc-public-key-json]");
         process.exit(1);
     }
 
@@ -27,13 +28,30 @@ async function main() {
         );
     }
 
+    let pqcPublicKey: Uint8Array | undefined;
+    if (pqcKeyPath) {
+        const keyData = JSON.parse(fs.readFileSync(path.resolve(pqcKeyPath), 'utf-8'));
+        if (keyData.publicKey) {
+            pqcPublicKey = new Uint8Array(Buffer.from(keyData.publicKey, 'base64url'));
+        }
+    }
+
     console.log(`\nAnalyzing Tobari Mdoc: ${path.basename(filePath)}`);
     console.log("------------------------------------------");
 
     if (publicKey) {
-        const result = await verifyTobari(binary, publicKey);
+        const result = await verifyTobari(binary, publicKey, pqcPublicKey);
         if (result.isValid && result.mso) {
             console.log("✅ Signature: VALID (Algorithm: ES384)");
+            
+            if (result.pqcValid === true) {
+                console.log("✅ PQC Countersignature: VALID (Algorithm: ML-DSA-65)");
+            } else if (result.pqcValid === false) {
+                console.log("❌ PQC Countersignature: INVALID");
+            } else if (pqcPublicKey) {
+                console.log("⚠️  PQC Countersignature: Not found (but key provided)");
+            }
+
             console.log(`   DocType: ${result.mso.docType}`);
             console.log(`   Signed at: ${result.mso.validityInfo.signed}`);
 
