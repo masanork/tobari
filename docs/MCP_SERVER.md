@@ -25,7 +25,7 @@ The server exposes two categories of tools: **Core Tools** for handling credenti
 | Tool Name | Description |
 | :--- | :--- |
 | `read_tobari_file` | Reads and parses a Tobari file (.cose/.html). Verifies issuer signatures if a key is provided. |
-| `create_presentation` | Creates a selective disclosure VP (Verifiable Presentation) from a document. |
+| `create_presentation` | Creates a selective disclosure VP (Verifiable Presentation) from a document. Supports `signerPath` and `fallbackToEphemeral`. |
 | `preview_presentation` | Decodes and summarizes a VP. Optional signature verification. |
 | `verify_presentation` | Verifies a VP, checking both Issuer and Device (Holder) signatures. Supports PQC. |
 | `analyze_service_request` | Analyzes a Service Request file to understand what credentials are required. |
@@ -40,6 +40,8 @@ These tools are prefixed with `demo_` and are intended for testing, prototyping,
 | :--- | :--- |
 | `demo_list_examples` | Lists sample documents and keys available in the project's `examples/` directory. |
 | `demo_generate_example` | Runs generation scripts (e.g., `gen-tobari.ts`) to create fresh sample data. Supports `--pqc` and `--encrypt`. |
+
+Note: Demo server tools were removed. Use `preview_presentation` for VP inspection and JSON previews.
 
 ### Encrypted Documents
 For encrypted Tobari files (including hybrid HPKE + PQC), pass a `decrypt` object to the relevant tools (`read_tobari_file`, `create_presentation`, `prepare_presentation`, `analyze_service_request`, `demo_list_examples`, `generate_passport_zkp_input`).
@@ -153,3 +155,5 @@ Optional output controls:
   }
 }
 ```
+
+Set `format` to `summary`, `readable`, or `full`. Use `includeDecoded: true` to attach the decoded VP payload alongside the human-readable view.

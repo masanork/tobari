@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.11] - 2026-01-11
+
+### Features
+- **MCP Server**:
+  - **Readable VP Preview**: Added `preview_presentation` output controls (`format`, `includeDecoded`, `redact`, `maxStringLength`) for human-readable VP inspection.
+  - **Device Auth Fallback**: `create_presentation` now validates signer paths and can fall back to an ephemeral device key when the signer is unavailable.
+  - **Demo Simplification**: Removed local demo server tooling and kept only `demo_list_examples` and `demo_generate_example`.
+- **Tests**:
+  - Added MCP server tests for encrypted reads, readable previews, decoded previews, and signer fallback behavior.
+
 ## [0.3.10] - 2026-01-11
 
 ### Features
