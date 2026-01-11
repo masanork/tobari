@@ -247,6 +247,55 @@ describe("MCP Server", () => {
         expect(resultData.世帯主氏名).toBeDefined();
     }, 10000);
 
+    it("should read and decrypt an encrypted Tobari file", async () => {
+        const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
+        const proc = spawn("bun", ["run", serverPath], {
+            stdio: ["pipe", "pipe", "inherit"],
+        });
+
+        const targetFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
+        const keyFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/issuer-key.json");
+
+        const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+        const toolReq = {
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: {
+                name: "read_tobari_file",
+                arguments: {
+                    path: targetFile,
+                    issuerPublicKeyPath: keyFile,
+                    decrypt: {
+                        hpkeSecret: "tobari-demo-secret-key-32-bytes-long!!",
+                        hpkeInfo: "tobari-storage-v1"
+                    }
+                }
+            }
+        };
+
+        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
+        proc.stdin.write(JSON.stringify(initReq) + "\n");
+        proc.stdin.write(JSON.stringify(toolReq) + "\n");
+
+        let outputBuffer = "";
+        proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
+
+        const waitForId = async (id: number) => {
+            for (let i = 0; i < 20; i++) {
+                if (outputBuffer.includes(`\"id\":${id}`)) return;
+                await new Promise(r => setTimeout(r, 200));
+            }
+        };
+
+        await waitForId(1);
+        proc.kill();
+
+        const respLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 1; } catch { return false; } });
+        expect(respLine).toBeDefined();
+        const resultData = JSON.parse(JSON.parse(respLine!).result.content[0].text);
+        expect(resultData._meta.valid).toBe(true);
+        expect(resultData.docType).toBe("io.github.masanork.tobari.juminhyo.v1");
+    }, 10000);
+
     it("should create a VP from multiple documents", async () => {
         const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
         const proc = spawn("bun", ["run", serverPath], {
@@ -770,5 +819,190 @@ describe("MCP Server", () => {
         // Note: The signature itself is dummy, so verify_presentation would likely fail 
         // unless we mock the verification logic too or use a valid key in the dummy signer.
         // For this test, ensuring the flow completed and returned a VP is sufficient.
+    }, 15000);
+
+    it("should preview a VP with readable output", async () => {
+        const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
+        const proc = spawn("bun", ["run", serverPath], {
+            stdio: ["pipe", "pipe", "inherit"],
+        });
+
+        const juminhyoFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
+        const deviceKeyFile = path.resolve(import.meta.dir, "../../../device-key.json");
+
+        const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+
+        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
+        proc.stdin.write(JSON.stringify(initReq) + "\n");
+
+        const createReq = {
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: {
+                name: "create_presentation",
+                arguments: {
+                    requests: [
+                        { path: juminhyoFile, fields: ["世帯主氏名", "世帯住所"] }
+                    ],
+                    devicePrivateKeyPath: deviceKeyFile
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(createReq) + "\n");
+
+        let outputBuffer = "";
+        proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
+
+        const waitForId = async (id: number) => {
+            for (let i = 0; i < 40; i++) {
+                if (outputBuffer.includes(`\"id\":${id}`)) return;
+                await new Promise(r => setTimeout(r, 200));
+            }
+        };
+
+        await waitForId(1);
+        const createRespLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 1; } catch { return false; } });
+        const vpBase64 = JSON.parse(JSON.parse(createRespLine!).result.content[0].text).vp_base64;
+
+        const previewReq = {
+            jsonrpc: "2.0", id: 2, method: "tools/call",
+            params: {
+                name: "preview_presentation",
+                arguments: {
+                    vpBase64,
+                    format: "readable",
+                    redact: true,
+                    maxStringLength: 10
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(previewReq) + "\n");
+
+        await waitForId(2);
+        proc.kill();
+
+        const previewRespLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 2; } catch { return false; } });
+        expect(previewRespLine).toBeDefined();
+        const previewResult = JSON.parse(JSON.parse(previewRespLine!).result.content[0].text);
+        expect(previewResult.readable).toBeDefined();
+        expect(previewResult.readable.documents.length).toBeGreaterThan(0);
+
+        const disclosed = previewResult.readable.documents[0].disclosed["世帯主氏名"];
+        expect(typeof disclosed).toBe("string");
+        expect(disclosed.includes("***")).toBe(true);
+    }, 15000);
+
+    it("should allow preview output with decoded VP", async () => {
+        const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
+        const proc = spawn("bun", ["run", serverPath], {
+            stdio: ["pipe", "pipe", "inherit"],
+        });
+
+        const juminhyoFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
+        const deviceKeyFile = path.resolve(import.meta.dir, "../../../device-key.json");
+
+        const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+
+        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
+        proc.stdin.write(JSON.stringify(initReq) + "\n");
+
+        const createReq = {
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: {
+                name: "create_presentation",
+                arguments: {
+                    requests: [
+                        { path: juminhyoFile, fields: ["世帯主氏名"] }
+                    ],
+                    devicePrivateKeyPath: deviceKeyFile
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(createReq) + "\n");
+
+        let outputBuffer = "";
+        proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
+
+        const waitForId = async (id: number) => {
+            for (let i = 0; i < 40; i++) {
+                if (outputBuffer.includes(`\"id\":${id}`)) return;
+                await new Promise(r => setTimeout(r, 200));
+            }
+        };
+
+        await waitForId(1);
+        const createRespLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 1; } catch { return false; } });
+        const vpBase64 = JSON.parse(JSON.parse(createRespLine!).result.content[0].text).vp_base64;
+
+        const previewReq = {
+            jsonrpc: "2.0", id: 2, method: "tools/call",
+            params: {
+                name: "preview_presentation",
+                arguments: {
+                    vpBase64,
+                    format: "summary",
+                    includeDecoded: true
+                }
+            }
+        };
+        proc.stdin.write(JSON.stringify(previewReq) + "\n");
+
+        await waitForId(2);
+        proc.kill();
+
+        const previewRespLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 2; } catch { return false; } });
+        expect(previewRespLine).toBeDefined();
+        const previewResult = JSON.parse(JSON.parse(previewRespLine!).result.content[0].text);
+        expect(previewResult.decodedVp).toBeDefined();
+        expect(previewResult.decodedVp.version).toBe("1.0");
+    }, 15000);
+
+    it("should allow create_presentation fallback to ephemeral when signer missing", async () => {
+        const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
+        const proc = spawn("bun", ["run", serverPath], {
+            stdio: ["pipe", "pipe", "inherit"],
+            env: {
+                ...process.env,
+                TOBARI_SIGNER_PATH: "/nonexistent/signer"
+            }
+        });
+
+        const juminhyoFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo.cose");
+
+        const initReq = { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+        const createReq = {
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: {
+                name: "create_presentation",
+                arguments: {
+                    requests: [
+                        { path: juminhyoFile, fields: ["世帯主氏名"] }
+                    ],
+                    fallbackToEphemeral: true
+                }
+            }
+        };
+
+        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
+        proc.stdin.write(JSON.stringify(initReq) + "\n");
+        proc.stdin.write(JSON.stringify(createReq) + "\n");
+
+        let outputBuffer = "";
+        proc.stdout.on("data", (chunk) => { outputBuffer += chunk.toString(); });
+
+        const waitForId = async (id: number) => {
+            for (let i = 0; i < 40; i++) {
+                if (outputBuffer.includes(`\"id\":${id}`)) return;
+                await new Promise(r => setTimeout(r, 200));
+            }
+        };
+
+        await waitForId(1);
+        proc.kill();
+
+        const respLine = outputBuffer.split("\n").find(l => { try { return JSON.parse(l).id === 1; } catch { return false; } });
+        expect(respLine).toBeDefined();
+        const result = JSON.parse(JSON.parse(respLine!).result.content[0].text);
+        expect(result.vp_base64).toBeDefined();
+        expect(["external_signer", "ephemeral_fallback"]).toContain(result.signing_method);
     }, 15000);
 });

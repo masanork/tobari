@@ -67,6 +67,10 @@ export const PreviewPresentationSchema = z.object({
     issuerPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's public key (JWK)"),
     issuerPqcPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's PQC public key (base64url JSON)"),
     verifierNonce: z.string().optional().describe("Expected nonce to prevent replay attacks"),
+    format: z.enum(["summary", "readable", "full"]).optional().describe("Output format: summary, readable (default), or full."),
+    includeDecoded: z.boolean().optional().describe("Include decoded VP JSON payload (may be large)."),
+    redact: z.boolean().optional().describe("Redact string values in readable output."),
+    maxStringLength: z.number().optional().describe("Maximum string length before truncation in readable output."),
 });
 
 export const AnalyzeServiceRequestSchema = z.object({
@@ -137,5 +141,3 @@ export const ReadPhotoSchema = z.object({
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
     demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
-
-export const StartDemoServerSchema = z.object({});
