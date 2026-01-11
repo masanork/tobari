@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct BasicInfo: Codable {
     var name: String = ""
@@ -9,7 +10,7 @@ struct BasicInfo: Codable {
 }
 
 class JPKIController {
-    let manager: SmartCardManager
+    let manager: SmartCardInterface
     
     // Constants
     enum FileID {
@@ -24,6 +25,7 @@ class JPKIController {
         static let EF_SURFACE_INFO = Data([0x00, 0x05])
         static let EF_SURFACE_INFO_B = Data([0x00, 0x06])
         static let EF_FACE_PHOTO = Data([0x00, 0x02]) // Usually under Face Recognition AP
+        static let EF_AUTH_KEY = Data([0x00, 0x17])
     }
     
     enum APDU {
@@ -31,9 +33,10 @@ class JPKIController {
         static let INS_SELECT_FILE: UInt8 = 0xA4
         static let INS_READ_BINARY: UInt8 = 0xB0
         static let INS_VERIFY: UInt8 = 0x20
+        static let INS_COMPUTE_DIGITAL_SIGNATURE: UInt8 = 0x2A
     }
     
-    init(manager: SmartCardManager) {
+    init(manager: SmartCardInterface) {
         self.manager = manager
     }
     
@@ -57,6 +60,16 @@ class JPKIController {
         try checkSW(res, context: "Select DF")
     }
     
+    private func selectEF(_ ef: Data) async throws {
+        // SELECT FILE (EF): CLA=00, INS=A4, P1=02, P2=0C
+        var apdu = Data([APDU.CLA_ISO, APDU.INS_SELECT_FILE, 0x02, 0x0C])
+        apdu.append(UInt8(ef.count))
+        apdu.append(ef)
+        
+        let res = try await manager.transmit(apdu: apdu)
+        try checkSW(res, context: "Select EF")
+    }
+
     // MARK: - PIN Verification
     
     // For Auth (4 digits) or Input Support (4 digits)
@@ -66,11 +79,7 @@ class JPKIController {
 
     private func verifyPINInternal(ef: Data, pin: String) async throws {
         // 1. Select PIN EF
-        var selApdu = Data([APDU.CLA_ISO, APDU.INS_SELECT_FILE, 0x02, 0x0C])
-        selApdu.append(UInt8(ef.count))
-        selApdu.append(ef)
-        let resSel = try await manager.transmit(apdu: selApdu)
-        try checkSW(resSel, context: "Select PIN EF")
+        try await selectEF(ef)
         
         // 2. VERIFY
         // CLA=00, INS=20, P1=00, P2=80
@@ -86,6 +95,45 @@ class JPKIController {
         try checkSW(resVer, context: "Verify PIN")
     }
     
+    // MARK: - Signing
+    
+    func computeAuthSignature(pin: String, data: Data) async throws -> Data {
+        // 1. Select JPKI AP
+        try await selectJPKIAP()
+        
+        // 2. Verify PIN
+        try await verifyPIN(ef: FileID.EF_AUTH_PIN, pin: pin)
+        
+        // 3. Select Private Key EF
+        try await selectEF(FileID.EF_AUTH_KEY)
+        
+        // 4. Hash Data (SHA256)
+        let digest = SHA256.hash(data: data)
+        
+        // 5. Construct DigestInfo (SHA-256)
+        // 30 31 30 0D 06 09 60 86 48 01 65 03 04 02 01 05 00 04 20 [Hash]
+        var digestInfo = Data([
+            0x30, 0x31, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02,
+            0x01, 0x05, 0x00, 0x04, 0x20
+        ])
+        digestInfo.append(Data(digest))
+        
+        // 6. Compute Digital Signature
+        // CLA=80, INS=2A, P1=00, P2=80
+        var signApdu = Data([0x80, APDU.INS_COMPUTE_DIGITAL_SIGNATURE, 0x00, 0x80])
+        signApdu.append(UInt8(digestInfo.count))
+        signApdu.append(digestInfo)
+        
+        // Le=00 (Max response)
+        signApdu.append(0x00)
+        
+        let res = try await manager.transmit(apdu: signApdu)
+        try checkSW(res, context: "Compute Digital Signature")
+        
+        // Remove SW
+        return res.subdata(in: 0..<res.count-2)
+    }
+
     // MARK: - Reading My Number    
     func readMyNumber(pin: String) async throws -> String {
         // 1. Select Input Support AP
@@ -142,6 +190,80 @@ class JPKIController {
         
         // 4. Parse
         return try parseBasicInfo(data: data)
+    }
+
+    // MARK: - Reading Face Photo
+    
+    func readFacePhoto(pin: String) async throws -> Data {
+        // 1. Select Face Recognition AP
+        try await selectDF(FileID.DF_FACE_RECOGNITION)
+        
+        // 2. Verify PIN (using the same PIN EF ID 00 11 as Input Support usually works, or it is the specific PIN EF for this AP)
+        // Note: In many implementations, the PIN EF is 00 11 for 4-digit PINs across APs.
+        try await verifyPIN(ef: FileID.EF_INPUT_SUPPORT_PIN, pin: pin)
+        
+        // 3. Read Face Photo EF (00 02)
+        let data = try await readEFFull(ef: FileID.EF_FACE_PHOTO)
+        
+        // 4. Parse TLV to find tag DF27
+        return try extractFacePhoto(from: data)
+    }
+    
+    private func extractFacePhoto(from data: Data) throws -> Data {
+        var i = 0
+        let len = data.count
+        
+        while i < len {
+            // Tag
+            if i + 1 >= len { break }
+            let tag = (UInt16(data[i]) << 8) | UInt16(data[i+1])
+            i += 2
+            
+            // Length
+            if i >= len { break }
+            var valueLen = Int(data[i])
+            i += 1
+            
+            if valueLen == 0x81 {
+                if i >= len { break }
+                valueLen = Int(data[i])
+                i += 1
+            } else if valueLen == 0x82 {
+                if i + 1 >= len { break }
+                valueLen = (Int(data[i]) << 8) | Int(data[i+1])
+                i += 2
+            } else if valueLen > 0x82 {
+                break // Unsupported
+            }
+            
+            if i + valueLen > len { break }
+            let valueData = data.subdata(in: i..<i+valueLen)
+            
+            if tag == 0xDF27 {
+                return valueData
+            }
+            
+            // If it's a constructed tag (like DF20 or FF20), strictly we should recurse,
+            // but for face photo it is often at top level or inside DF20.
+            // Simple approach: if not found, continue.
+            // If we need recursion, we can implement it, but let's try linear scan for now
+            // or if it's nested, we just treat the value as nested TLV stream?
+            // Actually, usually DF27 is inside a wrapper.
+            // Let's implement a recursive-like search by just scanning the whole buffer for DF 27?
+            // No, that's dangerous.
+            // Let's assume standard structure: Wrapper -> DF27.
+            
+            if tag == 0xDF20 || tag == 0xFF20 {
+                 // Recurse / Dive into this value
+                 if let found = try? extractFacePhoto(from: valueData) {
+                     return found
+                 }
+            }
+            
+            i += valueLen
+        }
+        
+        throw NSError(domain: "JPKIController", code: 6, userInfo: [NSLocalizedDescriptionKey: "Face photo tag (DF27) not found"])
     }
     
     // MARK: - Helpers

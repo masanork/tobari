@@ -4,6 +4,7 @@ import { decryptHPKE, deriveHPKEKeyPair } from "@tobari/crypto/hpke";
 
 export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
 export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/civ");
+export const DEFAULT_SIGNER_MACOS_PATH = path.join(PROJECT_ROOT, "packages/signer-macos/bin/tobari-signer-macos");
 
 const DEMO_HPKE_SECRET = "tobari-demo-secret-key-32-bytes-long!!";
 const DEMO_HPKE_INFO = "tobari-storage-v1";

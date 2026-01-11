@@ -41,3 +41,35 @@ Add the following to your `claude_desktop_config.json`:
 ## Security
 
 The MCP server never shares the user's private keys or full raw documents with the AI unless explicitly allowed. It operates based on the "Minimality Principle," ensuring that AI agents act only within the scope of delegated trust.
+
+## PQC Countersign Demo (verify_presentation)
+
+This demo shows how to attach an ML-DSA-65 countersignature on the issuer side and verify it via `verify_presentation`.
+
+### 1) Generate a PQC-signed credential
+```bash
+bun examples/juminhyo/gen-tobari.ts --pqc
+```
+
+This creates:
+- `examples/juminhyo/juminhyo.cose`
+- `examples/juminhyo/issuer-pqc-public-key.json`
+
+### 2) Create a presentation (VP)
+Use `create_presentation` or your normal flow to generate a VP from `juminhyo.cose`.
+
+### 3) Verify with PQC public key
+Pass `issuerPqcPublicKeys` alongside classic issuer keys:
+```json
+{
+  "vpBase64": "<base64-vp>",
+  "issuerPublicKeys": {
+    "jp.v0.juminhyo": "/absolute/path/to/examples/juminhyo/issuer-key.json"
+  },
+  "issuerPqcPublicKeys": {
+    "jp.v0.juminhyo": "/absolute/path/to/examples/juminhyo/issuer-pqc-public-key.json"
+  }
+}
+```
+
+The response includes `issuerPqcPresent` and `issuerPqcValid` for each document.

@@ -1,7 +1,11 @@
 import Foundation
 import CryptoTokenKit
 
-class SmartCardManager {
+protocol SmartCardInterface {
+    func transmit(apdu: Data) async throws -> Data
+}
+
+class SmartCardManager: SmartCardInterface {
     
     // Send a raw APDU command to the first available card
     func transmit(apdu: Data) async throws -> Data {
