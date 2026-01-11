@@ -2,7 +2,8 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
+import { DEFAULT_SIGNER_MACOS_PATH, PROJECT_ROOT, getNativeSignerPath } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,26 +71,85 @@ export class WebAuthnHandler {
         }
     }
 
+    async sign(request: WebAuthnSignRequest): Promise<WebAuthnSignResponse> {
+        const signerPath = getNativeSignerPath();
+        if (signerPath) {
+            return this.signNative(signerPath, request);
+        }
+        return this.signBrowser(request);
+    }
+
+    private async signNative(signerPath: string, request: WebAuthnSignRequest): Promise<WebAuthnSignResponse> {
+        return new Promise((resolve, reject) => {
+            const isMacNative = signerPath === DEFAULT_SIGNER_MACOS_PATH;
+            const mode = request.mode || 'sign';
+            
+            const signRequest = {
+                challenge: request.challenge,
+                rp_id: request.rpId || 'localhost',
+                message: mode === 'register' ? 'Register new Passkey' : 'Sign with Passkey',
+                user_verification: 'preferred'
+            };
+
+            let args: string[] = [];
+            if (isMacNative) {
+                args = [mode === 'register' ? '--register-passkey' : '--sign-passkey', '--request', JSON.stringify(signRequest)];
+            } else {
+                // Tauri signer handles mode internally or via distinct commands? 
+                // For now use --request and let the app decide, or we might need to add flags.
+                args = ['--request', JSON.stringify(signRequest)];
+            }
+
+            console.error(`[WebAuthn] Using native signer: ${signerPath}`);
+            const proc = spawn(signerPath, args, { env: { ...process.env, TOBARI_SIGNER_USE_KEYCHAIN: '1' } });
+
+            let stdout = '';
+            let stderr = '';
+            proc.stdout.on('data', (d) => stdout += d);
+            proc.stderr.on('data', (d) => stderr += d);
+
+            proc.on('close', (code) => {
+                if (code !== 0) {
+                    reject(new Error(`Native signer failed (code ${code}): ${stderr}`));
+                    return;
+                }
+
+                try {
+                    const output = JSON.parse(stdout);
+                    // Map unified SignResponse to WebAuthnSignResponse
+                    const res: WebAuthnSignResponse = {
+                        mode: mode,
+                        id: output.publicKey || '', // Placeholder
+                        rawId: output.publicKey || '',
+                        type: 'public-key',
+                        response: {
+                            authenticatorData: output.authData,
+                            clientDataJSON: Buffer.from(output.clientDataJSON || '').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+                            signature: output.signature,
+                        }
+                    };
+
+                    if (mode === 'register') {
+                         this.saveCredential({
+                            id: output.credentialId || output.publicKey,
+                            rpId: request.rpId || 'localhost',
+                            createdAt: new Date().toISOString(),
+                            userName: request.userName
+                        });
+                    }
+
+                    resolve(res);
+                } catch (e) {
+                    reject(new Error(`Failed to parse native signer output: ${e}\nOutput: ${stdout}`));
+                }
+            });
+        });
+    }
+
     /**
      * Starts a local server, opens the browser, and waits for the signature.
      */
-    async sign(request: WebAuthnSignRequest): Promise<WebAuthnSignResponse> {
-        // Auto-load credentials if none provided and mode is sign (or auto)
-        if (!request.allowCredentials || request.allowCredentials.length === 0) {
-            const rpId = request.rpId || 'localhost';
-            const stored = this.loadCredentials(rpId);
-            if (stored.length > 0) {
-                // Use the most recent one? Or all of them?
-                // Let's use all of them to let browser/user choose.
-                request.allowCredentials = stored.map(c => ({
-                    id: c.id,
-                    type: "public-key"
-                }));
-                console.error(`[WebAuthn] Loaded ${stored.length} credentials from local file.`);
-            }
-        }
-
-        return new Promise((resolve, reject) => {
+    async signBrowser(request: WebAuthnSignRequest): Promise<WebAuthnSignResponse> {
             const templatePath = path.join(__dirname, 'templates', 'webauthn.html');
 
             // Create server

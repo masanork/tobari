@@ -19,6 +19,7 @@ class JPKIController {
         static let DF_FACE_RECOGNITION = Data([0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x02])
         
         static let EF_AUTH_PIN = Data([0x00, 0x18])
+        static let EF_SIGN_PIN = Data([0x00, 0x1B]) // Digital Signature PIN (6-16 chars)
         static let EF_INPUT_SUPPORT_PIN = Data([0x00, 0x11])
         static let EF_MYNUMBER = Data([0x00, 0x01])
         static let EF_ATTRIBUTES = Data([0x00, 0x02])
@@ -26,7 +27,9 @@ class JPKIController {
         static let EF_SURFACE_INFO_B = Data([0x00, 0x06])
         static let EF_FACE_PHOTO = Data([0x00, 0x02]) // Usually under Face Recognition AP
         static let EF_AUTH_KEY = Data([0x00, 0x17])
+        static let EF_SIGN_KEY = Data([0x00, 0x1A]) // Digital Signature Key
         static let EF_USER_AUTH_CERT = Data([0x00, 0x0A])
+        static let EF_SIGN_CERT = Data([0x00, 0x01]) // Digital Signature Certificate
     }
     
     enum APDU {
@@ -78,6 +81,26 @@ class JPKIController {
         try await verifyPINInternal(ef: ef, pin: pin)
     }
 
+    func getPINRetryCount(ef: Data) async throws -> Int {
+        // Select PIN EF
+        try await selectEF(ef)
+        
+        // VERIFY with empty Lc to get retry count: CLA=00, INS=20, P1=00, P2=80, Lc=absent
+        let verApdu = Data([APDU.CLA_ISO, APDU.INS_VERIFY, 0x00, 0x80])
+        let res = try await manager.transmit(apdu: verApdu)
+        
+        if res.count >= 2 {
+            let sw1 = res[res.count - 2]
+            let sw2 = res[res.count - 1]
+            if sw1 == 0x63 {
+                return Int(sw2 & 0x0F) // SW2=CX means X attempts left
+            } else if sw1 == 0x90 && sw2 == 0x00 {
+                return 3 // Or whatever max is, but usually 9000 means already verified or no limit info
+            }
+        }
+        return -1 // Unknown
+    }
+
     private func verifyPINInternal(ef: Data, pin: String) async throws {
         // 1. Select PIN EF
         try await selectEF(ef)
@@ -98,15 +121,39 @@ class JPKIController {
     
     // MARK: - Certificate
     
-    func readCertificate(pin: String) async throws -> Data {
+    func readCertificate(pin: String, type: String = "auth") async throws -> Data {
         // 1. Select JPKI AP
         try await selectJPKIAP()
         
         // 2. Verify PIN
-        try await verifyPIN(ef: FileID.EF_AUTH_PIN, pin: pin)
+        if type == "sign" {
+            try await verifyPIN(ef: FileID.EF_SIGN_PIN, pin: pin)
+            // 3. Read Certificate EF
+            return try await readEFFull(ef: FileID.EF_SIGN_CERT)
+        } else {
+            try await verifyPIN(ef: FileID.EF_AUTH_PIN, pin: pin)
+            // 3. Read Certificate EF
+            return try await readEFFull(ef: FileID.EF_USER_AUTH_CERT)
+        }
+    }
+
+    struct CertificateInfo: Codable {
+        let subject: String
+        let publicKeyJWK: String?
+    }
+
+    func parseCertificate(_ certData: Data) -> CertificateInfo? {
+        guard let certificate = SecCertificateCreateWithData(nil, certData as CFData) else {
+            return nil
+        }
         
-        // 3. Read Certificate EF
-        return try await readEFFull(ef: FileID.EF_USER_AUTH_CERT)
+        let subject = SecCertificateCopySubjectSummary(certificate) as String? ?? "Unknown"
+        let jwk = extractPublicKeyJWK(from: certData)
+        
+        return CertificateInfo(
+            subject: subject,
+            publicKeyJWK: jwk
+        )
     }
 
     func extractPublicKeyJWK(from certData: Data) -> String? {
@@ -123,37 +170,29 @@ class JPKIController {
             return nil
         }
         
-        // JPKI Auth Certificate is RSA 2048. 
-        // SecKeyCopyExternalRepresentation for RSA returns PKCS#1 RSAPublicKey (RSAPublicKey ::= SEQUENCE { n INTEGER, e INTEGER })
-        // We need to parse this to get n and e for JWK.
-        
-        // Simple ASN.1 parser for RSA Public Key (Sequence of 2 Integers)
         var offset = 0
         let bytes = [UInt8](keyData)
+        if bytes.isEmpty { return nil }
         
-        // Expecting Sequence
         if bytes[offset] != 0x30 { return nil }
         offset += 1
-        
-        // Length
         let _ = decodeLength(bytes, &offset)
         
-        // Modulus (n)
-        if bytes[offset] != 0x02 { return nil }
+        if offset >= bytes.count || bytes[offset] != 0x02 { return nil }
         offset += 1
         let nLen = decodeLength(bytes, &offset)
+        if offset + nLen > bytes.count { return nil }
         var nData = keyData.subdata(in: offset..<offset+nLen)
         offset += nLen
         
-        // Remove leading zero if present in signed ASN.1 integer
         if nData.first == 0x00 {
             nData = nData.dropFirst()
         }
         
-        // Exponent (e)
-        if bytes[offset] != 0x02 { return nil }
+        if offset >= bytes.count || bytes[offset] != 0x02 { return nil }
         offset += 1
         let eLen = decodeLength(bytes, &offset)
+        if offset + eLen > bytes.count { return nil }
         let eData = keyData.subdata(in: offset..<offset+eLen)
         
         let nB64 = nData.base64EncodedString()
@@ -177,6 +216,7 @@ class JPKIController {
     }
 
     private func decodeLength(_ bytes: [UInt8], _ offset: inout Int) -> Int {
+        if offset >= bytes.count { return 0 }
         let first = bytes[offset]
         offset += 1
         if first < 0x80 {
@@ -185,30 +225,37 @@ class JPKIController {
             let numBytes = Int(first & 0x7F)
             var len = 0
             for _ in 0..<numBytes {
+                if offset >= bytes.count { break }
                 len = (len << 8) | Int(bytes[offset])
                 offset += 1
             }
             return len
         }
     }
-    
+
     // MARK: - Signing
     
-    func computeAuthSignature(pin: String, data: Data) async throws -> Data {
+    func computeSignature(pin: String, data: Data, type: String = "auth") async throws -> Data {
         // 1. Select JPKI AP
         try await selectJPKIAP()
         
         // 2. Verify PIN
-        try await verifyPIN(ef: FileID.EF_AUTH_PIN, pin: pin)
+        let keyEF: Data
+        if type == "sign" {
+            try await verifyPIN(ef: FileID.EF_SIGN_PIN, pin: pin)
+            keyEF = FileID.EF_SIGN_KEY
+        } else {
+            try await verifyPIN(ef: FileID.EF_AUTH_PIN, pin: pin)
+            keyEF = FileID.EF_AUTH_KEY
+        }
         
         // 3. Select Private Key EF
-        try await selectEF(FileID.EF_AUTH_KEY)
+        try await selectEF(keyEF)
         
         // 4. Hash Data (SHA256)
         let digest = SHA256.hash(data: data)
         
         // 5. Construct DigestInfo (SHA-256)
-        // 30 31 30 0D 06 09 60 86 48 01 65 03 04 02 01 05 00 04 20 [Hash]
         var digestInfo = Data([
             0x30, 0x31, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02,
             0x01, 0x05, 0x00, 0x04, 0x20
@@ -216,18 +263,14 @@ class JPKIController {
         digestInfo.append(Data(digest))
         
         // 6. Compute Digital Signature
-        // CLA=80, INS=2A, P1=00, P2=80
         var signApdu = Data([0x80, APDU.INS_COMPUTE_DIGITAL_SIGNATURE, 0x00, 0x80])
         signApdu.append(UInt8(digestInfo.count))
         signApdu.append(digestInfo)
-        
-        // Le=00 (Max response)
         signApdu.append(0x00)
         
         let res = try await manager.transmit(apdu: signApdu)
         try checkSW(res, context: "Compute Digital Signature")
         
-        // Remove SW
         return res.subdata(in: 0..<res.count-2)
     }
 

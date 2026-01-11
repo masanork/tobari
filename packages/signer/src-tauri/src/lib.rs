@@ -71,6 +71,22 @@ struct AssertionResult {
     user_handle: Option<Vec<u8>>,
 }
 
+#[derive(Debug, Serialize, thiserror::Error)]
+pub enum SignerError {
+    #[error("Authenticator error: {0}")]
+    Authenticator(String),
+    #[error("JPKI error: {0}")]
+    Jpki(String),
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+    #[error("Internal error: {0}")]
+    Internal(String),
+    #[error("User rejected")]
+    Rejected,
+    #[error("No request found")]
+    NoRequest,
+}
+
 #[cfg(any(
     target_os = "windows",
     all(target_os = "macos", feature = "macos-authenticator"),
@@ -293,17 +309,19 @@ fn get_assertion(
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SignResponse {
     pub signature: String, // Base64Url
-    #[serde(rename = "authData")]
-    pub auth_data: String, // Base64Url
-    #[serde(rename = "clientDataJSON")]
-    pub client_data_json: String, // Raw JSON string
+    #[serde(rename = "authData", skip_serializing_if = "Option::is_none")]
+    pub auth_data: Option<String>, // Base64Url
+    #[serde(rename = "clientDataJSON", skip_serializing_if = "Option::is_none")]
+    pub client_data_json: Option<String>, // Raw JSON string
+    #[serde(rename = "publicKey", skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<String>,
 }
 
 // --- Tauri Commands ---
 
 #[tauri::command]
-fn get_pending_request(state: State<AppState>) -> Result<Option<SignRequest>, String> {
-    let request = state.request.lock().map_err(|e| e.to_string())?;
+fn get_pending_request(state: State<AppState>) -> Result<Option<SignRequest>, SignerError> {
+    let request = state.request.lock().map_err(|e| SignerError::Internal(e.to_string()))?;
     Ok(request.clone())
 }
 
@@ -314,10 +332,10 @@ fn reject(app: AppHandle) {
 }
 
 #[tauri::command]
-async fn perform_sign(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+async fn perform_sign(state: State<'_, AppState>, app: AppHandle) -> Result<(), SignerError> {
     let mut request = {
-        let lock = state.request.lock().map_err(|e| e.to_string())?;
-        lock.clone().ok_or("No request found")?
+        let lock = state.request.lock().map_err(|e| SignerError::Internal(e.to_string()))?;
+        lock.clone().ok_or(SignerError::NoRequest)?
     };
     if let Ok(lock) = state.allow_credentials.lock() {
         if let Some(creds) = lock.clone() {
@@ -347,16 +365,18 @@ async fn perform_sign(state: State<'_, AppState>, app: AppHandle) -> Result<(), 
     let result =
         tokio::task::spawn_blocking(move || get_assertion(request, rp_id, client_data_hash))
             .await
-            .map_err(|e| e.to_string())??;
+            .map_err(|e| SignerError::Internal(e.to_string()))?
+            .map_err(SignerError::Authenticator)?;
 
     // 4. Output result in the new unified format
     let response = SignResponse {
         signature: URL_SAFE_NO_PAD.encode(&result.signature),
-        auth_data: URL_SAFE_NO_PAD.encode(&result.authenticator_data),
-        client_data_json: client_data_json,
+        auth_data: Some(URL_SAFE_NO_PAD.encode(&result.authenticator_data)),
+        client_data_json: Some(client_data_json),
+        public_key: None,
     };
 
-    println!("{}", serde_json::to_string(&response).unwrap());
+    println!("{}", serde_json::to_string(&response).map_err(|e| SignerError::Serialization(e.to_string()))?);
 
     // Exit app
     app.exit(0);
@@ -372,16 +392,16 @@ pub struct RegisterResponse {
 }
 
 #[tauri::command]
-async fn perform_register(state: State<'_, AppState>) -> Result<String, String> {
+async fn perform_register(state: State<'_, AppState>) -> Result<String, SignerError> {
     let request = {
-        let lock = state.request.lock().map_err(|e| e.to_string())?;
-        lock.clone().ok_or("No request found")?
+        let lock = state.request.lock().map_err(|e| SignerError::Internal(e.to_string()))?;
+        lock.clone().ok_or(SignerError::NoRequest)?
     };
 
     let rp_id = request.rp_id.clone();
     let challenge_bytes = URL_SAFE_NO_PAD
         .decode(&request.challenge)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| SignerError::Internal(e.to_string()))?;
 
     let origin = format!("https://{}", rp_id);
     let client_data = serde_json::json!({
@@ -395,10 +415,10 @@ async fn perform_register(state: State<'_, AppState>) -> Result<String, String> 
     let client_data_hash: [u8; 32] = client_data_hash
         .as_slice()
         .try_into()
-        .map_err(|_| "Invalid client_data_hash length".to_string())?;
+        .map_err(|_| SignerError::Internal("Invalid client_data_hash length".to_string()))?;
 
     if challenge_bytes.is_empty() {
-        return Err("Invalid challenge".to_string());
+        return Err(SignerError::Internal("Invalid challenge".to_string()));
     }
 
     // Call Authenticator Register
@@ -407,27 +427,25 @@ async fn perform_register(state: State<'_, AppState>) -> Result<String, String> 
         register_credential_full(request, rp_id_for_reg, client_data_hash)
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| SignerError::Internal(e.to_string()))?
+    .map_err(SignerError::Authenticator)?;
 
     let credential_b64 = URL_SAFE_NO_PAD.encode(&reg_result.credential_id);
 
-    // Prepare JWK (Simplified extraction for P-256)
-    // In a real implementation, we'd parse the COSE_Key properly.
-    // For now, let's return the result.
+    // Prepare JWK
     let response = RegisterResponse {
         credential_id: credential_b64.clone(),
         public_key: reg_result.public_key_jwk,
     };
 
-    {
-        let mut lock = state.allow_credentials.lock().map_err(|e| e.to_string())?;
+    if let Ok(mut lock) = state.allow_credentials.lock() {
         *lock = Some(vec![CredentialDescriptor {
             type_: "public-key".to_string(),
             id: credential_b64.clone(),
         }]);
     }
 
-    Ok(serde_json::to_string(&response).unwrap())
+    Ok(serde_json::to_string(&response).map_err(|e| SignerError::Serialization(e.to_string()))?)
 }
 
 // Helper struct for internal use
@@ -514,25 +532,32 @@ fn register_credential_full(
             let auth_data = attestation.att_obj.auth_data;
             let cred_data = auth_data.credential_data.ok_or("No credential data")?;
             
-            // Basic extraction of X and Y from COSE_Key (assuming P-256)
-            // This is a bit hacky without a full CBOR/COSE parser, 
-            // but for P-256 it's predictable.
-            // In a real app, use a proper COSE crate.
+            // Extract X and Y from COSE_Key (assuming P-256)
             let pub_key_bytes = cred_data.public_key; 
+            let cose_key: std::collections::HashMap<i32, ciborium::value::Value> = 
+                ciborium::from_reader(pub_key_bytes.as_slice())
+                .map_err(|e| format!("Failed to parse COSE_Key CBOR: {:?}", e))?;
+
+            // COSE Key Labels for P-256:
+            // 1: kty (2 = EC2)
+            // -1: crv (1 = P-256)
+            // -2: x (byte string)
+            // -3: y (byte string)
             
-            // For now, we'll return a placeholder or attempt a very simple parse.
-            // Actually, let's just return the raw bytes as base64 for now if parsing is hard,
-            // but the goal is JWK. 
-            // Let's assume the bytes are a valid COSE structure.
-            
+            let x_bytes = cose_key.get(&-2)
+                .and_then(|v| v.as_bytes())
+                .ok_or("Missing X coordinate in COSE_Key")?;
+            let y_bytes = cose_key.get(&-3)
+                .and_then(|v| v.as_bytes())
+                .ok_or("Missing Y coordinate in COSE_Key")?;
+
             Ok(InternalRegisterResult {
                 credential_id: cred_data.credential_id,
-                // Placeholder JWK - in a real implementation we would parse pub_key_bytes
                 public_key_jwk: serde_json::json!({
                     "kty": "EC",
                     "crv": "P-256",
-                    "x": "TODO_EXTRACT_FROM_COSE",
-                    "y": "TODO_EXTRACT_FROM_COSE"
+                    "x": URL_SAFE_NO_PAD.encode(x_bytes),
+                    "y": URL_SAFE_NO_PAD.encode(y_bytes)
                 }),
             })
         }
@@ -552,33 +577,43 @@ fn register_credential_full(
 
 #[cfg(not(target_arch = "wasm32"))]
 #[tauri::command]
-async fn jpki_sign(request: JpkiSignRequest) -> Result<String, String> {
-    let reader = PcscReader::new().map_err(|e| e.to_string())?;
+async fn jpki_sign(app: AppHandle, request: JpkiSignRequest) -> Result<(), SignerError> {
+    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = JpkiController::new(reader);
 
-    controller.select_jpki_ap().await.map_err(|e| e.to_string())?;
+    controller.select_jpki_ap().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
 
-    let challenge_bytes = URL_SAFE_NO_PAD.decode(&request.challenge).map_err(|e| e.to_string())?;
+    let challenge_bytes = URL_SAFE_NO_PAD.decode(&request.challenge).map_err(|e| SignerError::Internal(e.to_string()))?;
     
     let signature = controller
         .compute_auth_signature(&request.pin, &challenge_bytes)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| SignerError::Jpki(e.to_string()))?;
     
-    Ok(URL_SAFE_NO_PAD.encode(&signature))
+    // Output JSON and exit (MCP compatible)
+    let response = SignResponse {
+        signature: URL_SAFE_NO_PAD.encode(&signature),
+        auth_data: None,
+        client_data_json: None,
+        public_key: None,
+    };
+
+    println!("{}", serde_json::to_string(&response).map_err(|e| SignerError::Serialization(e.to_string()))?);
+    app.exit(0);
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[tauri::command]
-async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCardData, String> {
-    let reader = PcscReader::new().map_err(|e| e.to_string())?;
+async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCardData, SignerError> {
+    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = JpkiController::new(reader);
 
-    let my_number = controller.read_mynumber(&request.pin).await.map_err(|e| e.to_string())?;
+    let my_number = controller.read_mynumber(&request.pin).await.map_err(|e| SignerError::Jpki(e.to_string()))?;
     let info = controller
         .read_attributes(&request.pin)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| SignerError::Jpki(e.to_string()))?;
 
     Ok(MyNumberCardData {
         name: info.name,

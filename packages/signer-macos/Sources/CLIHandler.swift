@@ -4,11 +4,34 @@ struct SignRequest: Codable {
     let challenge: String // Base64URL
     let rp_id: String
     let message: String?
+    let user_verification: String?
 }
 
 struct SignResponse: Codable {
-    let signature: String // Base64URL (DER encoded)
-    let publicKey: String // JWK JSON String
+    let signature: String // Base64URL
+    let authData: String? // Base64URL (WebAuthn only)
+    let clientDataJSON: String? // Raw JSON string (WebAuthn only)
+    let publicKey: String? // JWK or Cert base64
+}
+
+enum SignerError: Error, LocalizedError {
+    case authenticator(String)
+    case jpki(String)
+    case serialization(String)
+    case internalError(String)
+    case noRequest
+    case invalidChallenge
+    
+    var errorDescription: String? {
+        switch self {
+        case .authenticator(let msg): return "Authenticator error: \(msg)"
+        case .jpki(let msg): return "JPKI error: \(msg)"
+        case .serialization(let msg): return "Serialization error: \(msg)"
+        case .internalError(let msg): return "Internal error: \(msg)"
+        case .noRequest: return "No request found"
+        case .invalidChallenge: return "Invalid challenge"
+        }
+    }
 }
 
 class CLIHandler {
@@ -18,6 +41,22 @@ class CLIHandler {
         if isDebug {
             fputs("Debug: \(message)\n", stderr)
         }
+    }
+
+    private func printResult<T: Encodable>(_ result: T) {
+        do {
+            let data = try JSONEncoder().encode(result)
+            if let str = String(data: data, encoding: .utf8) {
+                print(str)
+            }
+        } catch {
+            fputs("Error encoding result: \(error.localizedDescription)\n", stderr)
+        }
+    }
+
+    private func printError(_ error: Error) {
+        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        fputs("Error: \(message)\n", stderr)
     }
 
     // Utility for Base64URL input
@@ -49,7 +88,7 @@ class CLIHandler {
                 print("{\"publicKey\": \(jwk)}")
                 exit(0)
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                printError(error)
                 exit(1)
             }
         }
@@ -61,7 +100,7 @@ class CLIHandler {
                 print("{\"publicKey\": \(jwk)}")
                 exit(0)
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                printError(error)
                 exit(1)
             }
         }
@@ -86,7 +125,7 @@ class CLIHandler {
                 }
                 exit(0)
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                printError(error)
                 exit(1)
             }
         }
@@ -110,7 +149,7 @@ class CLIHandler {
                 print("{\"certificate\": \"\(certBase64)\", \"publicKeyJWK\": \(jwk.isEmpty ? "null" : jwk)}")
                 exit(0)
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                printError(error)
                 exit(1)
             }
         }
@@ -128,13 +167,10 @@ class CLIHandler {
             
             do {
                 let info = try await jpki.readAttributes(pin: pin)
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = .prettyPrinted
-                let jsonData = try encoder.encode(info)
-                print(String(data: jsonData, encoding: .utf8)!)
+                printResult(info)
                 exit(0)
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                printError(error)
                 exit(1)
             }
         }
@@ -155,7 +191,7 @@ class CLIHandler {
                 print("{\"myNumber\": \"\(myNumber)\"}")
                 exit(0)
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                printError(error)
                 exit(1)
             }
         }
@@ -177,14 +213,72 @@ class CLIHandler {
                 print("{\"photo\": \"\(photoBase64)\"}")
                 exit(0)
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                printError(error)
+                exit(1)
+            }
+        }
+
+        if args.contains("--register-passkey") {
+            guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --register-passkey --request <JSON>\n", stderr)
+                exit(1)
+            }
+            let jsonStr = args[reqIndex + 1]
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let request = try? JSONDecoder().decode(SignRequest.self, from: jsonData),
+                  let challengeData = fromBase64URL(request.challenge) else {
+                printError(SignerError.serialization("Invalid JSON request or challenge"))
+                exit(1)
+            }
+
+            if #available(macOS 12.0, *) {
+                let auth = Authenticator()
+                do {
+                    let response = try await auth.register(rpID: request.rp_id, challenge: challengeData)
+                    printResult(response)
+                    exit(0)
+                } catch {
+                    printError(error)
+                    exit(1)
+                }
+            } else {
+                printError(SignerError.internalError("Passkey requires macOS 12.0+"))
+                exit(1)
+            }
+        }
+
+        if args.contains("--sign-passkey") {
+            guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --sign-passkey --request <JSON>\n", stderr)
+                exit(1)
+            }
+            let jsonStr = args[reqIndex + 1]
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let request = try? JSONDecoder().decode(SignRequest.self, from: jsonData),
+                  let challengeData = fromBase64URL(request.challenge) else {
+                printError(SignerError.serialization("Invalid JSON request or challenge"))
+                exit(1)
+            }
+
+            if #available(macOS 12.0, *) {
+                let auth = Authenticator()
+                do {
+                    let response = try await auth.sign(rpID: request.rp_id, challenge: challengeData)
+                    printResult(response)
+                    exit(0)
+                } catch {
+                    printError(error)
+                    exit(1)
+                }
+            } else {
+                printError(SignerError.internalError("Passkey requires macOS 12.0+"))
                 exit(1)
             }
         }
         
         if args.contains("--sign-jpki") {
              guard let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count else {
-                fputs("Usage: tobari-signer-macos --sign-jpki --pin <PIN> --request <JSON>\n", stderr)
+                fputs("Usage: tobari-signer-macos --sign-jpki --pin <PIN> --request <JSON> [--type auth|sign]\n", stderr)
                 exit(1)
             }
             let pin = args[pinIndex + 1]
@@ -194,25 +288,27 @@ class CLIHandler {
                 exit(1)
             }
             
+            let signType = args.contains("--type") ? args[args.firstIndex(of: "--type")! + 1] : "auth"
+            
             let jsonStr = args[reqIndex + 1]
             guard let jsonData = jsonStr.data(using: .utf8),
                   let request = try? JSONDecoder().decode(SignRequest.self, from: jsonData) else {
-                fputs("Invalid JSON request\n", stderr)
+                printError(SignerError.serialization("Invalid JSON request"))
                 exit(1)
             }
             
             guard let challengeData = fromBase64URL(request.challenge) else {
-                fputs("Invalid Base64URL challenge\n", stderr)
+                printError(SignerError.invalidChallenge)
                 exit(1)
             }
 
-            debugLog("Signing with JPKI Card...")
+            debugLog("Signing with JPKI Card (\(signType))...")
             let manager = SmartCardManager()
             let jpki = JPKIController(manager: manager)
 
             do {
-                let signature = try await jpki.computeAuthSignature(pin: pin, data: challengeData)
-                let certData = try await jpki.readCertificate(pin: pin)
+                let signature = try await jpki.computeSignature(pin: pin, data: challengeData, type: signType)
+                let certData = try await jpki.readCertificate(pin: pin, type: signType)
                 let jwk = jpki.extractPublicKeyJWK(from: certData) ?? ""
                 
                 let response = SignResponse(
@@ -220,13 +316,14 @@ class CLIHandler {
                         .replacingOccurrences(of: "+", with: "-")
                         .replacingOccurrences(of: "/", with: "_")
                         .replacingOccurrences(of: "=", with: ""),
+                    authData: nil,
+                    clientDataJSON: nil,
                     publicKey: jwk
                 )
-                let responseData = try JSONEncoder().encode(response)
-                print(String(data: responseData, encoding: .utf8)!)
+                printResult(response)
                 exit(0)
             } catch {
-                fputs("Error: \(error.localizedDescription)\n", stderr)
+                printError(error)
                 exit(1)
             }
         }
@@ -239,12 +336,12 @@ class CLIHandler {
         let jsonStr = args[reqIndex + 1]
         guard let jsonData = jsonStr.data(using: .utf8),
               let request = try? JSONDecoder().decode(SignRequest.self, from: jsonData) else {
-            fputs("Invalid JSON request\n", stderr)
+            printError(SignerError.serialization("Invalid JSON request"))
             exit(1)
         }
         
         guard let challengeData = fromBase64URL(request.challenge) else {
-            fputs("Invalid Base64URL challenge\n", stderr)
+            printError(SignerError.invalidChallenge)
             exit(1)
         }
         
@@ -254,15 +351,16 @@ class CLIHandler {
             
             let response = SignResponse(
                 signature: signature,
+                authData: nil,
+                clientDataJSON: nil,
                 publicKey: publicKey
             )
             
-            let responseData = try JSONEncoder().encode(response)
-            print(String(data: responseData, encoding: .utf8)!)
+            printResult(response)
             exit(0)
             
         } catch {
-            fputs("Error: \(error.localizedDescription)\n", stderr)
+            printError(error)
             exit(1)
         }
     }

@@ -10,10 +10,21 @@ interface SignRequest {
   allow_credentials?: { id: string; type_: string }[];
 }
 
+interface MyNumberCardData {
+  name: string;
+  address: string;
+  birth_date: string;
+  gender: string;
+  my_number: string;
+  face_photo?: string;
+}
+
 function App() {
   const [request, setRequest] = useState<SignRequest | null>(null);
   const [status, setStatus] = useState<string>("Loading...");
   const [error, setError] = useState<string | null>(null);
+  const [pin, setPin] = useState<string>("");
+  const [cardData, setCardData] = useState<MyNumberCardData | null>(null);
 
   useEffect(() => {
     invoke<SignRequest | null>("get_pending_request")
@@ -23,7 +34,8 @@ function App() {
           setStatus("Waiting for user approval");
         } else {
           setStatus("No pending request found.");
-          setError("Please launch this app via the Tobari MCP Server.");
+          // Don't show error immediately if we just want to read card
+          // setError("Please launch this app via the Tobari MCP Server.");
         }
       })
       .catch((e) => {
@@ -37,8 +49,45 @@ function App() {
     try {
       await invoke("perform_sign");
       setStatus("Signed successfully! Closing...");
+    } catch (e: any) {
+      setError("Signing failed: " + (typeof e === 'string' ? e : JSON.stringify(e)));
+      setStatus("Error");
+    }
+  };
+
+  const handleJpkiSign = async () => {
+    if (!pin || !request) return;
+    setStatus("Accessing My Number Card... Please do not remove the card.");
+    setError(null);
+    try {
+      await invoke("jpki_sign", { 
+        request: {
+          challenge: request.challenge,
+          pin: pin
+        }
+      });
+      setStatus("JPKI Signed successfully! Closing...");
+    } catch (e: any) {
+      setError("JPKI Signing failed: " + (typeof e === 'string' ? e : JSON.stringify(e)));
+      setStatus("Error");
+    }
+  };
+
+  const handleReadCard = async () => {
+    if (!pin) {
+      setError("Please enter your 4-digit PIN.");
+      return;
+    }
+    setStatus("Reading My Number Card... Please wait.");
+    setError(null);
+    try {
+      const data = await invoke<MyNumberCardData>("read_my_number_card", { 
+        request: { pin } 
+      });
+      setCardData(data);
+      setStatus("Card read successfully!");
     } catch (e) {
-      setError("Signing failed: " + e);
+      setError("Failed to read card: " + e);
       setStatus("Error");
     }
   };
@@ -64,12 +113,39 @@ function App() {
     <main className="container">
       <h1>Tobari Signer</h1>
 
-      {error ? (
+      {error && (
         <div className="error-container">
           <p className="error-text">{error}</p>
-          <button onClick={handleReject}>Close</button>
         </div>
-      ) : request ? (
+      )}
+
+      <div className="card-input-section">
+        <input 
+          type="password" 
+          placeholder="PIN (4 or 6-16 digits)" 
+          value={pin} 
+          onChange={(e) => setPin(e.target.value)}
+          maxLength={16}
+        />
+        <button onClick={handleReadCard} disabled={status.includes("Reading")}>
+          Read My Number Card
+        </button>
+      </div>
+
+      {cardData && (
+        <div className="card-data-preview">
+          <h3>Card Information</h3>
+          <p><strong>Name:</strong> {cardData.name}</p>
+          <p><strong>Address:</strong> {cardData.address}</p>
+          <p><strong>Birth Date:</strong> {cardData.birth_date}</p>
+          <p><strong>Gender:</strong> {cardData.gender}</p>
+          {cardData.face_photo && (
+            <img src={`data:image/jpeg;base64,${cardData.face_photo}`} alt="Face" style={{width: 100}} />
+          )}
+        </div>
+      )}
+
+      {request ? (
         <div className="request-card">
           <div className="field-group">
             <label>Relying Party (Service)</label>
@@ -99,17 +175,23 @@ function App() {
             <button className="reject-btn" onClick={handleReject} disabled={status.includes("Interacting")}>
               Reject
             </button>
-            <button className="sign-btn" onClick={handleRegister} disabled={status.includes("Interacting")}>
-              Create Passkey
-            </button>
-            <button className="sign-btn" onClick={handleSign} disabled={status.includes("Interacting")}>
-              Sign with Authenticator
-            </button>
+            <div className="btn-group">
+              <button className="sign-btn primary" onClick={handleSign} disabled={status.includes("Interacting")}>
+                Passkey (Touch ID/Key)
+              </button>
+              <button className="sign-btn" onClick={handleRegister} disabled={status.includes("Interacting")}>
+                Setup Passkey
+              </button>
+              <button className="sign-btn" onClick={handleJpkiSign} disabled={!pin || status.includes("Interacting")}>
+                JPKI (My Number Card)
+              </button>
+            </div>
           </div>
         </div>
       ) : (
         <div className="loading">
           <p>{status}</p>
+          {!error && <button className="reject-btn" onClick={handleReject}>Close</button>}
         </div>
       )}
     </main>

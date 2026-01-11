@@ -27,12 +27,24 @@ async function runCivCommand(exePath: string, args: string[]): Promise<string> {
     });
 }
 
-function resolveMynaPath(p: string): string {
-    return p.startsWith("~") ? path.join(os.homedir(), p.slice(1)) : p;
+function getNativeSignerPath(): string | undefined {
+    const projectRoot = PROJECT_ROOT;
+    const possiblePaths = [
+        DEFAULT_SIGNER_MACOS_PATH,
+        path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer"),
+        path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
+        path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer"),
+        path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer.exe")
+    ];
+
+    for (const p of possiblePaths) {
+        if (fs.existsSync(p)) return p;
+    }
+    return process.env.TOBARI_SIGNER_PATH;
 }
 
-function isMacOS(): boolean {
-    return process.platform === 'darwin';
+function resolveMynaPath(p: string): string {
+    return p.startsWith("~") ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
 function toBase64Url(buffer: Buffer): string {
@@ -45,27 +57,25 @@ function toBase64Url(buffer: Buffer): string {
 export async function handleSignWithJpki(toolArgs: any) {
     try {
         const args = SignWithJPKISchema.parse(toolArgs);
+        const nativeSigner = getNativeSignerPath();
         
-        // MacOS Native path
-        if (isMacOS() && !args.mynaPath) {
-             const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+        // Use native signer (Tauri or macOS) if available and no explicit mynaPath
+        if (nativeSigner && !args.mynaPath) {
              const dataBuffer = Buffer.from(args.data, 'base64');
              const challenge = toBase64Url(dataBuffer);
+             const isMacNative = nativeSigner === DEFAULT_SIGNER_MACOS_PATH;
              
-             // Construct Request JSON
              const requestJson = JSON.stringify({
                  challenge: challenge,
-                 rp_id: "mcp-server-cli", // Dummy
-                 message: "Sign via MCP"
+                 rp_id: "mcp-server-jpki",
+                 pin: args.pin // JPKI pin is needed for both
              });
              
              const cmdArgs = ["--sign-jpki", "--pin", args.pin, "--request", requestJson];
-             const output = await runCivCommand(signerPath, cmdArgs);
-             const result = JSON.parse(output); // { signature: "base64url", publicKey: "" }
+             const output = await runCivCommand(nativeSigner, cmdArgs);
+             const result = JSON.parse(output); 
              
-             // Convert Signature back to Base64 (Standard) if needed, but MCP usually handles strings.
-             // JPKI spec signature is binary. Base64 is safe.
-             // signer-macos returns Base64URL.
+             // SignResponse format: { signature: "base64url", ... }
              let sigB64 = result.signature
                  .replace(/-/g, '+')
                  .replace(/_/g, '/');
@@ -79,7 +89,8 @@ export async function handleSignWithJpki(toolArgs: any) {
                             signature: sigB64,
                             format: args.format || "der",
                             digest: args.digest || "sha256",
-                            detached: args.detached !== false
+                            detached: args.detached !== false,
+                            publicKey: result.publicKey
                         }, null, 2),
                     },
                 ],
@@ -131,18 +142,18 @@ export async function handleSignWithJpki(toolArgs: any) {
 export async function handleReadMyNumber(toolArgs: any) {
     try {
         const args = ReadMyNumberSchema.parse(toolArgs);
+        const nativeSigner = getNativeSignerPath();
         
-        if (isMacOS() && !args.mynaPath) {
-             const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+        if (nativeSigner && !args.mynaPath) {
              const cmdArgs = ["--read-mynumber", "--pin", args.pin];
-             const output = await runCivCommand(signerPath, cmdArgs);
-             const result = JSON.parse(output); // { myNumber: "..." }
+             const output = await runCivCommand(nativeSigner, cmdArgs);
+             const result = JSON.parse(output); 
              
              return {
                 content: [
                     {
                         type: "text",
-                        text: JSON.stringify({ mynumber: result.myNumber }, null, 2),
+                        text: JSON.stringify({ mynumber: result.myNumber || result.my_number }, null, 2),
                     },
                 ],
             };
@@ -174,18 +185,18 @@ export async function handleReadMyNumber(toolArgs: any) {
 export async function handleReadBasicInfo(toolArgs: any) {
     try {
         const args = ReadBasicInfoSchema.parse(toolArgs);
+        const nativeSigner = getNativeSignerPath();
         
-        if (isMacOS() && !args.mynaPath) {
-             const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+        if (nativeSigner && !args.mynaPath) {
              const cmdArgs = ["--read-attributes", "--pin", args.pin];
-             const output = await runCivCommand(signerPath, cmdArgs);
-             const result = JSON.parse(output); // Swift keys: name, address, birthDate, gender
+             const output = await runCivCommand(nativeSigner, cmdArgs);
+             const result = JSON.parse(output);
              
              // Normalize to match Civ output (snake_case)
              const normalized = {
                  name: result.name,
                  address: result.address,
-                 birth_date: result.birthDate,
+                 birth_date: result.birthDate || result.birth_date,
                  gender: result.gender
              };
              
@@ -225,18 +236,18 @@ export async function handleReadBasicInfo(toolArgs: any) {
 export async function handleReadPhoto(toolArgs: any) {
     try {
         const args = ReadPhotoSchema.parse(toolArgs);
+        const nativeSigner = getNativeSignerPath();
         
-        if (isMacOS() && !args.mynaPath) {
-             const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+        if (nativeSigner && !args.mynaPath) {
              const cmdArgs = ["--read-face-photo", "--pin", args.pin];
-             const output = await runCivCommand(signerPath, cmdArgs);
-             const result = JSON.parse(output); // { photo: "base64" }
+             const output = await runCivCommand(nativeSigner, cmdArgs);
+             const result = JSON.parse(output); 
              
              return {
                 content: [
                     {
                         type: "text",
-                        text: JSON.stringify({ photo: result.photo, format: "jpeg2000" }, null, 2),
+                        text: JSON.stringify({ photo: result.photo || result.face_photo, format: "jpeg2000" }, null, 2),
                     },
                 ],
             };

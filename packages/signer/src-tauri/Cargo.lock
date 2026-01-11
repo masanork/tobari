@@ -4812,6 +4812,7 @@ dependencies = [
  "anyhow",
  "authenticator",
  "base64 0.22.1",
+ "ciborium",
  "civ",
  "clap",
  "serde",
