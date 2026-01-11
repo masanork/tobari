@@ -1,16 +1,17 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { spawn } from "child_process";
-import { decode, encode } from "cbor-x";
+import { decode, encode, Decoder } from "cbor-x";
 import { verifyTobari, verifyPresentation } from "@tobari/codec/validator";
 import { createPresentation, signDeviceAuth, getDeviceAuthToBeSigned, assembleDeviceAuth } from "@tobari/codec/sd";
-import { readTobariFileAsBuffer, decodeSignatureInput, rawEcdsaToDer, PROJECT_ROOT } from "../utils.js";
+import { readTobariFileAsBuffer, decodeSignatureInput, rawEcdsaToDer, PROJECT_ROOT, DEFAULT_SIGNER_MACOS_PATH } from "../utils.js";
 import {
     ReadTobariFileSchema,
     CreatePresentationSchema,
     PreparePresentationSchema,
     AssemblePresentationSchema,
     VerifyPresentationSchema,
+    PreviewPresentationSchema,
     AnalyzeServiceRequestSchema,
     ListAvailableDocumentsSchema,
     GeneratePassportZkpInputSchema
@@ -137,6 +138,9 @@ export async function handleReadTobariFile(toolArgs: any) {
         };
 
         if (payload && typeof payload === 'object' && !Array.isArray(payload) && !payload.error) {
+            if (payload.mandator && !payload.principal) {
+                payload.principal = payload.mandator;
+            }
             responseData = { ...payload, _meta: meta };
         } else {
             responseData = { payload: payload, _meta: meta };
@@ -171,6 +175,7 @@ export async function handleCreatePresentation(toolArgs: any) {
     try {
         const args = CreatePresentationSchema.parse(toolArgs);
         const documents = [];
+        let signingMethod: "internal_key" | "external_signer" | "ephemeral_fallback" = "external_signer";
 
         let devicePrivateKey: CryptoKey | undefined;
 
@@ -218,6 +223,10 @@ export async function handleCreatePresentation(toolArgs: any) {
             devicePrivateKey = keyPair.privateKey;
         }
 
+        if (devicePrivateKey) {
+            signingMethod = "internal_key";
+        }
+
         const deviceAlg = args.deviceAlg ?? -35;
 
         for (const req of args.requests) {
@@ -249,15 +258,17 @@ export async function handleCreatePresentation(toolArgs: any) {
                     deviceAlg
                 );
 
-                let signerPath = process.env.TOBARI_SIGNER_PATH;
+                const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
+                const possiblePaths = [
+                    DEFAULT_SIGNER_MACOS_PATH,
+                    path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer"),
+                    path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
+                    path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer"),
+                    path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer.exe")
+                ];
+
+                let signerPath = args.signerPath || process.env.TOBARI_SIGNER_PATH;
                 if (!signerPath) {
-                    const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
-                    const possiblePaths = [
-                        path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer"),
-                        path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
-                        path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer"),
-                        path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer.exe")
-                    ];
                     for (const p of possiblePaths) {
                         try {
                             await fs.access(p);
@@ -265,50 +276,70 @@ export async function handleCreatePresentation(toolArgs: any) {
                             break;
                         } catch { }
                     }
+                    if (!signerPath && args.fallbackToEphemeral) {
+                        const keyPair = await crypto.subtle.generateKey(
+                            { name: "ECDSA", namedCurve: "P-384" },
+                            true,
+                            ["sign"]
+                        );
+                        deviceAuth = await signDeviceAuth(
+                            disclosedDoc.docType,
+                            deviceNameSpacesBytes,
+                            sessionTranscript,
+                            keyPair.privateKey,
+                            deviceAlg
+                        );
+                        signingMethod = "ephemeral_fallback";
+                    }
                 }
 
-                if (!signerPath) {
-                    throw new Error("Could not find 'tobari-signer' binary. Please build the signer package or set TOBARI_SIGNER_PATH.");
+                if (!signerPath && !deviceAuth) {
+                    throw new Error(
+                        "Could not find 'tobari-signer' binary. Build the signer package or set TOBARI_SIGNER_PATH. " +
+                        `Checked: ${possiblePaths.join(", ")}`
+                    );
                 }
 
-                const signRequest = {
-                    challenge: Buffer.from(toBeSigned).toString('base64url'),
-                    rp_id: "tobari-mcp-server",
-                    message: `Sign presentation for ${disclosedDoc.docType}`,
-                    user_verification: "preferred"
-                };
+                if (!deviceAuth) {
+                    const signRequest = {
+                        challenge: Buffer.from(toBeSigned).toString('base64url'),
+                        rp_id: "tobari-mcp-server",
+                        message: `Sign presentation for ${disclosedDoc.docType}`,
+                        user_verification: "preferred"
+                    };
 
-                const signerProcess = spawn(signerPath, ["--request", JSON.stringify(signRequest)]);
+                    const signerProcess = spawn(signerPath, ["--request", JSON.stringify(signRequest)]);
 
-                const resultPromise = new Promise<string>((resolve, reject) => {
-                    let stdout = "";
-                    let stderr = "";
-                    signerProcess.stdout.on("data", (data) => stdout += data);
-                    signerProcess.stderr.on("data", (data) => stderr += data);
-                    signerProcess.on("close", (code) => {
-                        if (code === 0) resolve(stdout);
-                        else reject(new Error(`Signer exited with code ${code}: ${stderr}`));
+                    const resultPromise = new Promise<string>((resolve, reject) => {
+                        let stdout = "";
+                        let stderr = "";
+                        signerProcess.stdout.on("data", (data) => stdout += data);
+                        signerProcess.stderr.on("data", (data) => stderr += data);
+                        signerProcess.on("close", (code) => {
+                            if (code === 0) resolve(stdout);
+                            else reject(new Error(`Signer exited with code ${code}: ${stderr}`));
+                        });
+                        signerProcess.on("error", (err) => reject(err));
                     });
-                    signerProcess.on("error", (err) => reject(err));
-                });
 
-                const outputStr = await resultPromise;
-                let output;
-                try {
-                    output = JSON.parse(outputStr);
-                } catch (e) {
-                    throw new Error(`Invalid JSON output from signer: ${outputStr}`);
+                    const outputStr = await resultPromise;
+                    let output;
+                    try {
+                        output = JSON.parse(outputStr);
+                    } catch (e) {
+                        throw new Error(`Invalid JSON output from signer: ${outputStr}`);
+                    }
+
+                    const signatureBytes = new Uint8Array(Buffer.from(output.signature, 'base64url'));
+
+                    deviceAuth = await assembleDeviceAuth(
+                        protectedHeaderBytes,
+                        disclosedDoc.docType,
+                        deviceNameSpacesBytes,
+                        sessionTranscript,
+                        signatureBytes
+                    );
                 }
-
-                const signatureBytes = new Uint8Array(Buffer.from(output.signature, 'base64url'));
-
-                deviceAuth = await assembleDeviceAuth(
-                    protectedHeaderBytes,
-                    disclosedDoc.docType,
-                    deviceNameSpacesBytes,
-                    sessionTranscript,
-                    signatureBytes
-                );
             }
 
             documents.push({
@@ -338,7 +369,7 @@ export async function handleCreatePresentation(toolArgs: any) {
                         vp_base64: vpBase64,
                         description: "Verifiable Presentation created successfully.",
                         document_count: documents.length,
-                        signing_method: devicePrivateKey ? "internal_key" : "external_signer",
+                        signing_method: signingMethod,
                         is_ephemeral: !!args.ephemeralKey
                     }, null, 2),
                 },
@@ -525,26 +556,7 @@ export async function handleVerifyPresentation(toolArgs: any) {
         const vpBytes = new Uint8Array(Buffer.from(args.vpBase64, 'base64'));
         const presentation = decode(vpBytes);
 
-        const issuerKeys: Record<string, CryptoKey | { classic: CryptoKey; pqcPublicKey?: Uint8Array }> = {};
-        for (const docType of Object.keys(args.issuerPublicKeys)) {
-            const keyPath = args.issuerPublicKeys[docType];
-            const keyContent = await fs.readFile(keyPath, "utf-8");
-            const jwk = JSON.parse(keyContent);
-            const classicKey = await crypto.subtle.importKey(
-                "jwk", jwk, { name: "ECDSA", namedCurve: jwk.crv || "P-384" }, true, ["verify"]
-            );
-
-            const pqcKeyPath = args.issuerPqcPublicKeys?.[docType];
-            if (pqcKeyPath) {
-                const pqcContent = await fs.readFile(pqcKeyPath, "utf-8");
-                const pqcJson = JSON.parse(pqcContent);
-                const pqcPublicKey = Buffer.from(pqcJson.publicKey, "base64url");
-                issuerKeys[docType] = { classic: classicKey, pqcPublicKey: new Uint8Array(pqcPublicKey) };
-            } else {
-                issuerKeys[docType] = classicKey;
-            }
-        }
-
+        const issuerKeys = await loadIssuerKeys(args.issuerPublicKeys, args.issuerPqcPublicKeys);
         const results = await verifyPresentation(presentation, issuerKeys, args.verifierNonce);
 
         return {
@@ -561,6 +573,45 @@ export async function handleVerifyPresentation(toolArgs: any) {
     } catch (error: any) {
         return {
             content: [{ type: "text", text: `Error verifying VP: ${error.message}` }],
+            isError: true,
+        };
+    }
+}
+
+export async function handlePreviewPresentation(toolArgs: any) {
+    try {
+        const args = PreviewPresentationSchema.parse(toolArgs);
+        const vpBytes = decodeBase64Flexible(args.vpBase64);
+        const vpDecoder = new Decoder({ useMaps: true });
+        const presentation = vpDecoder.decode(vpBytes);
+        const summary = summarizeVp(presentation);
+        const decodedVp = normalizeForJson(presentation);
+
+        let verification: any = null;
+        if (args.issuerPublicKeys) {
+            const issuerKeys = await loadIssuerKeys(args.issuerPublicKeys, args.issuerPqcPublicKeys);
+            const results = await verifyPresentation(presentation, issuerKeys, args.verifierNonce);
+            verification = {
+                results,
+                overall_valid: results.every(r => r.issuerValid && r.deviceValid)
+            };
+        }
+
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({
+                        summary,
+                        decodedVp,
+                        verification
+                    }, null, 2),
+                },
+            ],
+        };
+    } catch (error: any) {
+        return {
+            content: [{ type: "text", text: `Error previewing VP: ${error.message}` }],
             isError: true,
         };
     }
@@ -643,6 +694,99 @@ export async function handleAnalyzeServiceRequest(toolArgs: any) {
             content: [{ type: "text", text: `Error analyzing service request: ${error.message}` }],
             isError: true,
         };
+    }
+}
+
+async function loadIssuerKeys(
+    issuerPublicKeys: Record<string, string>,
+    issuerPqcPublicKeys?: Record<string, string>
+): Promise<Record<string, CryptoKey | { classic: CryptoKey; pqcPublicKey?: Uint8Array }>> {
+    const issuerKeys: Record<string, CryptoKey | { classic: CryptoKey; pqcPublicKey?: Uint8Array }> = {};
+    for (const docType of Object.keys(issuerPublicKeys)) {
+        const keyPath = issuerPublicKeys[docType];
+        const keyContent = await fs.readFile(keyPath, "utf-8");
+        const jwk = JSON.parse(keyContent);
+        const classicKey = await crypto.subtle.importKey(
+            "jwk", jwk, { name: "ECDSA", namedCurve: jwk.crv || "P-384" }, true, ["verify"]
+        );
+
+        const pqcKeyPath = issuerPqcPublicKeys?.[docType];
+        if (pqcKeyPath) {
+            const pqcContent = await fs.readFile(pqcKeyPath, "utf-8");
+            const pqcJson = JSON.parse(pqcContent);
+            const pqcPublicKey = Buffer.from(pqcJson.publicKey, "base64url");
+            issuerKeys[docType] = { classic: classicKey, pqcPublicKey: new Uint8Array(pqcPublicKey) };
+        } else {
+            issuerKeys[docType] = classicKey;
+        }
+    }
+    return issuerKeys;
+}
+
+function summarizeVp(vp: any) {
+    if (!vp || !Array.isArray(vp.documents)) {
+        return { error: "VP does not contain documents." };
+    }
+    return {
+        documentCount: vp.documents.length,
+        documents: vp.documents.map((doc: any) => ({
+            docType: doc?.docType,
+            fieldCount: countNamespaceItems(doc?.issuerSigned?.nameSpaces)
+        }))
+    };
+}
+
+function countNamespaceItems(ns: any): number | null {
+    if (!ns) return null;
+    let count = 0;
+    if (ns instanceof Map) {
+        for (const value of ns.values()) {
+            if (Array.isArray(value)) count += value.length;
+        }
+        return count;
+    }
+    if (typeof ns === "object") {
+        for (const key of Object.keys(ns)) {
+            const value = (ns as any)[key];
+            if (Array.isArray(value)) count += value.length;
+        }
+        return count;
+    }
+    return null;
+}
+
+function normalizeForJson(value: any): any {
+    if (value instanceof Uint8Array) {
+        return Buffer.from(value).toString("base64");
+    }
+    if (value instanceof Map) {
+        const obj: Record<string, any> = {};
+        for (const [k, v] of value.entries()) {
+            obj[String(k)] = normalizeForJson(v);
+        }
+        return obj;
+    }
+    if (Array.isArray(value)) {
+        return value.map((v) => normalizeForJson(v));
+    }
+    if (value && typeof value === "object") {
+        const obj: Record<string, any> = {};
+        for (const [k, v] of Object.entries(value)) {
+            obj[k] = normalizeForJson(v);
+        }
+        return obj;
+    }
+    return value;
+}
+
+function decodeBase64Flexible(input: string): Uint8Array {
+    const trimmed = input.trim();
+    const base64 = trimmed.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = base64.length % 4 === 0 ? "" : "=".repeat(4 - (base64.length % 4));
+    try {
+        return new Uint8Array(Buffer.from(base64 + pad, "base64"));
+    } catch {
+        throw new Error("Invalid vpBase64: expected base64/base64url encoded DeviceResponse.");
     }
 }
 

@@ -26,6 +26,7 @@ The server exposes two categories of tools: **Core Tools** for handling credenti
 | :--- | :--- |
 | `read_tobari_file` | Reads and parses a Tobari file (.cose/.html). Verifies issuer signatures if a key is provided. |
 | `create_presentation` | Creates a selective disclosure VP (Verifiable Presentation) from a document. |
+| `preview_presentation` | Decodes and summarizes a VP. Optional signature verification. |
 | `verify_presentation` | Verifies a VP, checking both Issuer and Device (Holder) signatures. Supports PQC. |
 | `analyze_service_request` | Analyzes a Service Request file to understand what credentials are required. |
 | `sign_with_jpki` | Signs data using a physical My Number Card (macOS/Windows/Linux). |
@@ -109,6 +110,8 @@ This creates:
 ### 2) Create a presentation (VP)
 Use `create_presentation` or your normal flow to generate a VP from `juminhyo.cose`.
 
+Note: `create_presentation` supports `signerPath` (override signer binary path) and `fallbackToEphemeral` (use a temporary key if signer is unavailable).
+
 ### 3) Verify with PQC public key
 Pass `issuerPqcPublicKeys` alongside classic issuer keys:
 ```json
@@ -124,3 +127,17 @@ Pass `issuerPqcPublicKeys` alongside classic issuer keys:
 ```
 
 The response includes `issuerPqcPresent` and `issuerPqcValid` for each document.
+
+## Quick VP Preview
+
+Use `preview_presentation` to inspect the VP without running a demo server:
+```json
+{
+  "name": "preview_presentation",
+  "arguments": {
+    "vpBase64": "<base64-vp>"
+  }
+}
+```
+
+If you want to verify signatures at the same time, pass `issuerPublicKeys` (and optional `issuerPqcPublicKeys`).

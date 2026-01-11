@@ -133,7 +133,7 @@ async function loadOrCreateIssuerKeyPair(): Promise<{ privateKey: CryptoKey }> {
 }
 
 async function loadOrCreateDevicePublicKey(): Promise<CryptoKey> {
-    const deviceKeyPath = path.resolve(__dirname, 'device-key-p256.json');
+    const deviceKeyPath = path.resolve(__dirname, '../../device-key.json');
 
     if (fs.existsSync(deviceKeyPath)) {
         const jwk = JSON.parse(fs.readFileSync(deviceKeyPath, 'utf-8'));
@@ -141,14 +141,14 @@ async function loadOrCreateDevicePublicKey(): Promise<CryptoKey> {
         return await crypto.subtle.importKey(
             "jwk",
             pubJwk,
-            { name: "ECDSA", namedCurve: "P-256" },
+            { name: "ECDSA", namedCurve: "P-384" },
             true,
             ["verify"]
         );
     }
 
     const keyPair = await crypto.subtle.generateKey(
-        { name: "ECDSA", namedCurve: "P-256" },
+        { name: "ECDSA", namedCurve: "P-384" },
         true,
         ["sign", "verify"]
     );
