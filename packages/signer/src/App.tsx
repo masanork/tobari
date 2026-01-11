@@ -122,6 +122,25 @@ function App() {
     }
   };
 
+  const handleBbsProof = async () => {
+    if (!request || !request.bbs) return;
+    setStatus("Generating zero-knowledge proof...");
+    setError(null);
+    try {
+      await invoke("perform_bbs_proof", {
+        publicKeyJson: request.bbs.publicKey,
+        signatureJson: request.bbs.signature,
+        messages: request.bbs.messages,
+        revealedIndices: request.bbs.revealedIndices,
+        nonce: request.challenge
+      });
+      setStatus("Proof generated successfully! Closing...");
+    } catch (e: any) {
+      setError("BBS Proof generation failed: " + formatError(e));
+      setStatus("Error");
+    }
+  };
+
   const handleReject = async () => {
     await invoke("reject");
   };
@@ -176,6 +195,19 @@ function App() {
                        </div>
                     )}
           
+                    {request.bbs && (
+                      <div className="bbs-details">
+                        <label>Selective Disclosure (BBS+)</label>
+                        <p>The following fields will be revealed:</p>
+                        <ul>
+                          {request.bbs.revealedIndices.map(idx => (
+                            <li key={idx}>Field #{idx}: {request.bbs?.messages[idx]}</li>
+                          ))}
+                        </ul>
+                        <p className="privacy-note">Other fields and the issuer's signature will remain hidden.</p>
+                      </div>
+                    )}
+          
                     <div className="details">            <details>
               <summary>Technical Details</summary>
               <div className="detail-content">
@@ -201,6 +233,11 @@ function App() {
               <button className="sign-btn" onClick={handleJpkiSign} disabled={!pin || status.includes("Interacting")}>
                 JPKI (My Number Card)
               </button>
+              {request.bbs && (
+                <button className="sign-btn primary" onClick={handleBbsProof} disabled={status.includes("Generating")}>
+                  Generate ZKP (BBS+)
+                </button>
+              )}
             </div>
           </div>
         </div>

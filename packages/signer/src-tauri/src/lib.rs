@@ -661,6 +661,78 @@ fn bbs_generate_key() -> Result<BbsKeyPair, SignerError> {
     })
 }
 
+#[tauri::command]
+async fn perform_bbs_proof(
+    app: AppHandle,
+    public_key_json: String,
+    signature_json: String,
+    messages: Vec<String>,
+    revealed_indices: Vec<usize>,
+    nonce: String,
+) -> Result<(), SignerError> {
+    let proof_json = bbs_derive_proof(public_key_json, signature_json, messages, revealed_indices, nonce)?;
+    
+    let response = serde_json::json!({
+        "signature": proof_json,
+        "type": "BBS+ Proof",
+        "protocol": "ZKP"
+    });
+
+    println!("{}", serde_json::to_string(&response).map_err(|e| SignerError::Serialization(e.to_string()))?);
+    app.exit(0);
+    Ok(())
+}
+
+fn bbs_derive_proof(
+    public_key_json: String,
+    signature_json: String,
+    messages: Vec<String>,
+    revealed_indices: Vec<usize>,
+    nonce: String,
+) -> Result<String, SignerError> {
+    use bbs::prelude::*;
+    use std::collections::BTreeSet;
+
+    let pk: PublicKey = serde_json::from_str(&public_key_json).map_err(|e| SignerError::Serialization(e.to_string()))?;
+    let signature: Signature = serde_json::from_str(&signature_json).map_err(|e| SignerError::Serialization(e.to_string()))?;
+    
+    // 1. Prepare messages classification
+    let mut proof_messages = Vec::new();
+    let mut revealed_indices_set = BTreeSet::new();
+    
+    for (i, msg) in messages.iter().enumerate() {
+        let sig_msg = SignatureMessage::hash(msg.as_bytes());
+        if revealed_indices.contains(&i) {
+            proof_messages.push(ProofMessage::Revealed(sig_msg));
+            revealed_indices_set.insert(i);
+        } else {
+            proof_messages.push(ProofMessage::Hidden(HiddenMessage::ProofSpecificBlinding(sig_msg)));
+        }
+    }
+
+    // 2. Create Proof Request
+    let request = ProofRequest {
+        revealed_messages: revealed_indices_set,
+        verification_key: pk,
+    };
+
+    // 3. Commit to signature PoK
+    let pok_context = Prover::commit_signature_pok(&request, &proof_messages, &signature)
+        .map_err(|e| SignerError::Internal(format!("PoK commit error: {:?}", e)))?;
+
+    // 4. Create challenge hash
+    let nonce_val = ProofNonce::hash(nonce.as_bytes());
+    let challenge_hash = Prover::create_challenge_hash(&[pok_context.clone()], None, &nonce_val)
+        .map_err(|e| SignerError::Internal(format!("Challenge hash error: {:?}", e)))?;
+
+    // 5. Generate the proof
+    let proof = Prover::generate_signature_pok(pok_context, &challenge_hash)
+        .map_err(|e| SignerError::Internal(format!("Proof generation error: {:?}", e)))?;
+
+    // Use JSON for proof output as to_bytes is private
+    serde_json::to_string(&proof).map_err(|e| SignerError::Serialization(e.to_string()))
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run() {
     let args = Cli::parse();
@@ -693,7 +765,8 @@ pub fn run() {
             reject,
             jpki_sign,
             read_my_number_card,
-            bbs_generate_key
+            bbs_generate_key,
+            perform_bbs_proof
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
