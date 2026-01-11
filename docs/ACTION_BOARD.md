@@ -1,51 +1,80 @@
 # Tobari Action Board
 
 **Last Updated:** 2026-01-11
-**Scope:** Tobari全体（MCP/Signer/SCAC/Compliance/civ）
+**Scope:** Tobari Project (MCP/Signer/SCAC/Compliance/civ)
 
-## Now (今月)
-- [ ] **MCP ↔ Tobari Signer（Tauri/FIDO）結合の完了**
-  - [x] **macOS Native Integration**: `mcp-server` が `signer-macos` を直接呼び出し、JPKI署名/読取（基本4情報・マイナンバー・顔写真）をPCSCなしで実行可能に
-  - [ ] `packages/mcp-server/src/tools/tobari.ts` の外部署名フローを実機で動作確認
-  - [ ] `packages/signer` のCLI引数/出力JSONの仕様を明文化
-  - [ ] macOS/Windowsでのビルド導線と`TOBARI_SIGNER_PATH`導入手順を整備
-- [ ] **WASM/パフォーマンス最適化の調査計画**
-  - [ ] RSA署名検証（Passport/JPKI）とZKP生成のボトルネック測定
-  - [ ] マルチスレッド/ハードウェア支援の利用可否を整理
-- [ ] **FATF/SCAC運用マッピングの整理**
-  - [ ] VASP向けの識別/検証/リスク評価とVP構成要素の対応表を作成
-  - [ ] Travel Rule連携の最小インタフェース草案
-- [ ] **署名方式の確定（実装に反映）**
-  - [ ] Issuer署名はP-384、Device bindingはP-256を標準とする
-  - [ ] Experimental: PQCハイブリッド署名（選択式）はIssuerから開始
-  - [ ] Device bindingのPQC拡充はPQC対応FIDOデバイスが出てから検討
-  - [ ] PQCはCOSE Countersignで添付（ECDSA P-384はそのまま）
-- [ ] PQCアルゴリズムはML-DSA-65でPoC（COSE alg -49 / cryptosuite ml-dsa-65-jcs-2025）
-  - [ ] PoC実装タスク化（Issuer Countersign）
-  - [ ] `tobari-gen`でIssuerAuthにCountersignを付与
-  - [ ] `validator`でCountersign検証を行い結果を分離表示
-  - [ ] `verify_presentation`の結果にPQC検証ステータスを追加
-  - [ ] デモ手順を整理（`bun examples/juminhyo/gen-tobari.ts --pqc` → `issuer-pqc-public-key.json` を `verify_presentation` の `issuerPqcPublicKeys` に渡す）
+## 🚀 Now (Current Sprint)
 
-## Next (1-2ヶ月)
-- [ ] **BBS+ unlinkable credentialのproof生成パイプライン**
-  - [ ] WASMインタフェース課題の洗い出しと修正方針
-  - [ ] サンプルVPを生成し、プレゼンテーション検証まで通す
-- [ ] **snarkjs本番パイプライン**
-  - [ ] `passport.circom`へRSA/ECDSA検証回路を統合
-  - [ ] 実パスポートデータで検証テストを確立
-- [ ] **civ: card-specific errorの明示化**
-  - [ ] `IncorrectPin` / `CardLocked` / `NotAuthenticated` などを`CivError`に追加
-- [ ] **civ: Rustdoc標準化**
-  - [ ] 公開APIのドキュメント整備と例の追加
+### macOS & Signer Integration
+- [x] **macOS Native Integration**: `mcp-server` now automatically detects macOS and invokes `signer-macos` (CTK-based) for JPKI operations, bypassing PCSC issues.
+- [ ] **MCP ↔ Tobari Signer (Tauri/FIDO) Coupling**
+  - [ ] Verify external signing flow in `packages/mcp-server/src/tools/tobari.ts` with real devices.
+  - [ ] Define CLI arguments and JSON output spec for `packages/signer`.
+  - [ ] Document build/install steps for macOS/Windows and `TOBARI_SIGNER_PATH` configuration.
 
-## Later (2026)
-- [ ] **KMS/HSM連携の鍵管理設計**
-  - [ ] クラウドKMS/オンプレHSMの両対応設計
-- [ ] **mDoc失効レジストリ（Status List 2021）**
-- [ ] **Mobile SDK（Flutter/Kotlin）**
-- [ ] **OID4VCI/OID4VP実装**
-- [ ] **civ: FFI/クロスランゲージ**
-  - [ ] `uniffi-rs`によるKotlin/Swiftバインディング検討
-- [ ] **civ: SM(AES/3DES)の共通化**
-- [ ] **PQC/Extended Length APDUの検証**
+### Performance & PQC
+- [ ] **WASM/Performance Optimization Plan**
+  - [ ] Measure benchmarks for RSA verification (Passport/JPKI) and ZKP generation.
+  - [ ] Investigate multi-threading and hardware acceleration support in Wasm.
+- [ ] **Post-Quantum Cryptography (PQC)**
+  - [ ] **Standardization**: Issuer = P-384, Device = P-256. PQC via COSE Countersign (Experimental).
+  - [ ] **PoC Implementation (ML-DSA-65)**:
+    - [ ] `tobari-gen`: Add IssuerAuth countersign generation.
+    - [ ] `validator`: Implement countersign verification and status display.
+    - [ ] Update `verify_presentation` tool to return PQC status.
+    - [ ] Documentation: Update demo steps for PQC keys.
+
+### Compliance & SCAC
+- [ ] **FATF/SCAC Operations Mapping**
+  - [ ] Create correspondence table for VASP risk assessment vs VP elements.
+  - [ ] Draft minimal Travel Rule interface.
+
+## 📅 Next (1-2 Months)
+
+### Privacy & ZKP
+- [ ] **BBS+ Unlinkable Credentials**
+  - [ ] Resolve Wasm interface issues for blind signatures.
+  - [ ] Implement seamless proof generation pipeline.
+- [ ] **Production ZKP Pipeline (snarkjs)**
+  - [ ] Integrate RSA/ECDSA verification circuits into `passport.circom`.
+  - [ ] Establish testing with real passport data.
+
+### Civ Library Refinement
+- [ ] **Error Handling**: Explicitly handle card-specific errors (`IncorrectPin`, `CardLocked`, `NotAuthenticated`) in `CivError`.
+- [ ] **Documentation**: Standardize Rustdoc comments for public APIs.
+
+## 🔮 Later (2026 / Q2+)
+
+### Infrastructure & Mobile
+- [ ] **Key Management**: Design Cloud KMS / On-premise HSM integration.
+- [ ] **Revocation**: Implement mDoc Status List 2021 registry.
+- [ ] **Mobile SDK**: Prototyping for Flutter/Kotlin (NFC reading -> SCAC reception).
+- [ ] **Wallet Integration**: Partnership/Integration with crypto wallets.
+
+### Standardization
+- [ ] **OID4VC**: Implement OID4VCI (Issuance) and OID4VP (Presentation).
+- [ ] **Global Compliance**: Travel Rule / FATF alignment.
+
+### Civ Future-Proofing
+- [ ] **FFI**: `uniffi-rs` bindings for Swift/Kotlin.
+- [ ] **Crypto Consolidation**: Unify AES/3DES logic in `civ`.
+- [ ] **Extended Length APDU**: Verify stability for large data.
+
+---
+
+## 🗺️ Strategic Roadmap (Context)
+
+This section maps the tactical tasks above to broader strategic goals (imported from Phase 2-4 plans).
+
+### Phase 2: Performance & Scalability (Focus)
+*   **Optimization**: Address computational cost of RSA/ZKP via Wasm optimization.
+*   **Unlinkability**: Deliver fully functional BBS+ credentials.
+*   **ZKP Maturity**: Move from prototype circuits to production-ready `snarkjs` pipelines.
+
+### Phase 3: Production Infrastructure
+*   **Trust Anchors**: Move from local demo keys to KMS/HSM managed keys.
+*   **Mobile First**: Enable mobile apps to act as Holders (SDK) and Signers.
+
+### Phase 4: Standardization & Compliance
+*   **Interoperability**: OID4VC support is critical for cross-ecosystem adoption.
+*   **Regulatory**: Ensure JPKI/Travel Rule compliance for VASP adoption.
