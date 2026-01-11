@@ -14,8 +14,145 @@ import {
     PreviewPresentationSchema,
     AnalyzeServiceRequestSchema,
     ListAvailableDocumentsSchema,
-    GeneratePassportZkpInputSchema
+    GeneratePassportZkpInputSchema,
+    RegisterDeviceSchema,
+    IssueLocalCredentialSchema
 } from "../schemas.js";
+import { handleReadBasicInfo } from "./jpki.js";
+import { generateSignedTobari } from "@tobari/codec/tobari-gen";
+
+export async function handleIssueLocalCredential(toolArgs: any) {
+    try {
+        const args = IssueLocalCredentialSchema.parse(toolArgs);
+
+        // 1. Read data from Card
+        const basicInfoResult = await handleReadBasicInfo({ pin: args.pin });
+        if (basicInfoResult.isError) throw new Error("Failed to read card info.");
+        const personalData = JSON.parse(basicInfoResult.content[0].text);
+
+        // 2. Get Device Public Keys
+        const registrationResult = await handleRegisterDevice({});
+        const deviceKeys = JSON.parse(registrationResult.content[0].text);
+
+        // 3. Generate Mock Issuer Key for Self-Sign
+        // In a real scenario, this might be a local key managed by the app.
+        const issuerKeyPair = await crypto.subtle.generateKey(
+            { name: "ECDSA", namedCurve: "P-384" },
+            true,
+            ["sign"]
+        );
+
+        // 4. Define Document Schema (Resident Record style)
+        const docSchemaYaml = `
+id: io.github.masanork.tobari.resident-record.v1
+title: Digital Resident Record (Self-Issued)
+fields:
+  - id: name
+    title: Full Name
+  - id: address
+    title: Address
+  - id: birthDate
+    title: Date of Birth
+  - id: gender
+    title: Gender
+`;
+
+        const dataToSign = {
+            name: personalData.name,
+            address: personalData.address,
+            birthDate: personalData.birthDate,
+            gender: personalData.gender
+        };
+
+        // 5. Generate mdoc
+        // Using device signing key for holder binding, and device encryption key for protection
+        const x = Buffer.from(deviceKeys.encryptionPublicKey.x, 'base64url');
+        const y = Buffer.from(deviceKeys.encryptionPublicKey.y, 'base64url');
+        const rawEncryptionPub = new Uint8Array(65);
+        rawEncryptionPub[0] = 0x04;
+        rawEncryptionPub.set(x, 1);
+        rawEncryptionPub.set(y, 33);
+
+        const coseBinary = await generateSignedTobari(docSchemaYaml, dataToSign, issuerKeyPair.privateKey, {
+            kid: "self-issued-local-key",
+            devicePublicKey: await crypto.subtle.importKey(
+                "jwk",
+                deviceKeys.signingPublicKey,
+                { name: "ECDSA", namedCurve: "P-256" },
+                true,
+                ["verify"]
+            ),
+            encryptionPublicKey: rawEncryptionPub
+        });
+
+        // 6. Save and Return
+        await fs.writeFile(args.outputPath, coseBinary);
+
+        return {
+            content: [{
+                type: "text",
+                text: JSON.stringify({
+                    success: true,
+                    path: path.resolve(args.outputPath),
+                    message: "Hardware-bound identity document created. You can now use this for applications without re-inserting your My Number Card."
+                }, null, 2)
+            }],
+        };
+
+    } catch (error: any) {
+        return {
+            content: [{ type: "text", text: `Error issuing local credential: ${error.message}` }],
+            isError: true,
+        };
+    }
+}
+
+export async function handleRegisterDevice(toolArgs: any) {
+    if (process.platform !== 'darwin') {
+        throw new Error("register_device is currently only supported on macOS via signer-macos.");
+    }
+
+    try {
+        const args = RegisterDeviceSchema.parse(toolArgs);
+        const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+        await fs.access(signerPath);
+
+        const { execFileSync } = await import("child_process");
+        const env = { ...process.env, TOBARI_SIGNER_USE_KEYCHAIN: "1" };
+
+        const signingKeyOutput = execFileSync(signerPath, ["--get-public-key"], { env }).toString();
+        const encryptionKeyOutput = execFileSync(signerPath, ["--get-encryption-public-key"], { env }).toString();
+
+        const signingKey = JSON.parse(signingKeyOutput).publicKey;
+        const encryptionKey = JSON.parse(encryptionKeyOutput).publicKey;
+
+        const result = {
+            signingPublicKey: signingKey,
+            encryptionPublicKey: encryptionKey,
+            platform: "macOS (Secure Enclave)",
+            description: "Registered successfully. Use these keys for Issuance and Holder Binding."
+        };
+
+        if (args.rootPath) {
+            const signingPath = path.join(args.rootPath, "device-key.json");
+            const encryptionPath = path.join(args.rootPath, "recipient-pubkey.json");
+            await fs.mkdir(args.rootPath, { recursive: true });
+            await fs.writeFile(signingPath, JSON.stringify(signingKey, null, 2));
+            await fs.writeFile(encryptionPath, JSON.stringify(encryptionKey, null, 2));
+            (result as any).savedTo = args.rootPath;
+        }
+
+        return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+
+    } catch (error: any) {
+        return {
+            content: [{ type: "text", text: `Error registering device: ${error.message}` }],
+            isError: true,
+        };
+    }
+}
 
 export async function handleReadTobariFile(toolArgs: any) {
     try {
@@ -284,31 +421,34 @@ export async function handleCreatePresentation(toolArgs: any) {
                             break;
                         } catch { }
                     }
-                    if (!signerPath && args.fallbackToEphemeral) {
-                        const keyPair = await crypto.subtle.generateKey(
-                            { name: "ECDSA", namedCurve: "P-384" },
-                            true,
-                            ["sign"]
-                        );
-                        deviceAuth = await signDeviceAuth(
-                            disclosedDoc.docType,
-                            deviceNameSpacesBytes,
-                            sessionTranscript,
-                            keyPair.privateKey,
-                            deviceAlg
-                        );
-                        signingMethod = "ephemeral_fallback";
-                    }
+                }
+
+                if (!signerPath && args.fallbackToEphemeral) {
+                    const keyPair = await crypto.subtle.generateKey(
+                        { name: "ECDSA", namedCurve: "P-384" },
+                        true,
+                        ["sign"]
+                    );
+                    deviceAuth = await signDeviceAuth(
+                        disclosedDoc.docType,
+                        deviceNameSpacesBytes,
+                        sessionTranscript,
+                        keyPair.privateKey,
+                        deviceAlg
+                    );
+                    signingMethod = "ephemeral_fallback";
                 }
 
                 if (!signerPath && !deviceAuth) {
                     throw new Error(
-                        "Could not find 'tobari-signer' binary. Build the signer package or set TOBARI_SIGNER_PATH. " +
+                        "Could not find 'tobari-signer' or 'signer-macos' binary. Build the signer packages or set TOBARI_SIGNER_PATH. " +
                         `Checked: ${possiblePaths.join(", ")}`
                     );
                 }
 
                 if (!deviceAuth) {
+                    const isMacSigner = signerPath === DEFAULT_SIGNER_MACOS_PATH;
+                    
                     const signRequest = {
                         challenge: Buffer.from(toBeSigned).toString('base64url'),
                         rp_id: "tobari-mcp-server",
@@ -316,7 +456,16 @@ export async function handleCreatePresentation(toolArgs: any) {
                         user_verification: "preferred"
                     };
 
-                    const signerProcess = spawn(signerPath, ["--request", JSON.stringify(signRequest)]);
+                    const signArgs = isMacSigner 
+                        ? ["--request", JSON.stringify(signRequest)]
+                        : ["--request", JSON.stringify(signRequest)]; // Currently same for both, but could differ.
+                    
+                    // On macOS, explicitly use keychain if using signer-macos
+                    const spawnEnv = isMacSigner 
+                        ? { ...process.env, TOBARI_SIGNER_USE_KEYCHAIN: "1" }
+                        : process.env;
+
+                    const signerProcess = spawn(signerPath!, signArgs, { env: spawnEnv });
 
                     const resultPromise = new Promise<string>((resolve, reject) => {
                         let stdout = "";

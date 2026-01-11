@@ -70,6 +70,32 @@ class SecureEnclaveSigner {
         return (toBase64URL(signature.rawRepresentation), jwk)
     }
 
+    func getPublicKey() throws -> String {
+        // 1. Get Key
+        let key = try getOrCreatePrivateKey()
+        
+        // 2. Prepare Public Key (JWK)
+        let rawPub: Data
+        switch key {
+        case .secureEnclave(let privateKey):
+            rawPub = privateKey.publicKey.rawRepresentation
+        case .software(let privateKey):
+            rawPub = privateKey.publicKey.rawRepresentation
+        }
+        let x = rawPub.subdata(in: 1..<33)
+        let y = rawPub.subdata(in: 33..<65)
+        
+        let jwk = """
+        {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "\(toBase64URL(x))",
+          "y": "\(toBase64URL(y))"
+        }
+        """
+        return jwk
+    }
+
     private func getOrCreatePrivateKey() throws -> DeviceSigningKey {
         if let path = deviceJwkPath {
             if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),

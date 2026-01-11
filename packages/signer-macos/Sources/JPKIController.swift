@@ -26,6 +26,7 @@ class JPKIController {
         static let EF_SURFACE_INFO_B = Data([0x00, 0x06])
         static let EF_FACE_PHOTO = Data([0x00, 0x02]) // Usually under Face Recognition AP
         static let EF_AUTH_KEY = Data([0x00, 0x17])
+        static let EF_USER_AUTH_CERT = Data([0x00, 0x0A])
     }
     
     enum APDU {
@@ -93,6 +94,102 @@ class JPKIController {
         
         let resVer = try await manager.transmit(apdu: verApdu)
         try checkSW(resVer, context: "Verify PIN")
+    }
+    
+    // MARK: - Certificate
+    
+    func readCertificate(pin: String) async throws -> Data {
+        // 1. Select JPKI AP
+        try await selectJPKIAP()
+        
+        // 2. Verify PIN
+        try await verifyPIN(ef: FileID.EF_AUTH_PIN, pin: pin)
+        
+        // 3. Read Certificate EF
+        return try await readEFFull(ef: FileID.EF_USER_AUTH_CERT)
+    }
+
+    func extractPublicKeyJWK(from certData: Data) -> String? {
+        guard let certificate = SecCertificateCreateWithData(nil, certData as CFData) else {
+            return nil
+        }
+        
+        guard let publicKey = SecCertificateCopyKey(certificate) else {
+            return nil
+        }
+        
+        var error: Unmanaged<CFError>?
+        guard let keyData = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
+            return nil
+        }
+        
+        // JPKI Auth Certificate is RSA 2048. 
+        // SecKeyCopyExternalRepresentation for RSA returns PKCS#1 RSAPublicKey (RSAPublicKey ::= SEQUENCE { n INTEGER, e INTEGER })
+        // We need to parse this to get n and e for JWK.
+        
+        // Simple ASN.1 parser for RSA Public Key (Sequence of 2 Integers)
+        var offset = 0
+        let bytes = [UInt8](keyData)
+        
+        // Expecting Sequence
+        if bytes[offset] != 0x30 { return nil }
+        offset += 1
+        
+        // Length
+        let _ = decodeLength(bytes, &offset)
+        
+        // Modulus (n)
+        if bytes[offset] != 0x02 { return nil }
+        offset += 1
+        let nLen = decodeLength(bytes, &offset)
+        var nData = keyData.subdata(in: offset..<offset+nLen)
+        offset += nLen
+        
+        // Remove leading zero if present in signed ASN.1 integer
+        if nData.first == 0x00 {
+            nData = nData.dropFirst()
+        }
+        
+        // Exponent (e)
+        if bytes[offset] != 0x02 { return nil }
+        offset += 1
+        let eLen = decodeLength(bytes, &offset)
+        let eData = keyData.subdata(in: offset..<offset+eLen)
+        
+        let nB64 = nData.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let eB64 = eData.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+            
+        return """
+        {
+          "kty": "RSA",
+          "n": "\(nB64)",
+          "e": "\(eB64)",
+          "alg": "RS256",
+          "use": "sig"
+        }
+        """
+    }
+
+    private func decodeLength(_ bytes: [UInt8], _ offset: inout Int) -> Int {
+        let first = bytes[offset]
+        offset += 1
+        if first < 0x80 {
+            return Int(first)
+        } else {
+            let numBytes = Int(first & 0x7F)
+            var len = 0
+            for _ in 0..<numBytes {
+                len = (len << 8) | Int(bytes[offset])
+                offset += 1
+            }
+            return len
+        }
     }
     
     // MARK: - Signing

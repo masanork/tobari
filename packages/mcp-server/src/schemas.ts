@@ -135,3 +135,15 @@ export const ReadPhotoSchema = z.object({
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
     demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
+
+export const RegisterDeviceSchema = z.object({
+    rootPath: z.string().optional().describe("Optional path where to save the exported public keys. If not provided, keys are only returned in the response."),
+});
+
+export const IssueLocalCredentialSchema = z.object({
+    pin: z.string().describe("4-digit PIN for My Number Card"),
+    outputPath: z.string().describe("Where to save the generated .cose file (e.g. ./my-identity.cose)"),
+    issuerName: z.string().optional().default("My Hardware Device").describe("Label for the issuer in the document"),
+});
+
+
