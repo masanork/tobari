@@ -22,3 +22,4 @@ We propose using **ISO 18013-5 (mDoc)** based credentials to bridge this gap.
 1. **Proof of Concept**: Implementation of the SCAC credential using `civ` and Tobari processor.
 2. **Standardization**: Aligning with ISO/IEC 18013-5 and 18013-7 (OpenID4VP).
 3. **Ecosystem Integration**: Partnering with local VASPs to test the verification flow.
+4. **Future-Proofing**: Implementing Post-Quantum Cryptography (ML-DSA) hybrid signatures to ensure long-term security of holder binding.

@@ -29,6 +29,11 @@
   - [ ] Create correspondence table for VASP risk assessment vs VP elements.
   - [ ] Draft minimal Travel Rule interface.
 
+### MCP Enhancements (Demo Automation)
+- [ ] **End-to-End Demo Support**
+  - [ ] Update `list_available_documents` to return issuer key paths (classic/pqc).
+  - [ ] Create `generate_example_document` tool to trigger `gen-tobari.ts` scripts.
+
 ## 📅 Next (1-2 Months)
 
 ### Privacy & ZKP
