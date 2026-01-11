@@ -31,8 +31,7 @@ struct JPKITests {
     }
     
     static func testComputeAuthSignature() async {
-        print("Running testComputeAuthSignature...")
-        // ... (existing test logic)
+        print("Running testComputeSignature...")
         let mock = MockSmartCardManager()
         let controller = JPKIController(manager: mock)
         
@@ -51,7 +50,7 @@ struct JPKITests {
         
         do {
             let dataToSign = "Hello World".data(using: .utf8)!
-            let signature = try await controller.computeAuthSignature(pin: "1234", data: dataToSign)
+            let signature = try await controller.computeSignature(pin: "1234", data: dataToSign)
             assertEqual(signature.count, 32, "Signature length should be 32")
         } catch {
             print("❌ Unexpected Error: \(error)")
@@ -92,13 +91,17 @@ struct JPKITests {
         mock.handler = { apdu in
             let ins = apdu[1]
             if ins == 0xB0 { // READ BINARY
-                // Construct TLV: Name (DF22) = "Taro"
-                var data = Data()
-                // DF22 04 54 61 72 6F
-                data.append(contentsOf: [0xDF, 0x22, 0x04])
-                data.append(contentsOf: "Taro".data(using: .utf8)!)
-                data.append(contentsOf: [0x90, 0x00])
-                return data
+                // Construct TLV: Wrapper(DF20) -> Name (DF22) = "Taro"
+                var inner = Data()
+                inner.append(contentsOf: [0xDF, 0x22, 0x04])
+                inner.append(contentsOf: "Taro".data(using: .utf8)!)
+                
+                var outer = Data()
+                outer.append(contentsOf: [0xDF, 0x20])
+                outer.append(UInt8(inner.count))
+                outer.append(inner)
+                outer.append(contentsOf: [0x90, 0x00])
+                return outer
             }
             return Data([0x90, 0x00])
         }
