@@ -23,6 +23,7 @@
     - [x] `validator`: Implement countersign verification and status display.
     - [x] Update `verify_presentation` tool to return PQC status.
     - [x] Documentation: Update demo steps for PQC keys.
+  - [x] **ML-KEM (WASM)**: Integrate ML-KEM-768 keygen/encap/decap in crypto-wasm (full build).
 
 ### Compliance & SCAC
 - [ ] **FATF/SCAC Operations Mapping**
