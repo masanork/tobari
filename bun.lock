@@ -16,7 +16,7 @@
       "name": "juminhyo-demo",
       "version": "0.1.0",
       "dependencies": {
-        "@tobari/civ": "file:../../packages/civ/pkg",
+        "@tobari/civ": "workspace:*",
         "@tobari/codec": "workspace:*",
         "@tobari/crypto": "workspace:*",
         "clsx": "^2.1.1",
@@ -1099,8 +1099,6 @@
     "bun-types/@types/node": ["@types/node@25.0.3", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-W609buLVRVmeW693xKfzHeIV6nJGGz98uCPfeXI1ELMLXVeKYZ9m15fAMSaUPBHYLGFsVRcMmSCksQOrZV9BYA=="],
 
     "fast-glob/glob-parent": ["glob-parent@5.1.2", "", { "dependencies": { "is-glob": "^4.0.1" } }, "sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow=="],
-
-    "juminhyo-demo/@tobari/civ": ["civ@file:packages/civ/pkg", {}],
 
     "micromatch/picomatch": ["picomatch@2.3.1", "", {}, "sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA=="],
 
