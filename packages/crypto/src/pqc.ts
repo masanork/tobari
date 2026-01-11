@@ -1,8 +1,11 @@
 import init, {
   ml_dsa_65_generate_keypair,
   ml_dsa_65_sign,
-  ml_dsa_65_verify
-} from "../../crypto-wasm/pkg/tobari_crypto_wasm.js";
+  ml_dsa_65_verify,
+  ml_kem_768_generate_keypair,
+  ml_kem_768_encap,
+  ml_kem_768_decap
+} from "../../crypto-wasm/pkg/full/tobari_crypto_wasm_full.js";
 
 let wasmInitialized: Promise<any> | null = null;
 
@@ -39,4 +42,25 @@ export async function mlDsa65Sign(privateKey: Uint8Array, message: Uint8Array) {
 export async function mlDsa65Verify(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array) {
   await ensureWasm();
   return ml_dsa_65_verify(publicKey, message, signature);
+}
+
+export async function generateMlKem768KeyPair() {
+  await ensureWasm();
+  const bytes = ml_kem_768_generate_keypair();
+  const privateKey = bytes.slice(0, 2400);
+  const publicKey = bytes.slice(2400);
+  return { privateKey, publicKey };
+}
+
+export async function mlKem768Encapsulate(publicKey: Uint8Array) {
+  await ensureWasm();
+  const bytes = ml_kem_768_encap(publicKey);
+  const sharedSecret = bytes.slice(0, 32);
+  const ciphertext = bytes.slice(32);
+  return { sharedSecret, ciphertext };
+}
+
+export async function mlKem768Decapsulate(privateKey: Uint8Array, ciphertext: Uint8Array) {
+  await ensureWasm();
+  return ml_kem_768_decap(privateKey, ciphertext);
 }

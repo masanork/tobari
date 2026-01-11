@@ -33,6 +33,7 @@ async function main() {
 
     const encrypt = process.argv.includes('--encrypt') || isLockedBuild || usePqcEncrypt;
     let encryptionPublicKey: Uint8Array | undefined;
+    let encryptionPqcPublicKey: Uint8Array | undefined;
     let embeddedFont: Uint8Array | undefined;
 
     // --- Font Subsetting ---
@@ -64,6 +65,11 @@ async function main() {
         }
     }
 
+    if (usePqcEncrypt) {
+        const pqcKeys = await loadOrCreateRecipientPqcKeyPair();
+        encryptionPqcPublicKey = pqcKeys.publicKey;
+    }
+
     const binary = await generateSignedTobari(schemaYaml, sampleData, issuerPrivateKey, {
         kid: "iss-local-p384",
         devicePublicKey,
@@ -75,6 +81,7 @@ async function main() {
             : undefined,
         devicePqcPublicKey: devicePqcKeyPair?.publicKey,
         encryptionPublicKey,
+        encryptionPqcPublicKey,
         pqcEncrypt: usePqcEncrypt,
         embeddedFont
     });
@@ -214,6 +221,36 @@ async function loadOrCreateIssuerPqcKeyPair(
     }, null, 2));
     fs.writeFileSync(issuerPubKeyPath, JSON.stringify({
         alg: "ML-DSA-65",
+        publicKey: Buffer.from(keys.publicKey).toString('base64url')
+    }, null, 2));
+    return keys;
+}
+
+async function loadOrCreateRecipientPqcKeyPair(): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
+    const recipientPrivPath = path.resolve(__dirname, 'recipient-pqc-private-key.json');
+    const recipientPubPath = path.resolve(__dirname, 'recipient-pqc-public-key.json');
+
+    if (fs.existsSync(recipientPrivPath)) {
+        const stored = JSON.parse(fs.readFileSync(recipientPrivPath, 'utf-8'));
+        const privateKey = Buffer.from(stored.privateKey, 'base64url');
+        let publicKey: Uint8Array;
+        if (fs.existsSync(recipientPubPath)) {
+            const pubStored = JSON.parse(fs.readFileSync(recipientPubPath, 'utf-8'));
+            publicKey = Buffer.from(pubStored.publicKey, 'base64url');
+        } else {
+            publicKey = new Uint8Array(0);
+        }
+        return { privateKey: new Uint8Array(privateKey), publicKey: new Uint8Array(publicKey) };
+    }
+
+    const { generateMlKem768KeyPair } = await import('../../packages/crypto/src/pqc');
+    const keys = await generateMlKem768KeyPair();
+    fs.writeFileSync(recipientPrivPath, JSON.stringify({
+        alg: "ML-KEM-768",
+        privateKey: Buffer.from(keys.privateKey).toString('base64url')
+    }, null, 2));
+    fs.writeFileSync(recipientPubPath, JSON.stringify({
+        alg: "ML-KEM-768",
         publicKey: Buffer.from(keys.publicKey).toString('base64url')
     }, null, 2));
     return keys;

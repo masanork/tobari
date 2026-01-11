@@ -43,6 +43,7 @@ export async function generateSignedTobari(
             alg?: number;
         };
         encryptionPublicKey?: Uint8Array; // HPKE Public Key
+        encryptionPqcPublicKey?: Uint8Array; // ML-KEM Public Key
         embeddedFont?: Uint8Array;        // Raw font binary
         devicePqcPublicKey?: Uint8Array;  // PQC Device Key
         pqcEncrypt?: boolean;             // Simulate PQC Encryption
@@ -147,25 +148,22 @@ export async function generateSignedTobari(
     // 4. Optional Encryption (HPKE)
     if (options.encryptionPublicKey) {
         console.log("Applying HPKE Encryption to payload...");
-        const { encryptHPKE } = await import('@tobari/crypto/hpke');
+        const { encryptHPKE, encryptHPKEHybrid } = await import('@tobari/crypto/hpke');
         const info = new TextEncoder().encode("tobari-storage-v1");
         let ciphertext = await encryptHPKE(options.encryptionPublicKey, encoded, info);
         
         let alg = "HPKE-P256-SHA256-AES128GCM";
         if (options.pqcEncrypt) {
-            console.log("Simulating ML-KEM-768 Ciphertext overhead (+1088 bytes)...");
-            const dummyCt = new Uint8Array(1088); 
-            crypto.getRandomValues(dummyCt);
-            
-            // Insert dummyCt after the ephemeral key (first 65 bytes)
-            const epk = ciphertext.slice(0, 65);
-            const payload = ciphertext.slice(65);
-            const newCt = new Uint8Array(epk.length + dummyCt.length + payload.length);
-            newCt.set(epk);
-            newCt.set(dummyCt, epk.length);
-            newCt.set(payload, epk.length + dummyCt.length);
-            ciphertext = newCt;
-            
+            if (!options.encryptionPqcPublicKey) {
+                throw new Error("pqcEncrypt requires encryptionPqcPublicKey (ML-KEM-768 public key)");
+            }
+            console.log("Applying HPKE + ML-KEM-768 hybrid encryption...");
+            ciphertext = await encryptHPKEHybrid(
+                options.encryptionPublicKey,
+                options.encryptionPqcPublicKey,
+                encoded,
+                info
+            );
             alg = "HPKE-P256-MLKEM768-SHA256-AES128GCM";
         }
 
