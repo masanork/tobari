@@ -150,6 +150,7 @@ export class WebAuthnHandler {
      * Starts a local server, opens the browser, and waits for the signature.
      */
     async signBrowser(request: WebAuthnSignRequest): Promise<WebAuthnSignResponse> {
+        return new Promise((resolve, reject) => {
             const templatePath = path.join(__dirname, 'templates', 'webauthn.html');
 
             // Create server

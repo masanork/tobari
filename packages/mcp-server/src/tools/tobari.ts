@@ -16,10 +16,76 @@ import {
     ListAvailableDocumentsSchema,
     GeneratePassportZkpInputSchema,
     RegisterDeviceSchema,
-    IssueLocalCredentialSchema
+    IssueLocalCredentialSchema,
+    GenerateBbsKeySchema,
+    SignWithBbsSchema
 } from "../schemas.js";
 import { handleReadBasicInfo } from "./jpki.js";
 import { generateSignedTobari } from "@tobari/codec/tobari-gen";
+
+export async function handleGenerateBbsKey(toolArgs: any) {
+    try {
+        const signerPath = getNativeSignerPath();
+        if (!signerPath) throw new Error("Native signer not found.");
+
+        const { execFileSync } = await import("child_process");
+        const output = execFileSync(signerPath, ["--bbs-generate-key"]).toString();
+        
+        return {
+            content: [{ type: "text", text: output }],
+        };
+    } catch (error: any) {
+        return {
+            content: [{ type: "text", text: `Error generating BBS+ key: ${error.message}` }],
+            isError: true,
+        };
+    }
+}
+
+export async function handleSignWithBbs(toolArgs: any) {
+    try {
+        const args = SignWithBbsSchema.parse(toolArgs);
+        const signerPath = getNativeSignerPath();
+        if (!signerPath) throw new Error("Native signer not found.");
+
+        const { spawn } = await import("child_process");
+        
+        const signRequest = {
+            challenge: args.nonce,
+            rp_id: "mcp-server-bbs",
+            bbs: {
+                publicKey: args.publicKey,
+                signature: args.signature,
+                messages: args.messages,
+                revealedIndices: args.revealedIndices
+            }
+        };
+
+        const signerProcess = spawn(signerPath, ["--request", JSON.stringify(signRequest)]);
+
+        const resultPromise = new Promise<string>((resolve, reject) => {
+            let stdout = "";
+            let stderr = "";
+            signerProcess.stdout.on("data", (data) => stdout += data);
+            signerProcess.stderr.on("data", (data) => stderr += data);
+            signerProcess.on("close", (code) => {
+                if (code === 0) resolve(stdout);
+                else reject(new Error(`BBS signer failed (code ${code}): ${stderr || stdout}`));
+            });
+        });
+
+        const outputStr = await resultPromise;
+        return {
+            content: [{ type: "text", text: outputStr }],
+        };
+
+    } catch (error: any) {
+        return {
+            content: [{ type: "text", text: `Error generating BBS+ proof: ${error.message}` }],
+            isError: true,
+        };
+    }
+}
 
 export async function handleIssueLocalCredential(toolArgs: any) {
     try {
@@ -429,7 +495,6 @@ export async function handleCreatePresentation(toolArgs: any) {
                         user_verification: "preferred"
                     };
 
-                    const isMacSigner = signerPath === DEFAULT_SIGNER_MACOS_PATH;
                     const signArgs = isMacSigner 
                         ? ["--sign-passkey", "--request", JSON.stringify(signRequest)]
                         : ["--request", JSON.stringify(signRequest)];

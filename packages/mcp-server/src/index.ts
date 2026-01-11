@@ -16,7 +16,9 @@ import {
     handleGeneratePassportZkpInput,
     handleListAvailableDocuments,
     handleRegisterDevice,
-    handleIssueLocalCredential
+    handleIssueLocalCredential,
+    handleGenerateBbsKey,
+    handleSignWithBbs
 } from "./tools/tobari.js";
 import { handleDemoListExamples } from "./tools/demo.js";
 import {
@@ -44,6 +46,7 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
+        tools: [
             {
                 name: "issue_local_credential",
                 description: "Creates a hardware-bound, encrypted digital identity document by reading info from a My Number Card. This 'Master mdoc' can be used for future applications without the physical card.",
@@ -64,6 +67,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     properties: {
                         rootPath: { type: "string", description: "Optional path where to save the exported public keys (e.g. examples/juminhyo)." }
                     }
+                }
+            },
+            {
+                name: "generate_bbs_key",
+                description: "Generates a new BBS+ key pair for unlinkable credentials. This is performed entirely on the native signer for security.",
+                inputSchema: {
+                    type: "object",
+                    properties: {}
+                }
+            },
+            {
+                name: "sign_with_bbs",
+                description: "Generates a BBS+ zero-knowledge proof (ZKP) for a selective disclosure presentation. Requires an existing BBS+ signature and public key.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        publicKey: { type: "string", description: "BBS+ Public Key (JSON)" },
+                        signature: { type: "string", description: "BBS+ Signature (JSON)" },
+                        messages: { type: "array", items: { type: "string" }, description: "Original signed messages" },
+                        revealedIndices: { type: "array", items: { type: "number" }, description: "Indices to reveal" },
+                        nonce: { type: "string", description: "Challenge/nonce (Base64URL)" }
+                    },
+                    required: ["publicKey", "signature", "messages", "revealedIndices", "nonce"]
                 }
             },
             {
@@ -434,6 +460,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleIssueLocalCredential(request.params.arguments);
         case "register_device":
             return handleRegisterDevice(request.params.arguments);
+        case "generate_bbs_key":
+            return handleGenerateBbsKey(request.params.arguments);
+        case "sign_with_bbs":
+            return handleSignWithBbs(request.params.arguments);
         case "read_tobari_file":
             return handleReadTobariFile(request.params.arguments);
         case "create_presentation":
