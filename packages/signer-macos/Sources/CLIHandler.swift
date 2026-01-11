@@ -235,8 +235,8 @@ class CLIHandler {
                 try await controller.selectDLAP()
                 try await controller.verifyPIN1(pin1)
                 try await controller.verifyPIN2(pin2)
-                let data = try await controller.readCommonData()
-                print("{\"data\": \"\(data.base64EncodedString())\"}")
+                let info = try await controller.readCommonData()
+                printResult(info)
                 exit(0)
             } catch {
                 printError(error)
@@ -249,8 +249,8 @@ class CLIHandler {
             let controller = ResidenceCardController(manager: manager)
             do {
                 try await controller.selectJPRCAP()
-                let data = try await controller.readDF2Info()
-                print("{\"data\": \"\(data.base64EncodedString())\"}")
+                let info = try await controller.readDF2Info()
+                printResult(info)
                 exit(0)
             } catch {
                 printError(error)
