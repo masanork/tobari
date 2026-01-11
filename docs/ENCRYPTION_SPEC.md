@@ -33,7 +33,7 @@ Encrypted credentials MUST be stored in a format that encapsulates HPKE paramete
 ```json
 {
   "version": "1.0",
-  "alg": "HPKE-Base-P256-SHA256-AES128GCM",
+  "alg": "HPKE-P256-SHA256-AES128GCM",
   "kid": "device-key-id-001",
   "enc": "<ephemeral_public_key_bytes>",
   "ciphertext": "<encrypted_payload>",
@@ -66,14 +66,26 @@ Encrypted credentials MUST be stored in a format that encapsulates HPKE paramete
 To ensure the long-term viability of the `civ` library, we must account for the transition to **Post-Quantum Cryptography (PQC)**. While NIST P-256 is the current standard for hardware compatibility, we will design the system to be "Agile."
 
 ### 5.1. Hybrid Encryption (Classical + PQC)
-We aim to support a hybrid KEM approach, combining a classical elliptic curve (P-256 or X25519) with a post-quantum algorithm (e.g., ML-KEM / Kyber).
+We support a hybrid KEM approach, combining P-256 with ML-KEM-768 for PoC validation.
 
-- **Current Goal**: P-256 only (Hardware-backed).
-- **PoC Goal**: Implement a software-based hybrid KEM (`X25519 + ML-KEM-768`) to measure overhead.
+- **Current Goal**: P-256 only (hardware-backed).
+- **PoC Goal**: Software-based hybrid KEM (`P-256 + ML-KEM-768`) to measure overhead.
 - **Data Size Evaluation**: We will evaluate the impact of PQC on:
     - **Public Key Size**: P-256 (65 bytes) vs ML-KEM-768 (~1184 bytes).
     - **Encapsulated Key (Ciphertext)**: ~32 bytes vs ~1088 bytes.
     - **Performance**: Latency of key generation and encapsulation in WASM/Mobile environments.
+
+#### 5.1.1. Hybrid Envelope (PoC)
+For PoC, the ciphertext is serialized as:
+
+```
+[ephemeral_p256_public_key (65 bytes)] + [ml-kem-768 ciphertext (1088 bytes)] + [aead ciphertext]
+```
+
+Metadata uses:
+- `alg = "HPKE-P256-MLKEM768-SHA256-AES128GCM"`
+
+If `alg` is `HPKE-P256-MLKEM768-SHA256-AES128GCM`, the decryptor MUST supply the ML-KEM-768 private key in addition to the P-256 private key.
 
 ### 5.2. Pluggable KEM Interface
 The implementation should wrap HPKE logic in a trait that allows switching ciphersuites based on credential metadata or verifier requirements.
