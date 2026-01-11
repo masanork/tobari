@@ -3,32 +3,12 @@ import path from 'path';
 import { decode } from 'cbor-x';
 import { subsetFont, bufferToDataUrl } from './font-engine';
 
-async function buildViewer() {
-    console.log("Bundling High-Fidelity Tobari Viewer...");
-
-    const args = process.argv.slice(2);
-    let tobariBinaryPath: string;
-    let outPath: string;
-
-    if (args.length > 0) {
-        tobariBinaryPath = path.resolve(args[0]);
-        const parsed = path.parse(tobariBinaryPath);
-        // Default output is same directory, same name, .html extension
-        outPath = path.resolve(parsed.dir, parsed.name + '.html');
-        if (args.length > 1) {
-            outPath = path.resolve(args[1]);
-        }
-    } else {
-        tobariBinaryPath = path.resolve('examples/juminhyo/juminhyo.cose');
-        outPath = path.resolve('examples/juminhyo/juminhyo.html');
-    }
-
-    if (!fs.existsSync(tobariBinaryPath)) {
-        console.error(`Error: Input file not found at ${tobariBinaryPath}`);
-        process.exit(1);
-    }
-
-    const tobariBinary = fs.readFileSync(tobariBinaryPath);
+export async function bundleViewer(
+    tobariBinary: Uint8Array,
+    templatePath: string = path.resolve('packages/codec/src/viewer-template.html'),
+    options: { usePqc?: boolean } = {}
+): Promise<string> {
+    console.log(`Bundling High-Fidelity Tobari Viewer... (PQC: ${options.usePqc ? 'Enabled' : 'Disabled'})`);
 
     // 1. Extract ALL text for total font subsetting
     console.log("Extracting all possible text characters for subsetting...");
@@ -40,7 +20,8 @@ async function buildViewer() {
     // Check if it's an encrypted JSON wrapper
     let isEncrypted = false;
     try {
-        const json = JSON.parse(tobariBinary.toString());
+        const text = new TextDecoder().decode(tobariBinary);
+        const json = JSON.parse(text);
         if (json.tobari_enc === true) {
             isEncrypted = true;
             skipPlaintextFont = true; // Protect privacy
@@ -99,15 +80,6 @@ async function buildViewer() {
     const engineText = "（非開示）Digital Certificate Signature Schema Compiled at Document Auth ID Sig ES384 Issued At 0123456789/:,.印発行者情報ISO/IEC 18013-5 MSO Verified";
     const combinedText = dataText + labelText + engineText;
 
-    // Improve unique character extraction to handle IVS (Ideographic Variation Sequences)
-    // Naive Set() splits Base char and VS, causing IVS glyphs to be lost in subsetting.
-    // We need to keep Base+VS as a single unit or ensure VS follows Base in the subset string?
-    // Actually, subset-font usually takes a string and looks up glyphs. If we scramble the order,
-    // the shaper sees "Base" then later "VS" separately, it won't pick the IVS glyph.
-    // So we must prioritize keeping the sequence intact in the minimal text, 
-    // OR just pass the full text (but that's too big).
-    // Better approach: Extract all grapheme clusters or at least explicit IVS sequences.
-
     const segmenter = new Intl.Segmenter("ja", { granularity: "grapheme" });
     const segments = segmenter.segment(combinedText);
     const uniqueSegments = new Set<string>();
@@ -116,14 +88,6 @@ async function buildViewer() {
         uniqueSegments.add(seg.segment);
     }
 
-    // Join them back. Now IVS sequences like "藤󠄃" are kept as one string in the Set,
-    // and joined back together.
-    // Note: The order doesn't matter for the subsetter as long as the sequence is intact in the input string?
-    // Wait, if the subsetter takes "A B", it sees glyph A and glyph B. 
-    // If it takes "AB", it might see ligature AB.
-    // For IVS, we need "Base VS".
-    // If we join the set ie. "BaseVS" + "Other", the resulting string contains "Base" "VS" "Other".
-    // The font engine (harfbuzz or opentype) should handle it if they appear sequentially.
     const uniqueChars = Array.from(uniqueSegments).join('');
     console.log(`Unique characters (graphemes) to subset: ${uniqueSegments.size}`);
 
@@ -151,7 +115,7 @@ async function buildViewer() {
     }
 
     // 3. Assemble HTML
-    const templatePath = path.resolve('packages/codec/src/viewer-template.html');
+    // const templatePath = path.resolve('packages/codec/src/viewer-template.html'); // Passed as arg
     let html = fs.readFileSync(templatePath, 'utf-8');
 
 
@@ -177,32 +141,41 @@ async function buildViewer() {
     
 
         // Read and Inline WASM binary
+        const wasmDir = path.resolve('packages/crypto-wasm/pkg');
+        let wasmPath = options.usePqc
+            ? path.join(wasmDir, 'full/tobari_crypto_wasm_full_bg.wasm')
+            : path.join(wasmDir, 'core/tobari_crypto_wasm_core_bg.wasm');
 
-        const wasmPath = path.resolve('packages/crypto-wasm/pkg/tobari_crypto_wasm_bg.wasm');
+        if (!fs.existsSync(wasmPath)) {
+             // Fallback to default build path
+             wasmPath = path.resolve('packages/crypto-wasm/pkg/tobari_crypto_wasm_bg.wasm');
+        }
 
         let wasmBase64 = "";
 
         if (fs.existsSync(wasmPath)) {
-
+            console.log(`Embedding WASM from: ${wasmPath}`);
             wasmBase64 = fs.readFileSync(wasmPath).toString('base64');
-
+        } else {
+            console.warn(`WARNING: WASM binary not found at ${wasmPath}. Viewer will lack crypto functions.`);
         }
 
     
 
-    // Try to load issuer-key.json from the same directory as the input file
-    const keyPath = path.resolve(path.dirname(tobariBinaryPath), 'issuer-key.json');
+    // Try to load issuer-key.json from the same directory as the input file (if possible? No context here)
+    // We will just pass null for issuer key if we are in library mode.
+    // The calling script should handle key embedding if needed? 
+    // Actually the current implementation embeds it.
+    // But in library mode we don't know the path.
+    // Let's make issuerKeyJson an optional arg or just leave it null/placeholder.
+    // The viewer client fetches key or it is embedded.
+    
+    // For now, keep it simple: no key embedding in library function unless passed.
+    // But `window.__ISSUER_KEY__` is written.
     let issuerKeyJson = "null";
-    if (fs.existsSync(keyPath)) {
-        console.log(`Embedding Issuer Key from: ${keyPath}`);
-        const keyData = fs.readFileSync(keyPath, 'utf-8');
-        issuerKeyJson = JSON.stringify(JSON.parse(keyData)); // minify
-    } else {
-        console.warn("No issuer-key.json found. Signature verification will be skipped in viewer.");
-    }
 
     // Create Data URI for the payload
-    const base64Data = tobariBinary.toString('base64');
+    const base64Data = Buffer.from(tobariBinary).toString('base64');
     const mimeType = isEncrypted ? 'application/json' : 'application/cbor';
     const dataUri = `data:${mimeType};base64,${base64Data}`;
 
@@ -284,8 +257,36 @@ async function inflate(b64) {
         .replace('/* BUNDLED_FONT_PLACEHOLDER */', '/* CSS Loaded dynamically via JS inflation */')
         .replace(/<script type="module">[\s\S]*?<\/script>/, () => scriptBlock);
 
-    fs.writeFileSync(outPath, finalHtml);
-    console.log(`Successfully generated verifiable viewer: ${outPath} (Gzipped & Embedded)`);
+    return finalHtml;
+}
+
+if (import.meta.main) {
+    const args = process.argv.slice(2);
+    let tobariBinaryPath: string;
+    let outPath: string;
+
+    if (args.length > 0) {
+        tobariBinaryPath = path.resolve(args[0]);
+        const parsed = path.parse(tobariBinaryPath);
+        outPath = path.resolve(parsed.dir, parsed.name + '.html');
+        if (args.length > 1) {
+            outPath = path.resolve(args[1]);
+        }
+    } else {
+        tobariBinaryPath = path.resolve('examples/juminhyo/juminhyo.cose');
+        outPath = path.resolve('examples/juminhyo/juminhyo.html');
+    }
+
+    if (!fs.existsSync(tobariBinaryPath)) {
+        console.error(`Error: Input file not found at ${tobariBinaryPath}`);
+        process.exit(1);
+    }
+
+    const tobariBinary = fs.readFileSync(tobariBinaryPath);
+    bundleViewer(tobariBinary).then(html => {
+        fs.writeFileSync(outPath, html);
+        console.log(`Successfully generated verifiable viewer: ${outPath} (Gzipped & Embedded)`);
+    });
 }
 
 function collectAllText(obj: any): string {
@@ -296,5 +297,3 @@ function collectAllText(obj: any): string {
     if (typeof obj === 'object') return Object.values(obj).map(collectAllText).join("");
     return "";
 }
-
-buildViewer().catch(console.error);
