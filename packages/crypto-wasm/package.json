@@ -10,7 +10,7 @@
     "scripts": {
         "build": "npm run build:core && npm run build:full",
         "build:core": "wasm-pack build --target web --out-dir pkg/core --out-name tobari_crypto_wasm_core -- --no-default-features",
-        "build:full": "wasm-pack build --target web --out-dir pkg/full --out-name tobari_crypto_wasm_full -- --features pqc_dsa",
+        "build:full": "wasm-pack build --target web --out-dir pkg/full --out-name tobari_crypto_wasm_full -- --features pqc_dsa,pqc_kem",
         "test": "cargo test"
     },
     "devDependencies": {

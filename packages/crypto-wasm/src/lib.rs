@@ -23,11 +23,15 @@ use ml_dsa::signature::{Signer, Verifier};
 
 #[cfg(feature = "pqc_kem")]
 use ml_kem::{
-    MlKem768,
-    kem::{EncapsulationKey as MlEncapsulationKey, DecapsulationKey as MlDecapsulationKey},
+    Encoded,
+    EncodedSizeUser,
     Ciphertext as MlCiphertext,
-    KemCore
+    SharedKey as MlSharedKey,
+    KemCore,
+    MlKem768
 };
+#[cfg(feature = "pqc_kem")]
+use kem::{Decapsulate, Encapsulate};
 
 #[wasm_bindgen]
 pub fn get_version() -> String {
@@ -152,35 +156,43 @@ pub fn ml_dsa_65_verify(public_key: &[u8], message: &[u8], signature_bytes: &[u8
 #[cfg(feature = "pqc_kem")]
 #[wasm_bindgen]
 pub fn ml_kem_768_generate_keypair() -> Result<Vec<u8>, JsValue> {
-    let mut rng = StdRng::from_entropy();
-    // ERROR workaround: StdRng (rand 0.8) does not impl CryptoRng (rand_core 0.10) required by ml-kem 0.3.
-    // We cannot call MlKem768::generate(&mut rng).
-    // We must use a compatible RNG. `OsRng` from `rand_core` 0.6 might not work either if it expects 0.10.
-    // If we cannot fix dependencies, we cannot implement this.
-    // Returning dummy for now to allow compilation if feature is enabled, OR failing.
-    return Err(JsValue::from_str("ML-KEM Not implemented due to rand dependency mismatch"));
+    let mut rng = rand::rngs::OsRng;
+    let (dk, ek) = MlKem768::generate(&mut rng);
+    let dk_bytes = dk.as_bytes();
+    let ek_bytes = ek.as_bytes();
+
+    let mut out = Vec::with_capacity(dk_bytes.as_slice().len() + ek_bytes.as_slice().len());
+    out.extend_from_slice(dk_bytes.as_slice());
+    out.extend_from_slice(ek_bytes.as_slice());
+    Ok(out)
 }
 
 #[cfg(feature = "pqc_kem")]
 #[wasm_bindgen]
 pub fn ml_kem_768_encap(public_key: &[u8]) -> Result<Vec<u8>, JsValue> {
-    // Similarly, encapsulate requires RNG.
-    return Err(JsValue::from_str("ML-KEM Not implemented due to rand dependency mismatch"));
+    let ek_encoded = Encoded::< <MlKem768 as KemCore>::EncapsulationKey >::try_from(public_key)
+        .map_err(|_| JsValue::from_str("Invalid public key length"))?;
+    let ek = <MlKem768 as KemCore>::EncapsulationKey::from_bytes(&ek_encoded);
+
+    let mut rng = rand::rngs::OsRng;
+    let (ct, ss): (MlCiphertext<MlKem768>, MlSharedKey<MlKem768>) =
+        ek.encapsulate(&mut rng).map_err(|_| JsValue::from_str("Encapsulation failed"))?;
+
+    let mut out = Vec::with_capacity(ct.as_slice().len() + ss.as_slice().len());
+    out.extend_from_slice(ss.as_slice());
+    out.extend_from_slice(ct.as_slice());
+    Ok(out)
 }
 
 #[cfg(feature = "pqc_kem")]
 #[wasm_bindgen]
 pub fn ml_kem_768_decap(private_key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, JsValue> {
-    // Decapsulate DOES NOT require RNG! It's deterministic.
-    // So this one SHOULD work if types align.
-    
-    let dk = MlDecapsulationKey::<MlKem768>::from_bytes(
-        private_key.try_into().map_err(|_| JsValue::from_str("Invalid private key length"))?
-    );
-    // Ciphertext::from_bytes doesn't exist? Use clone_from_slice or try_from?
-    // Try explicit try_into if Array implements it.
-    // Or `MlCiphertext::<MlKem768>::clone_from_slice(ciphertext)`
-    
-    // But since I cannot easily verify, I will comment out the body and return error to ensure compilation.
-    return Err(JsValue::from_str("ML-KEM Not implemented due to dependency issues"));
+    let dk_encoded = Encoded::< <MlKem768 as KemCore>::DecapsulationKey >::try_from(private_key)
+        .map_err(|_| JsValue::from_str("Invalid private key length"))?;
+    let dk = <MlKem768 as KemCore>::DecapsulationKey::from_bytes(&dk_encoded);
+    let ct = MlCiphertext::<MlKem768>::try_from(ciphertext)
+        .map_err(|_| JsValue::from_str("Invalid ciphertext length"))?;
+
+    let ss = dk.decapsulate(&ct).map_err(|_| JsValue::from_str("Decapsulation failed"))?;
+    Ok(ss.as_slice().to_vec())
 }
