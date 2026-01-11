@@ -114,10 +114,51 @@ h1 {
   flex: 2;
 }
 
+.card-selector {
+  display: flex;
+  gap: 0.2rem;
+  margin-bottom: 1rem;
+  background: #111;
+  padding: 0.3rem;
+  border-radius: 10px;
+}
+
+.card-selector button {
+  padding: 0.4em 0.8em;
+  font-size: 0.85em;
+  border-radius: 6px;
+  background: transparent;
+  color: #888;
+}
+
+.card-selector button.active {
+  background: #333;
+  color: #24c8db;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.vertical-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.raw-json {
+  font-family: monospace;
+  font-size: 0.8em;
+  background: #111;
+  padding: 0.5rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  text-align: left;
+}
+
 .card-input-section {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
+  align-items: flex-start;
 }
 
 .card-input-section input {

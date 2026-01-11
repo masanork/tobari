@@ -4,6 +4,8 @@ use crate::models::{CitizenIdentity, IdentityController};
 use crate::reader::CardReader;
 use std::fmt;
 
+use serde::Serialize;
+
 /// Driver's License Application Controller
 pub struct DriversLicenseController<R: CardReader> {
     reader: R,
@@ -12,7 +14,7 @@ pub struct DriversLicenseController<R: CardReader> {
     last_verified: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct LicenseInfo {
     pub name: String,
     pub name_kana: String,
