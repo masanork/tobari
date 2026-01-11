@@ -16,6 +16,7 @@ export const CreatePresentationSchema = z.object({
     devicePrivateKeyJson: z.union([z.string(), z.record(z.any())]).optional().describe("Device private key as a JSON string or object. Use this if the key file is not accessible by the server."),
     ephemeralKey: z.boolean().optional().describe("If true, generates a temporary key for testing. Ignored if devicePrivateKeyPath or devicePrivateKeyJson is provided."),
     verifierNonce: z.string().optional().describe("Optional nonce for replay protection"),
+    deviceAlg: z.number().optional().describe("COSE algorithm for DeviceAuth (default: -35 / ES384, use -7 for ES256)"),
 });
 
 export const PreparePresentationSchema = z.object({

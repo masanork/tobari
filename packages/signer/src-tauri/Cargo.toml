@@ -1,12 +1,12 @@
 [package]
-name = "packagessigner"
+name = "tobari-signer"
 version = "0.1.0"
 description = "Tobari WebAuthn Signer"
 authors = ["masanork"]
 edition = "2021"
 
 [lib]
-name = "packagessigner_lib"
+name = "tobari_signer_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -30,10 +30,10 @@ sha2 = "0.10"
 authenticator = "0.5.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-authenticator = { version = "0.5.0", optional = true }
+authenticator = { version = "0.5.0", optional = true, default-features = false, features = ["crypto_rust"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-authenticator = { version = "0.5.0", optional = true }
+authenticator = { version = "0.5.0", optional = true, default-features = false, features = ["crypto_rust"] }
 
 [features]
 default = []

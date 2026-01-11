@@ -1,8 +1,12 @@
 import * as path from "path";
 import * as fs from "fs/promises";
+import { decryptHPKE, deriveHPKEKeyPair } from "@tobari/crypto/hpke";
 
 export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
 export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/debug/civ");
+
+const DEMO_HPKE_SECRET = "tobari-demo-secret-key-32-bytes-long!!";
+const DEMO_HPKE_INFO = "tobari-storage-v1";
 
 /**
  * Helper to read a Tobari file (HTML or COSE) and return its binary buffer.
@@ -34,9 +38,11 @@ export async function readTobariFileAsBuffer(filePath: string): Promise<Uint8Arr
         }
 
         // Use native Buffer for fast base64 decoding
-        return new Uint8Array(Buffer.from(b64, 'base64'));
+        const decoded = new Uint8Array(Buffer.from(b64, 'base64'));
+        return await decryptIfNeeded(decoded);
     } else {
-        return await fs.readFile(filePath);
+        const raw = await fs.readFile(filePath);
+        return await decryptIfNeeded(raw);
     }
 }
 
@@ -80,6 +86,40 @@ export function rawEcdsaToDer(rawSignature: Uint8Array): Uint8Array {
     der[offset++] = sInt.length;
     der.set(sInt, offset);
     return der;
+}
+
+async function decryptIfNeeded(input: Uint8Array): Promise<Uint8Array> {
+    const trimmed = trimLeadingWhitespace(input);
+    if (trimmed.length === 0 || trimmed[0] !== 0x7b) {
+        return input;
+    }
+
+    const text = new TextDecoder().decode(trimmed);
+    let wrapper: any;
+    try {
+        wrapper = JSON.parse(text);
+    } catch {
+        return input;
+    }
+
+    if (!wrapper || wrapper.tobari_enc !== true || typeof wrapper.data !== "string") {
+        return input;
+    }
+
+    const ciphertext = new Uint8Array(Buffer.from(wrapper.data, "base64"));
+    const info = new TextEncoder().encode(DEMO_HPKE_INFO);
+    const secret = new TextEncoder().encode(DEMO_HPKE_SECRET);
+    const keyPair = await deriveHPKEKeyPair(secret);
+    const plaintext = await decryptHPKE(keyPair!.privateKey, ciphertext, info);
+    return new Uint8Array(plaintext);
+}
+
+function trimLeadingWhitespace(input: Uint8Array): Uint8Array {
+    let i = 0;
+    while (i < input.length && (input[i] === 0x20 || input[i] === 0x0a || input[i] === 0x0d || input[i] === 0x09)) {
+        i++;
+    }
+    return input.slice(i);
 }
 
 export async function loadAllTrustedIssuers(): Promise<Record<string, CryptoKey>> {

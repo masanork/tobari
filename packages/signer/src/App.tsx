@@ -7,6 +7,7 @@ interface SignRequest {
   rp_id: string;
   user_verification?: string;
   message?: string;
+  allow_credentials?: { id: string; type_: string }[];
 }
 
 function App() {
@@ -38,6 +39,18 @@ function App() {
       setStatus("Signed successfully! Closing...");
     } catch (e) {
       setError("Signing failed: " + e);
+      setStatus("Error");
+    }
+  };
+
+  const handleRegister = async () => {
+    setStatus("Registering credential... Please touch your device.");
+    setError(null);
+    try {
+      const credId = await invoke<string>("perform_register");
+      setStatus(`Registered. Credential ID: ${credId.substring(0, 10)}... Now sign.`);
+    } catch (e) {
+      setError("Registration failed: " + e);
       setStatus("Error");
     }
   };
@@ -84,6 +97,9 @@ function App() {
           <div className="actions">
             <button className="reject-btn" onClick={handleReject} disabled={status.includes("Interacting")}>
               Reject
+            </button>
+            <button className="sign-btn" onClick={handleRegister} disabled={status.includes("Interacting")}>
+              Create Passkey
             </button>
             <button className="sign-btn" onClick={handleSign} disabled={status.includes("Interacting")}>
               Sign with Authenticator

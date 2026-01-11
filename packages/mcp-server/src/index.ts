@@ -84,6 +84,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         verifierNonce: {
                             type: "string",
                             description: "Optional nonce for replay protection"
+                        },
+                        deviceAlg: {
+                            type: "number",
+                            description: "COSE algorithm for DeviceAuth (default: -35 / ES384, use -7 for ES256)"
                         }
                     },
                     required: ["requests"]

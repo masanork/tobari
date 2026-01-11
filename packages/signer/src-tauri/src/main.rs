@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    packagessigner_lib::run()
+    tobari_signer_lib::run()
 }
