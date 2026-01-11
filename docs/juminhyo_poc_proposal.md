@@ -93,6 +93,17 @@ embedFonts: true
 | **配布形式** | **Isolated Web Apps (IWA)**<br/>**HPKE (Hybrid PKE)** | 自己完結実行<br/>経路外暗号化 | 署名済みWeb Bundle形式によるオフライン実行に加え、データ自体を**HPKE (P-256 + AES-GCM)** で暗号化。**Device Key (Passkey)** を持つ本人以外は、たとえ自治体職員であっても中身を閲覧できないEnd-to-Endの秘匿性を実現。 |
 | **検証ロジック** | **Client-Side JS (WASM)**<br/>**Hybrid Signature** | 署名検証 | ブラウザ上で **ECDSA (P-384)** に加え、耐量子署名 **ML-DSA-65** の検証をサポート。将来的な暗号危殆化に備えた**暗号学的敏捷性 (Crypto Agility)** を確保。 |
 
+#### 3.2.1. WASMサイズ（core vs full）
+
+PQC対応の有無によるWASMサイズ差を測定した（以下は wasm-pack 出力の `.wasm` バイナリサイズ）。
+
+| ビルド | 構成 | サイズ |
+| :--- | :--- | :--- |
+| core | 古典暗号のみ（P-256/HPKE等） | 141,508 bytes |
+| full | PQC対応（ML-DSA-65 + ML-KEM-768） | 281,694 bytes |
+
+差分は **+140,186 bytes**（約1.99倍）であり、PQC機能の追加に伴いWASMサイズが増加することを確認した。
+
 ### 3.3. 検証結果：選択的開示とプライバシー保護の高度化
 
 mDoc/SD-JWTの特性を活かし、プライバシーおよび名寄せリスクを最小化する以下の機能が実装可能であることを確認した。
