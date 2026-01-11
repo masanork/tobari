@@ -146,6 +146,37 @@ h1 {
   color: #24c8db;
 }
 
+.bbs-details {
+  background: #2a2a2a;
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  text-align: left;
+  border-left: 4px solid #646cff;
+}
+
+.bbs-details label {
+  display: block;
+  font-size: 0.8em;
+  color: #646cff;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.bbs-details ul {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+  font-size: 0.9em;
+}
+
+.privacy-note {
+  font-size: 0.8em;
+  color: #888;
+  font-style: italic;
+  margin-top: 0.5rem;
+}
+
 .card-data-preview p {
   margin: 0.2rem 0;
 }

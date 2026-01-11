@@ -21,7 +21,27 @@ async function runCivCommand(exePath: string, args: string[]): Promise<string> {
         proc.stderr.on("data", (data) => stderr += data.toString());
         proc.on("close", (code) => {
             if (code === 0) resolve(stdout.trim());
-            else reject(new Error(`Process exited with code ${code}: ${stderr || stdout}`));
+            else {
+                // Try to parse structured error from stderr or stdout
+                const combined = (stderr + stdout).trim();
+                try {
+                    // Look for JSON in the output
+                    const jsonMatch = combined.match(/\{.*"type".*details".*\}/s);
+                    if (jsonMatch) {
+                        const errObj = JSON.parse(jsonMatch[0]);
+                        if (errObj.type === "IncorrectPin") {
+                            reject(new Error(`Incorrect PIN. ${errObj.details.retries} retries remaining. Please warn the user carefully.`));
+                            return;
+                        }
+                        if (errObj.type === "PinLocked") {
+                            reject(new Error(`The My Number Card PIN is locked. The user must visit their local municipal office to reset it.`));
+                            return;
+                        }
+                    }
+                } catch (e) { /* ignore parse error and use default */ }
+                
+                reject(new Error(`Signer failed (code ${code}): ${combined}`));
+            }
         });
         proc.on("error", (err) => reject(err));
     });

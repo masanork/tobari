@@ -8,6 +8,12 @@ interface SignRequest {
   user_verification?: string;
   message?: string;
   allow_credentials?: { id: string; type_: string }[];
+  bbs?: {
+    publicKey: string;
+    signature: string;
+    messages: string[];
+    revealedIndices: number[];
+  };
 }
 
 interface MyNumberCardData {
@@ -163,15 +169,14 @@ function App() {
             <div className="value">{request.rp_id}</div>
           </div>
           
-          {request.message && (
-             <div className="message-box">
-               <label>Message from Service</label>
-               <p>{request.message}</p>
-             </div>
-          )}
+                    {request.message && (
+                       <div className="message-box">
+                         <label>Message from Service</label>
+                         <p>{request.message}</p>
+                       </div>
+                    )}
           
-          <div className="details">
-            <details>
+                    <div className="details">            <details>
               <summary>Technical Details</summary>
               <div className="detail-content">
                 <p><strong>Challenge:</strong> {request.challenge.substring(0, 20)}...</p>
