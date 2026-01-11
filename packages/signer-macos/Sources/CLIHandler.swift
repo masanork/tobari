@@ -14,26 +14,6 @@ struct SignResponse: Codable {
     let publicKey: String? // JWK or Cert base64
 }
 
-enum SignerError: Error, LocalizedError {
-    case authenticator(String)
-    case jpki(String)
-    case serialization(String)
-    case internalError(String)
-    case noRequest
-    case invalidChallenge
-    
-    var errorDescription: String? {
-        switch self {
-        case .authenticator(let msg): return "Authenticator error: \(msg)"
-        case .jpki(let msg): return "JPKI error: \(msg)"
-        case .serialization(let msg): return "Serialization error: \(msg)"
-        case .internalError(let msg): return "Internal error: \(msg)"
-        case .noRequest: return "No request found"
-        case .invalidChallenge: return "Invalid challenge"
-        }
-    }
-}
-
 class CLIHandler {
     private let isDebug = ProcessInfo.processInfo.environment["TOBARI_DEBUG"] == "1"
 

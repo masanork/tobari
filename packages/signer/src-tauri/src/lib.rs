@@ -72,11 +72,16 @@ struct AssertionResult {
 }
 
 #[derive(Debug, Serialize, thiserror::Error)]
+#[serde(tag = "type", content = "details")]
 pub enum SignerError {
     #[error("Authenticator error: {0}")]
     Authenticator(String),
     #[error("JPKI error: {0}")]
     Jpki(String),
+    #[error("Incorrect PIN. Retries remaining: {retries}")]
+    IncorrectPin { retries: u8 },
+    #[error("PIN is locked. Please visit a municipal office to reset it.")]
+    PinLocked,
     #[error("Serialization error: {0}")]
     Serialization(String),
     #[error("Internal error: {0}")]
@@ -85,6 +90,16 @@ pub enum SignerError {
     Rejected,
     #[error("No request found")]
     NoRequest,
+}
+
+impl From<civ::errors::CivError> for SignerError {
+    fn from(err: civ::errors::CivError) -> Self {
+        match err {
+            civ::errors::CivError::IncorrectPin(retries) => SignerError::IncorrectPin { retries },
+            civ::errors::CivError::PinLocked => SignerError::PinLocked,
+            _ => SignerError::Jpki(err.to_string()),
+        }
+    }
 }
 
 #[cfg(any(
@@ -581,14 +596,14 @@ async fn jpki_sign(app: AppHandle, request: JpkiSignRequest) -> Result<(), Signe
     let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = JpkiController::new(reader);
 
-    controller.select_jpki_ap().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    controller.select_jpki_ap().await.map_err(SignerError::from)?;
 
     let challenge_bytes = URL_SAFE_NO_PAD.decode(&request.challenge).map_err(|e| SignerError::Internal(e.to_string()))?;
     
     let signature = controller
         .compute_auth_signature(&request.pin, &challenge_bytes)
         .await
-        .map_err(|e| SignerError::Jpki(e.to_string()))?;
+        .map_err(SignerError::from)?;
     
     // Output JSON and exit (MCP compatible)
     let response = SignResponse {
@@ -609,11 +624,11 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
     let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = JpkiController::new(reader);
 
-    let my_number = controller.read_mynumber(&request.pin).await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let my_number = controller.read_mynumber(&request.pin).await.map_err(SignerError::from)?;
     let info = controller
         .read_attributes(&request.pin)
         .await
-        .map_err(|e| SignerError::Jpki(e.to_string()))?;
+        .map_err(SignerError::from)?;
 
     Ok(MyNumberCardData {
         name: info.name,
@@ -622,6 +637,27 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
         gender: info.gender,
         my_number,
         face_photo: info.face_photo,
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BbsKeyPair {
+    pub secret_key: String, // Base64
+    pub public_key: String, // Base64
+}
+
+#[tauri::command]
+fn bbs_generate_key() -> Result<BbsKeyPair, SignerError> {
+    use bbs::prelude::*;
+    let (pk, sk) = Issuer::new_keys(1).map_err(|e| SignerError::Internal(format!("{:?}", e)))?;
+    
+    // Fallback to serde if to_bytes is private/not found
+    let sk_json = serde_json::to_value(&sk).map_err(|e| SignerError::Serialization(e.to_string()))?;
+    let pk_json = serde_json::to_value(&pk).map_err(|e| SignerError::Serialization(e.to_string()))?;
+
+    Ok(BbsKeyPair {
+        secret_key: sk_json.to_string(),
+        public_key: pk_json.to_string(),
     })
 }
 
@@ -656,7 +692,8 @@ pub fn run() {
             perform_register,
             reject,
             jpki_sign,
-            read_my_number_card
+            read_my_number_card,
+            bbs_generate_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

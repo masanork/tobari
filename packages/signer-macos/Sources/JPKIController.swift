@@ -444,7 +444,7 @@ class JPKIController {
     
     private func checkSW(_ data: Data, context: String) throws {
         if data.count < 2 {
-            throw NSError(domain: "JPKIController", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(context): Response too short"])
+            throw SignerError.jpki("\(context): Response too short")
         }
         let sw1 = data[data.count - 2]
         let sw2 = data[data.count - 1]
@@ -453,7 +453,15 @@ class JPKIController {
             return
         }
         
-        throw NSError(domain: "JPKIController", code: 3, userInfo: [NSLocalizedDescriptionKey: "\(context) failed with SW=\(String(format: "%02X%02X", sw1, sw2))"])
+        if sw1 == 0x63 && (sw2 & 0xF0) == 0xC0 {
+            throw SignerError.pinIncorrect(retries: Int(sw2 & 0x0F))
+        }
+        
+        if sw1 == 0x69 && sw2 == 0x83 {
+            throw SignerError.pinLocked
+        }
+        
+        throw SignerError.jpki("\(context) failed with SW=\(String(format: "%02X%02X", sw1, sw2))")
     }
     
     private func parseBasicInfo(data: Data) throws -> BasicInfo {
