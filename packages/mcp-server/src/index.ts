@@ -59,6 +59,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                             type: "string",
                             description: "Absolute path to the issuer's public key (JWK) for verification",
                         },
+                        issuerPqcPublicKeyPath: {
+                            type: "string",
+                            description: "Absolute path to the issuer's PQC public key (base64url JSON) for verification",
+                        },
+                        decrypt: {
+                            type: "object",
+                            description: "Optional decryption overrides for encrypted Tobari files.",
+                            properties: {
+                                hpkeSecret: { type: "string", description: "Override HPKE secret for decryption." },
+                                hpkeInfo: { type: "string", description: "Override HPKE info for decryption." },
+                                pqcPrivateKeyPath: { type: "string", description: "Path to recipient PQC private key (base64url JSON) for hybrid decryption." }
+                            }
+                        }
                     },
                     required: ["path"],
                 },
@@ -91,6 +104,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         deviceAlg: {
                             type: "number",
                             description: "COSE algorithm for DeviceAuth (default: -35 / ES384, use -7 for ES256)"
+                        },
+                        decrypt: {
+                            type: "object",
+                            description: "Optional decryption settings applied to all input documents.",
+                            properties: {
+                                hpkeSecret: { type: "string", description: "Override HPKE secret for decryption." },
+                                hpkeInfo: { type: "string", description: "Override HPKE info for decryption." },
+                                pqcPrivateKeyPath: { type: "string", description: "Path to recipient PQC private key (base64url JSON) for hybrid decryption." }
+                            }
                         }
                     },
                     required: ["requests"]
@@ -131,6 +153,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                                         required: ["idBase64Url", "type"]
                                     }
                                 }
+                            }
+                        },
+                        decrypt: {
+                            type: "object",
+                            description: "Optional decryption settings applied to all input documents.",
+                            properties: {
+                                hpkeSecret: { type: "string", description: "Override HPKE secret for decryption." },
+                                hpkeInfo: { type: "string", description: "Override HPKE info for decryption." },
+                                pqcPrivateKeyPath: { type: "string", description: "Path to recipient PQC private key (base64url JSON) for hybrid decryption." }
                             }
                         }
                     },
@@ -174,7 +205,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 inputSchema: {
                     type: "object",
                     properties: {
-                        path: { type: "string", description: "Path to the service request file" }
+                        path: { type: "string", description: "Path to the service request file" },
+                        decrypt: {
+                            type: "object",
+                            description: "Optional decryption overrides for encrypted Tobari files.",
+                            properties: {
+                                hpkeSecret: { type: "string", description: "Override HPKE secret for decryption." },
+                                hpkeInfo: { type: "string", description: "Override HPKE info for decryption." },
+                                pqcPrivateKeyPath: { type: "string", description: "Path to recipient PQC private key (base64url JSON) for hybrid decryption." }
+                            }
+                        }
                     },
                     required: ["path"]
                 }
@@ -185,7 +225,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 inputSchema: {
                     type: "object",
                     properties: {
-                        rootPath: { type: "string", description: "Optional path to scan. Defaults to the Tobari examples directory." }
+                        rootPath: { type: "string", description: "Optional path to scan. Defaults to the Tobari examples directory." },
+                        decrypt: {
+                            type: "object",
+                            description: "Optional decryption overrides for encrypted Tobari files.",
+                            properties: {
+                                hpkeSecret: { type: "string", description: "Override HPKE secret for decryption." },
+                                hpkeInfo: { type: "string", description: "Override HPKE info for decryption." },
+                                pqcPrivateKeyPath: { type: "string", description: "Path to recipient PQC private key (base64url JSON) for hybrid decryption." }
+                            }
+                        }
                     }
                 }
             },
@@ -224,7 +273,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         path: { type: "string", description: "Path to the Passport Tobari file" },
                         ageThreshold: { type: "number", default: 18, description: "Age threshold to prove (default: 18)" },
                         currentDate: { type: "array", items: { type: "number" }, description: "Reference date [YYYY, MM, DD]. Defaults to today." },
-                        secret: { type: "string", description: "Base64 encoded secret for nullifier (optional)" }
+                        secret: { type: "string", description: "Base64 encoded secret for nullifier (optional)" },
+                        decrypt: {
+                            type: "object",
+                            description: "Optional decryption overrides for encrypted Tobari files.",
+                            properties: {
+                                hpkeSecret: { type: "string", description: "Override HPKE secret for decryption." },
+                                hpkeInfo: { type: "string", description: "Override HPKE info for decryption." },
+                                pqcPrivateKeyPath: { type: "string", description: "Path to recipient PQC private key (base64url JSON) for hybrid decryption." }
+                            }
+                        }
                     },
                     required: ["path"]
                 }

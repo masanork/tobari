@@ -10,10 +10,19 @@ const DEMO_HPKE_SECRET = "tobari-demo-secret-key-32-bytes-long!!";
 const DEMO_HPKE_INFO = "tobari-storage-v1";
 const DEMO_PQC_PRIVATE_KEY_PATH = path.join(PROJECT_ROOT, "examples/juminhyo/recipient-pqc-private-key.json");
 
+export type TobariDecryptOptions = {
+    hpkeSecret?: string;
+    hpkeInfo?: string;
+    pqcPrivateKeyPath?: string;
+};
+
 /**
  * Helper to read a Tobari file (HTML or COSE) and return its binary buffer.
  */
-export async function readTobariFileAsBuffer(filePath: string): Promise<Uint8Array> {
+export async function readTobariFileAsBuffer(
+    filePath: string,
+    options: TobariDecryptOptions = {}
+): Promise<Uint8Array> {
     const ext = path.extname(filePath).toLowerCase();
     if (ext === ".html") {
         const htmlContent = await fs.readFile(filePath, "utf-8");
@@ -41,10 +50,10 @@ export async function readTobariFileAsBuffer(filePath: string): Promise<Uint8Arr
 
         // Use native Buffer for fast base64 decoding
         const decoded = new Uint8Array(Buffer.from(b64, 'base64'));
-        return await decryptIfNeeded(decoded);
+        return await decryptIfNeeded(decoded, options);
     } else {
         const raw = await fs.readFile(filePath);
-        return await decryptIfNeeded(raw);
+        return await decryptIfNeeded(raw, options);
     }
 }
 
@@ -90,7 +99,7 @@ export function rawEcdsaToDer(rawSignature: Uint8Array): Uint8Array {
     return der;
 }
 
-async function decryptIfNeeded(input: Uint8Array): Promise<Uint8Array> {
+async function decryptIfNeeded(input: Uint8Array, options: TobariDecryptOptions = {}): Promise<Uint8Array> {
     const trimmed = trimLeadingWhitespace(input);
     if (trimmed.length === 0 || trimmed[0] !== 0x7b) {
         return input;
@@ -109,14 +118,26 @@ async function decryptIfNeeded(input: Uint8Array): Promise<Uint8Array> {
     }
 
     const ciphertext = new Uint8Array(Buffer.from(wrapper.data, "base64"));
-    const info = new TextEncoder().encode(DEMO_HPKE_INFO);
-    const secret = new TextEncoder().encode(DEMO_HPKE_SECRET);
+    const infoText = options.hpkeInfo ?? process.env.TOBARI_HPKE_INFO ?? DEMO_HPKE_INFO;
+    const secretText = options.hpkeSecret ?? process.env.TOBARI_HPKE_SECRET ?? DEMO_HPKE_SECRET;
+    if (!secretText) {
+        throw new Error("Missing HPKE secret for Tobari decryption.");
+    }
+
+    const info = new TextEncoder().encode(infoText);
+    const secret = new TextEncoder().encode(secretText);
     const keyPair = await deriveHPKEKeyPair(secret);
 
     let pqcPrivateKey: Uint8Array | undefined;
     if (wrapper.alg === HPKE_ALG_HYBRID) {
+        const pqcKeyPath = options.pqcPrivateKeyPath
+            ?? process.env.TOBARI_PQC_PRIVATE_KEY_PATH
+            ?? DEMO_PQC_PRIVATE_KEY_PATH;
+        if (!pqcKeyPath) {
+            throw new Error("Missing PQC private key path for hybrid decryption.");
+        }
         try {
-            const pqcContent = await fs.readFile(DEMO_PQC_PRIVATE_KEY_PATH, "utf-8");
+            const pqcContent = await fs.readFile(pqcKeyPath, "utf-8");
             const pqcJson = JSON.parse(pqcContent);
             pqcPrivateKey = new Uint8Array(Buffer.from(pqcJson.privateKey, "base64url"));
         } catch (e: any) {

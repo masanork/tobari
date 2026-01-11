@@ -41,6 +41,25 @@ These tools are prefixed with `demo_` and are intended for testing, prototyping,
 | `demo_generate_example` | Runs generation scripts (e.g., `gen-tobari.ts`) to create fresh sample data. Supports `--pqc` and `--encrypt`. |
 | `demo_start_server` | Starts a local web server (port 22081) to simulate an administrative submission portal. |
 
+### Encrypted Documents
+For encrypted Tobari files (including hybrid HPKE + PQC), pass a `decrypt` object to the relevant tools (`read_tobari_file`, `create_presentation`, `prepare_presentation`, `analyze_service_request`, `demo_list_examples`, `generate_passport_zkp_input`).
+
+```json
+{
+  "name": "read_tobari_file",
+  "arguments": {
+    "path": "/absolute/path/to/encrypted.cose",
+    "decrypt": {
+      "hpkeSecret": "tobari-demo-secret-key-32-bytes-long!!",
+      "hpkeInfo": "tobari-storage-v1",
+      "pqcPrivateKeyPath": "/absolute/path/to/recipient-pqc-private-key.json"
+    }
+  }
+}
+```
+
+Defaults fall back to `TOBARI_HPKE_SECRET`, `TOBARI_HPKE_INFO`, and `TOBARI_PQC_PRIVATE_KEY_PATH` (or demo values if unset).
+
 ## Getting Started
 
 ### Installation

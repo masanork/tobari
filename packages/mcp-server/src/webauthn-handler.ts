@@ -157,7 +157,7 @@ export class WebAuthnHandler {
 
                 this.server?.on('error', (e: any) => {
                     if (e.code === 'EADDRINUSE') {
-                        console.log(`Port ${port} is in use, trying next...`);
+                        console.error(`Port ${port} is in use, trying next...`);
                         if (attempt < MAX_RETRIES) {
                             this.server?.close();
                             this.server = http.createServer(this.server?.listeners('request')[0] as any);

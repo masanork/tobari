@@ -1,11 +1,18 @@
 import { z } from "zod";
 import { DEFAULT_MYNA_PATH } from "./utils.js";
 
+const DecryptOptionsSchema = z.object({
+    hpkeSecret: z.string().optional().describe("Override HPKE secret used for decryption (defaults to TOBARI_HPKE_SECRET or demo secret)."),
+    hpkeInfo: z.string().optional().describe("Override HPKE info (defaults to TOBARI_HPKE_INFO or demo info)."),
+    pqcPrivateKeyPath: z.string().optional().describe("Path to recipient PQC private key (base64url JSON) for hybrid decryption.")
+}).optional().describe("Optional decryption overrides for encrypted Tobari files.");
+
 // Define tool schemas
 export const ReadTobariFileSchema = z.object({
     path: z.string().describe("Absolute path to the Tobari file (.cose or .html)"),
     issuerPublicKeyPath: z.string().optional().describe("Absolute path to the issuer's public key (JWK/JSON format) for verification"),
     issuerPqcPublicKeyPath: z.string().optional().describe("Absolute path to the issuer's PQC public key (base64url JSON)"),
+    decrypt: DecryptOptionsSchema,
 });
 
 export const CreatePresentationSchema = z.object({
@@ -18,6 +25,7 @@ export const CreatePresentationSchema = z.object({
     ephemeralKey: z.boolean().optional().describe("If true, generates a temporary key for testing. Ignored if devicePrivateKeyPath or devicePrivateKeyJson is provided."),
     verifierNonce: z.string().optional().describe("Optional nonce for replay protection"),
     deviceAlg: z.number().optional().describe("COSE algorithm for DeviceAuth (default: -35 / ES384, use -7 for ES256)"),
+    decrypt: DecryptOptionsSchema.describe("Optional decryption settings applied to all input documents."),
 });
 
 export const PreparePresentationSchema = z.object({
@@ -34,6 +42,7 @@ export const PreparePresentationSchema = z.object({
             type: z.literal("public-key").describe("Credential type"),
         })).optional().describe("Allow-list of WebAuthn credential IDs"),
     }).optional().describe("Optional WebAuthn metadata for browser clients"),
+    decrypt: DecryptOptionsSchema.describe("Optional decryption settings applied to all input documents."),
 });
 
 export const AssemblePresentationSchema = z.object({
@@ -53,10 +62,12 @@ export const VerifyPresentationSchema = z.object({
 
 export const AnalyzeServiceRequestSchema = z.object({
     path: z.string().describe("Path to the Service Request Tobari file (.cose or .html)"),
+    decrypt: DecryptOptionsSchema,
 });
 
 export const ListAvailableDocumentsSchema = z.object({
     rootPath: z.string().optional().describe("Optional path to scan. Defaults to the Tobari examples directory."),
+    decrypt: DecryptOptionsSchema,
 });
 
 export const GenerateExampleDocumentSchema = z.object({
@@ -70,6 +81,7 @@ export const GeneratePassportZkpInputSchema = z.object({
     ageThreshold: z.number().default(18).describe("Age threshold to prove (default: 18)"),
     currentDate: z.array(z.number()).length(3).optional().describe("Reference date [YYYY, MM, DD]. Defaults to today."),
     secret: z.string().optional().describe("Base64 encoded secret for nullifier. If not provided, a random one will be generated."),
+    decrypt: DecryptOptionsSchema,
 });
 
 export const SignWithWebAuthnSchema = z.object({

@@ -20,7 +20,7 @@ export async function handleReadTobariFile(toolArgs: any) {
     try {
         const args = ReadTobariFileSchema.parse(toolArgs);
         const filePath = args.path;
-        const fileBuffer = await readTobariFileAsBuffer(filePath);
+        const fileBuffer = await readTobariFileAsBuffer(filePath, args.decrypt);
 
         let isValid: boolean | string = "Skipped (No public key provided)";
 
@@ -209,7 +209,7 @@ export async function handleCreatePresentation(toolArgs: any) {
         }
 
         if (!devicePrivateKey && args.ephemeralKey) {
-            console.log("Generating ephemeral key for presentation...");
+            console.error("Generating ephemeral key for presentation...");
             const keyPair = await crypto.subtle.generateKey(
                 { name: "ECDSA", namedCurve: "P-384" },
                 true,
@@ -222,7 +222,7 @@ export async function handleCreatePresentation(toolArgs: any) {
 
         for (const req of args.requests) {
             const filePath = req.path;
-            const fileBuffer = await readTobariFileAsBuffer(filePath);
+            const fileBuffer = await readTobariFileAsBuffer(filePath, args.decrypt);
 
             const fullDoc = decode(fileBuffer);
             const disclosedDoc = await createPresentation(fullDoc, req.fields);
@@ -361,7 +361,7 @@ export async function handlePreparePresentation(toolArgs: any) {
 
         for (const req of args.requests) {
             const filePath = req.path;
-            const fileBuffer = await readTobariFileAsBuffer(filePath);
+            const fileBuffer = await readTobariFileAsBuffer(filePath, args.decrypt);
 
             const fullDoc = decode(fileBuffer);
             const disclosedDoc = await createPresentation(fullDoc, req.fields);
@@ -570,7 +570,7 @@ export async function handleAnalyzeServiceRequest(toolArgs: any) {
     try {
         const args = AnalyzeServiceRequestSchema.parse(toolArgs);
         const filePath = args.path;
-        const fileBuffer = await readTobariFileAsBuffer(filePath);
+        const fileBuffer = await readTobariFileAsBuffer(filePath, args.decrypt);
 
         const cose = decode(fileBuffer);
         let payload: any = {};
@@ -663,7 +663,7 @@ export async function handleListAvailableDocuments(toolArgs: any) {
                     if (entry.name === "verifier-tool.html" || entry.name === "viewer-template.html") continue;
 
                     try {
-                        const buffer = await readTobariFileAsBuffer(fullPath);
+                        const buffer = await readTobariFileAsBuffer(fullPath, args.decrypt);
                         const cose = decode(buffer);
                         let docType = cose.docType || "Unknown";
 
@@ -709,7 +709,7 @@ export async function handleListAvailableDocuments(toolArgs: any) {
 export async function handleGeneratePassportZkpInput(toolArgs: any) {
     try {
         const args = GeneratePassportZkpInputSchema.parse(toolArgs);
-        const fileBuffer = await readTobariFileAsBuffer(args.path);
+        const fileBuffer = await readTobariFileAsBuffer(args.path, args.decrypt);
         const cose = decode(fileBuffer);
 
         let mrz = "";
