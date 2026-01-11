@@ -115,6 +115,25 @@ PQC対応の有無によるWASMサイズ差を測定した（以下は wasm-pack
 
 HTMLには検証用WASMとビューアー資産が含まれるため、PQC有効時はWASMの差分がそのままサイズに反映される。加えて、暗号化時はペイロードがJSONラッパー化されるため、COSEサイズも増加する。
 
+#### 3.2.3. 暗号・検証の処理時間（参考値）
+
+ローカル環境で簡易ベンチを実施した（`scripts/bench-pqc.ts`）。平均値は以下の通り。
+
+| 処理 | 平均時間 |
+| :--- | ---: |
+| HPKE encrypt (classic) | 0.58 ms |
+| HPKE decrypt (classic) | 0.25 ms |
+| HPKE encrypt (hybrid) | 0.80 ms |
+| HPKE decrypt (hybrid) | 0.33 ms |
+| ML-DSA sign | 1.64 ms |
+| ML-DSA verify | 0.25 ms |
+| gen-tobari core | 3.12 ms |
+| gen-tobari pqc+encrypt | 7.31 ms |
+| verify_presentation core | 1.33 ms |
+| verify_presentation pqc | 1.05 ms |
+
+※ 参考値（n=20/5）であり、環境差の影響がある。
+
 ### 3.3. 検証結果：選択的開示とプライバシー保護の高度化
 
 mDoc/SD-JWTの特性を活かし、プライバシーおよび名寄せリスクを最小化する以下の機能が実装可能であることを確認した。
