@@ -5,6 +5,9 @@ import yaml from 'js-yaml';
 
 async function main() {
     const isLockedBuild = process.argv.includes('--locked');
+    const usePqc = process.argv.includes('--pqc');
+    const pqcPrivateKeyPath = readArgValue('--pqc-private-key');
+    const pqcPublicKeyPath = readArgValue('--pqc-public-key');
     const suffix = isLockedBuild ? '.locked' : '';
     
     console.log(`Generating juminhyo${suffix}.cose...`);
@@ -17,6 +20,9 @@ async function main() {
 
     const { privateKey: issuerPrivateKey } = await loadOrCreateIssuerKeyPair();
     const devicePublicKey = await loadOrCreateDevicePublicKey();
+    const pqcKeyPair = usePqc
+        ? await loadOrCreateIssuerPqcKeyPair(pqcPrivateKeyPath, pqcPublicKeyPath)
+        : null;
 
     const encrypt = process.argv.includes('--encrypt') || isLockedBuild;
     let encryptionPublicKey: Uint8Array | undefined;
@@ -54,6 +60,12 @@ async function main() {
     const binary = await generateSignedTobari(schemaYaml, sampleData, issuerPrivateKey, {
         kid: "iss-local-p384",
         devicePublicKey,
+        pqcCountersign: pqcKeyPair
+            ? {
+                privateKey: pqcKeyPair.privateKey,
+                kid: "iss-local-mldsa65"
+            }
+            : undefined,
         encryptionPublicKey,
         embeddedFont
     });
@@ -119,4 +131,43 @@ async function loadOrCreateDevicePublicKey(): Promise<CryptoKey> {
     const privateJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
     fs.writeFileSync(deviceKeyPath, JSON.stringify(privateJwk, null, 2));
     return keyPair.publicKey;
+}
+
+function readArgValue(flag: string): string | undefined {
+    const index = process.argv.indexOf(flag);
+    if (index === -1) return undefined;
+    return process.argv[index + 1];
+}
+
+async function loadOrCreateIssuerPqcKeyPair(
+    privateKeyPath?: string,
+    publicKeyPath?: string
+): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
+    const issuerPrivKeyPath = path.resolve(__dirname, privateKeyPath || 'issuer-pqc-private-key.json');
+    const issuerPubKeyPath = path.resolve(__dirname, publicKeyPath || 'issuer-pqc-public-key.json');
+
+    if (fs.existsSync(issuerPrivKeyPath)) {
+        const stored = JSON.parse(fs.readFileSync(issuerPrivKeyPath, 'utf-8'));
+        const privateKey = Buffer.from(stored.privateKey, 'base64url');
+        let publicKey: Uint8Array;
+        if (fs.existsSync(issuerPubKeyPath)) {
+            const pubStored = JSON.parse(fs.readFileSync(issuerPubKeyPath, 'utf-8'));
+            publicKey = Buffer.from(pubStored.publicKey, 'base64url');
+        } else {
+            publicKey = new Uint8Array(0);
+        }
+        return { privateKey: new Uint8Array(privateKey), publicKey: new Uint8Array(publicKey) };
+    }
+
+    const { generateMlDsa65KeyPair } = await import('../../packages/crypto/src/pqc');
+    const keys = await generateMlDsa65KeyPair();
+    fs.writeFileSync(issuerPrivKeyPath, JSON.stringify({
+        alg: "ML-DSA-65",
+        privateKey: Buffer.from(keys.privateKey).toString('base64url')
+    }, null, 2));
+    fs.writeFileSync(issuerPubKeyPath, JSON.stringify({
+        alg: "ML-DSA-65",
+        publicKey: Buffer.from(keys.publicKey).toString('base64url')
+    }, null, 2));
+    return keys;
 }

@@ -2,7 +2,8 @@
 export const COSE_ALG = {
     ES256: -7, // ECDSA w/ SHA-256
     ES384: -35, // ECDSA w/ SHA-384
-    EdDSA: -8  // EdDSA (Ed25519)
+    EdDSA: -8, // EdDSA (Ed25519)
+    MLDSA65: -49 // draft-ietf-cose-mldsa-00
 } as const;
 
 export type CoseAlg = typeof COSE_ALG[keyof typeof COSE_ALG];

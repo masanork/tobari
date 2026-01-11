@@ -46,6 +46,7 @@ export const AssemblePresentationSchema = z.object({
 export const VerifyPresentationSchema = z.object({
     vpBase64: z.string().describe("The base64-encoded DeviceResponse (VP) to verify"),
     issuerPublicKeys: z.record(z.string()).describe("Map of docType to absolute path of issuer's public key (JWK)"),
+    issuerPqcPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's PQC public key (base64url JSON)"),
     verifierNonce: z.string().optional().describe("Expected nonce to prevent replay attacks"),
 });
 
