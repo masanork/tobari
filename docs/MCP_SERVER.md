@@ -39,7 +39,6 @@ These tools are prefixed with `demo_` and are intended for testing, prototyping,
 | Tool Name | Description |
 | :--- | :--- |
 | `demo_list_examples` | Lists sample documents and keys available in the project's `examples/` directory. |
-| `demo_generate_example` | Runs generation scripts (e.g., `gen-tobari.ts`) to create fresh sample data. Supports `--pqc` and `--encrypt`. |
 
 Note: Demo server tools were removed. Use `preview_presentation` for VP inspection and JSON previews.
 
@@ -92,17 +91,7 @@ The MCP server never shares the user's private keys or full raw documents with t
 This demo shows how to attach an ML-DSA-65 countersignature on the issuer side and verify it via `verify_presentation`.
 
 ### 1) Generate a PQC-signed credential
-You can ask the Agent to do this using `demo_generate_example`:
-```json
-{
-  "name": "demo_generate_example",
-  "arguments": {
-    "exampleName": "juminhyo",
-    "pqc": true
-  }
-}
-```
-(Or manually run: `bun examples/juminhyo/gen-tobari.ts --pqc`)
+Manually run: `bun examples/juminhyo/gen-tobari.ts --pqc`
 
 This creates:
 - `examples/juminhyo/juminhyo.cose`
