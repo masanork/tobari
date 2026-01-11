@@ -595,6 +595,7 @@ export async function handlePreviewPresentation(toolArgs: any) {
         const format = args.format ?? "readable";
         const redact = !!args.redact;
         const maxStringLength = args.maxStringLength ?? 200;
+        const meta = buildPreviewMeta(args.vpBase64, vpBytes, presentation);
 
         let verification: any = null;
         if (args.issuerPublicKeys) {
@@ -620,6 +621,7 @@ export async function handlePreviewPresentation(toolArgs: any) {
                     type: "text",
                     text: JSON.stringify({
                         summary,
+                        meta,
                         readable,
                         decodedVp,
                         verification
@@ -751,6 +753,27 @@ function summarizeVp(vp: any) {
             docType: doc?.docType,
             fieldCount: countNamespaceItems(doc?.issuerSigned?.nameSpaces)
         }))
+    };
+}
+
+function buildPreviewMeta(vpBase64: string, vpBytes: Uint8Array, vp: any) {
+    const docTypes = Array.isArray(vp?.documents)
+        ? vp.documents.map((doc: any) => doc?.docType).filter((v: any) => typeof v === "string")
+        : [];
+
+    const disclosedFields = Array.isArray(vp?.documents)
+        ? vp.documents.map((doc: any) => ({
+            docType: doc?.docType ?? "Unknown",
+            fields: Object.keys(extractDisclosedFields(doc))
+        }))
+        : [];
+
+    return {
+        vpBase64Length: vpBase64.length,
+        vpByteLength: vpBytes.length,
+        documentCount: Array.isArray(vp?.documents) ? vp.documents.length : 0,
+        docTypes,
+        disclosedFields
     };
 }
 
