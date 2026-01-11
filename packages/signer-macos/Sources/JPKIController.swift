@@ -466,51 +466,17 @@ class JPKIController {
     
     private func parseBasicInfo(data: Data) throws -> BasicInfo {
         var info = BasicInfo()
-        var i = 0
-        let len = data.count
+        let tlvs = TLVParser.parse(data: data)
         
-        while i < len {
-            // Tag (2 bytes usually for these specific tags)
-            if i + 1 >= len { break }
-            let tag = (UInt16(data[i]) << 8) | UInt16(data[i+1])
-            i += 2
-            
-            // Length (ASN.1 BER-TLV)
-            if i >= len { break }
-            var valueLen = Int(data[i])
-            i += 1
-            
-            if valueLen == 0x81 {
-                if i >= len { break }
-                valueLen = Int(data[i])
-                i += 1
-            } else if valueLen == 0x82 {
-                if i + 1 >= len { break }
-                valueLen = (Int(data[i]) << 8) | Int(data[i+1])
-                i += 2
-            } else if valueLen > 0x82 {
-                break // Unsupported
-            }
-            
-            // Wrapper tags
-            if tag == 0xDF20 || tag == 0xFF20 {
-                continue
-            }
-            
-            if i + valueLen > len { break }
-            let valueData = data.subdata(in: i..<i+valueLen)
-            i += valueLen
-            
-            guard let text = String(data: valueData, encoding: .utf8) else { continue }
-            
-            switch tag {
-            case 0xDF22: info.name = text
-            case 0xDF23: info.address = text
-            case 0xDF24: info.birthDate = text
-            case 0xDF25: info.gender = text
-            default: break
-            }
+        // JPKI Basic Info uses nested tags under 0xDF20
+        guard let wrapper = tlvs.first?.find(tag: 0xDF20) else {
+            return info
         }
+        
+        if let name = wrapper.findString(tag: 0xDF22) { info.name = name }
+        if let address = wrapper.findString(tag: 0xDF23) { info.address = address }
+        if let birthDate = wrapper.findString(tag: 0xDF24) { info.birthDate = birthDate }
+        if let gender = wrapper.findString(tag: 0xDF25) { info.gender = gender }
         
         return info
     }

@@ -1,5 +1,15 @@
 import Foundation
 
+struct LicenseInfo: Codable {
+    let name: String
+    let address: String
+    let birthDate: String
+    let licenseNumber: String
+    let issueDate: String
+    let expiryDate: String
+    let colorClass: String
+}
+
 class DriversLicenseController {
     let manager: SmartCardInterface
     
@@ -44,8 +54,40 @@ class DriversLicenseController {
         try checkSW(resVer, context: "Verify PIN")
     }
     
-    func readCommonData() async throws -> Data {
-        return try await readEF(fileID: Data([0x00, 0x01]))
+    func readCommonData() async throws -> LicenseInfo {
+        let data = try await readEF(fileID: Data([0x00, 0x01]))
+        return try parseLicenseInfo(data: data)
+    }
+    
+    private func parseLicenseInfo(data: Data) throws -> LicenseInfo {
+        let tlvs = TLVParser.parse(data: data)
+        let sjis = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.shiftJIS.rawValue)))
+        
+        // Tags for Japanese Driver's License:
+        // 0x12: Name
+        // 0x13: Address
+        // 0x14: BirthDate (Gengou)
+        // 0x15: IssueDate (Gengou)
+        // 0x17: ExpiryDate (Gengou)
+        // 0x16: LicenseNumber (ASCII)
+        // 0x11: Name Kana (not used here for simplicity)
+        
+        let name = tlvs.first?.findString(tag: 0x12, encoding: sjis) ?? "Unknown"
+        let address = tlvs.first?.findString(tag: 0x13, encoding: sjis) ?? "Unknown"
+        let birthDate = tlvs.first?.findString(tag: 0x14, encoding: sjis) ?? "Unknown"
+        let issueDate = tlvs.first?.findString(tag: 0x15, encoding: sjis) ?? "Unknown"
+        let expiryDate = tlvs.first?.findString(tag: 0x17, encoding: sjis) ?? "Unknown"
+        let licenseNumber = tlvs.first?.findString(tag: 0x16, encoding: .ascii) ?? "Unknown"
+        
+        return LicenseInfo(
+            name: name,
+            address: address,
+            birthDate: birthDate,
+            licenseNumber: licenseNumber,
+            issueDate: issueDate,
+            expiryDate: expiryDate,
+            colorClass: "" // TODO: Extract from tag 0x18
+        )
     }
     
     private func readEF(fileID: Data) async throws -> Data {
@@ -56,7 +98,7 @@ class DriversLicenseController {
         try checkSW(resSel, context: "Select EF")
         
         // Read Binary
-        var readApdu = Data([0x00, 0xB0, 0x00, 0x00, 0x00])
+        let readApdu = Data([0x00, 0xB0, 0x00, 0x00, 0x00])
         let res = try await manager.transmit(apdu: readApdu)
         if res.count < 2 { throw SignerError.jpki("Read EF failed") }
         return res.subdata(in: 0..<res.count-2)
@@ -77,3 +119,4 @@ class DriversLicenseController {
         throw SignerError.jpki("\(context) failed: \(String(format: "%02X%02X", sw1, sw2))")
     }
 }
+

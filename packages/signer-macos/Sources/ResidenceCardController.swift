@@ -1,5 +1,13 @@
 import Foundation
 
+struct ResidenceCardInfo: Codable {
+    let address: String
+    let dateUpdated: String
+    let permitGlobal: String
+    let permitIndiv: String
+    let updateStatus: String
+}
+
 class ResidenceCardController {
     let manager: SmartCardInterface
     
@@ -19,8 +27,8 @@ class ResidenceCardController {
         try checkSW(res, context: "Select JPRC AP")
     }
     
-    func readDF2Info() async throws -> Data {
-        // Select DF2 (Address Info)
+    func readDF2Info() async throws -> ResidenceCardInfo {
+        // Select DF2 (Address / Back Side)
         let df2AID = Data([0xD3, 0x92, 0xF0, 0x00, 0x4F, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
         var selApdu = Data([0x00, 0xA4, 0x04, 0x0C])
         selApdu.append(UInt8(df2AID.count))
@@ -28,9 +36,34 @@ class ResidenceCardController {
         let resSel = try await manager.transmit(apdu: selApdu)
         try checkSW(resSel, context: "Select DF2")
         
-        // Read Address EF (Tag D2-D4 usually)
-        // For simplicity, just read EF01
-        return try await readEF(fileID: Data([0x00, 0x01]))
+        let addressData = try await readEF(fileID: Data([0x00, 0x01]))
+        let globalPermitData = try await readEF(fileID: Data([0x00, 0x02]))
+        let indivPermitData = try await readEF(fileID: Data([0x00, 0x03]))
+        let statusData = try await readEF(fileID: Data([0x00, 0x04]))
+        
+        return try parseResidenceCardInfo(address: addressData, global: globalPermitData, indiv: indivPermitData, status: statusData)
+    }
+    
+    private func parseResidenceCardInfo(address: Data, global: Data, indiv: Data, status: Data) throws -> ResidenceCardInfo {
+        let addressTlvs = TLVParser.parse(data: address)
+        let globalTlvs = TLVParser.parse(data: global)
+        let indivTlvs = TLVParser.parse(data: indiv)
+        let statusTlvs = TLVParser.parse(data: status)
+        
+        // Tags: D2-D4 (Address), D5 (Global Permit), D6 (Indiv Permit), D7 (Status)
+        let addrStr = addressTlvs.first?.findString(tag: 0xD2) ?? ""
+        let dateUpd = addressTlvs.first?.findString(tag: 0xD4) ?? ""
+        let permitG = globalTlvs.first?.findString(tag: 0xD5) ?? ""
+        let permitI = indivTlvs.first?.findString(tag: 0xD6) ?? ""
+        let stat = statusTlvs.first?.findString(tag: 0xD7) ?? ""
+        
+        return ResidenceCardInfo(
+            address: addrStr,
+            dateUpdated: dateUpd,
+            permitGlobal: permitG,
+            permitIndiv: permitI,
+            updateStatus: stat
+        )
     }
     
     private func readEF(fileID: Data) async throws -> Data {
@@ -39,7 +72,7 @@ class ResidenceCardController {
         let resSel = try await manager.transmit(apdu: selApdu)
         try checkSW(resSel, context: "Select EF")
         
-        var readApdu = Data([0x00, 0xB0, 0x00, 0x00, 0x00])
+        let readApdu = Data([0x00, 0xB0, 0x00, 0x00, 0x00])
         let res = try await manager.transmit(apdu: readApdu)
         if res.count < 2 { throw SignerError.jpki("Read EF failed") }
         return res.subdata(in: 0..<res.count-2)
@@ -50,6 +83,7 @@ class ResidenceCardController {
         let sw1 = data[data.count-2]
         let sw2 = data[data.count-1]
         if sw1 == 0x90 && sw2 == 0x00 { return }
-        throw SignerError.jpki("\(context) failed: \(String(format: "%02X%02X", sw1, sw2))")
+        throw SignerError.jpki("\(context) failed with SW=\(String(format: "%02X%02X", sw1, sw2))")
     }
 }
+
