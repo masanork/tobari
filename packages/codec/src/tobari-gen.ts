@@ -37,6 +37,11 @@ export async function generateSignedTobari(
         alg?: number;
         devicePublicKey?: CryptoKey;
         useLtvMock?: boolean;
+        pqcCountersign?: {
+            privateKey: Uint8Array;
+            kid?: string;
+            alg?: number;
+        };
         encryptionPublicKey?: Uint8Array; // HPKE Public Key
         embeddedFont?: Uint8Array;        // Raw font binary
     } = {}
@@ -84,9 +89,16 @@ export async function generateSignedTobari(
     // 1. Transform data to mdoc format (MSO + SignedItems)
     const { mso, issuerSignedItems } = await transformToMdocData(schema.id, data, schema.fields, namespace, devicePublicKey);
 
-    // Prepare LTV Mock if requested
+    // Prepare Countersignature (single slot)
     let countersignSetup;
-    if (options.useLtvMock) {
+    if (options.pqcCountersign) {
+        const alg = options.pqcCountersign.alg ?? COSE_ALG.MLDSA65;
+        countersignSetup = {
+            alg,
+            privateKey: options.pqcCountersign.privateKey,
+            kid: options.pqcCountersign.kid
+        };
+    } else if (options.useLtvMock) {
         console.log("Generating LTV Mock (TSA) Countersignature...");
         const tsaKeyPair = await crypto.subtle.generateKey(
             { name: "ECDSA", namedCurve: "P-256" },

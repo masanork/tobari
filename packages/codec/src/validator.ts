@@ -1,6 +1,7 @@
 import { decode } from 'cbor-x';
 import { verifyFormToken } from '@tobari/crypto/cose';
-import { base64url } from '@tobari/crypto/utils';
+import { base64url, COSE_ALG, COSE_HEADER_LABELS } from '@tobari/crypto/utils';
+import { mlDsa65Verify } from '@tobari/crypto/pqc';
 import { MSO, revealMdocData } from './sd';
 
 export interface VerificationResult {
@@ -56,7 +57,7 @@ export async function verifyTobari(
  */
 export async function verifyPresentation(
     presentation: any, // Decoded DeviceResponse
-    issuerPublicKeys: Record<string, CryptoKey>, // Map of docType -> PublicKey
+    issuerPublicKeys: Record<string, CryptoKey | { classic: CryptoKey; pqcPublicKey?: Uint8Array }>, // Map of docType -> PublicKey
     verifierNonce?: string
 ): Promise<any[]> {
     const { decode, encodeCanonical } = await import('@tobari/crypto/cbor');
@@ -66,6 +67,8 @@ export async function verifyPresentation(
         const result: any = {
             docType: doc.docType,
             issuerValid: false,
+            issuerPqcPresent: false,
+            issuerPqcValid: null,
             deviceValid: false,
             data: {},
             error: null
@@ -74,7 +77,11 @@ export async function verifyPresentation(
         try {
             // 1. Verify Issuer Signature
             const issuerAuthToken = await import('@tobari/crypto/utils').then(m => m.base64url.encode(doc.issuerSigned.issuerAuth));
-            const publicKey = issuerPublicKeys[doc.docType];
+            const issuerKeyEntry = issuerPublicKeys[doc.docType];
+            const publicKey =
+                issuerKeyEntry instanceof CryptoKey
+                    ? issuerKeyEntry
+                    : issuerKeyEntry?.classic;
             
             if (!publicKey) {
                 throw new Error(`No public key provided for docType: ${doc.docType}`);
@@ -82,6 +89,50 @@ export async function verifyPresentation(
 
             const mso = await (await import('@tobari/crypto/cose')).verifyFormToken(issuerAuthToken, publicKey) as MSO;
             result.issuerValid = true;
+
+            // 1.1 Verify PQC Countersignature (optional)
+            const issuerAuthCose = decode(doc.issuerSigned.issuerAuth);
+            if (Array.isArray(issuerAuthCose) && issuerAuthCose.length === 4) {
+                const [, issuerUnprotected, , issuerSignature] = issuerAuthCose;
+                let countersign = null;
+                if (issuerUnprotected instanceof Map) {
+                    countersign = issuerUnprotected.get(COSE_HEADER_LABELS.Countersignature0);
+                } else if (issuerUnprotected && typeof issuerUnprotected === 'object') {
+                    countersign = issuerUnprotected[COSE_HEADER_LABELS.Countersignature0];
+                }
+
+                if (countersign) {
+                    result.issuerPqcPresent = true;
+                    const [csProtectedBytes, , , csSignature] = countersign;
+                    const csProtected = decode(csProtectedBytes);
+                    const csAlg = csProtected instanceof Map ? csProtected.get(1) : csProtected[1];
+
+                    if (csAlg === COSE_ALG.MLDSA65) {
+                        const pqcPublicKey =
+                            issuerKeyEntry instanceof CryptoKey
+                                ? undefined
+                                : issuerKeyEntry?.pqcPublicKey;
+                        if (pqcPublicKey) {
+                            const csStructure = [
+                                "CounterSignature0",
+                                csProtectedBytes,
+                                new Uint8Array(0),
+                                issuerSignature
+                            ];
+                            const csToBeVerified = encodeCanonical(csStructure);
+                            result.issuerPqcValid = await mlDsa65Verify(
+                                pqcPublicKey,
+                                csToBeVerified,
+                                csSignature
+                            );
+                        } else {
+                            result.issuerPqcValid = false;
+                        }
+                    } else {
+                        result.issuerPqcValid = false;
+                    }
+                }
+            }
 
             // 2. Extract Data
             const revealed = await revealMdocData(mso, doc.issuerSigned.nameSpaces[doc.docType] || [], doc.docType);

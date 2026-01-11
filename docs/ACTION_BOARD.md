@@ -24,6 +24,7 @@
   - [ ] `tobari-gen`でIssuerAuthにCountersignを付与
   - [ ] `validator`でCountersign検証を行い結果を分離表示
   - [ ] `verify_presentation`の結果にPQC検証ステータスを追加
+  - [ ] デモ手順を整理（`bun examples/juminhyo/gen-tobari.ts --pqc` → `issuer-pqc-public-key.json` を `verify_presentation` の `issuerPqcPublicKeys` に渡す）
 
 ## Next (1-2ヶ月)
 - [ ] **BBS+ unlinkable credentialのproof生成パイプライン**

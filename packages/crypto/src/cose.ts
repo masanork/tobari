@@ -1,12 +1,13 @@
 import { encodeCanonical, decode } from './cbor';
 import { COSE_ALG, COSE_HEADER_LABELS, base64url, type CoseAlg } from './utils';
+import { mlDsa65Sign } from './pqc';
 
 export interface SignerOptions {
     alg: CoseAlg;
     kid?: string; // Key ID
     countersignSetup?: {
         alg: CoseAlg;
-        privateKey: CryptoKey;
+        privateKey: CryptoKey | Uint8Array | ArrayBuffer;
         kid?: string;
     };
 }
@@ -112,7 +113,24 @@ export async function signCoseSign1(
 }
 
 // Helper for signing
-async function signWithKey(key: CryptoKey, alg: CoseAlg, data: Uint8Array): Promise<ArrayBuffer> {
+async function signWithKey(
+    key: CryptoKey | Uint8Array | ArrayBuffer,
+    alg: CoseAlg,
+    data: Uint8Array
+): Promise<ArrayBuffer> {
+    if (alg === COSE_ALG.MLDSA65) {
+        const keyBytes = key instanceof Uint8Array ? key : key instanceof ArrayBuffer ? new Uint8Array(key) : null;
+        if (!keyBytes) {
+            throw new Error("ML-DSA-65 signing requires a raw private key");
+        }
+        const signature = await mlDsa65Sign(keyBytes, data);
+        return signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength);
+    }
+
+    if (!(key instanceof CryptoKey)) {
+        throw new Error("Classic COSE signing requires a CryptoKey");
+    }
+
     let webCryptoAlg: AlgorithmIdentifier | RsaPssParams | EcdsaParams;
     if (alg === COSE_ALG.ES256) {
         webCryptoAlg = { name: 'ECDSA', hash: { name: 'SHA-256' } };

@@ -504,14 +504,24 @@ export async function handleVerifyPresentation(toolArgs: any) {
         const vpBytes = new Uint8Array(Buffer.from(args.vpBase64, 'base64'));
         const presentation = decode(vpBytes);
 
-        const issuerKeys: Record<string, CryptoKey> = {};
+        const issuerKeys: Record<string, CryptoKey | { classic: CryptoKey; pqcPublicKey?: Uint8Array }> = {};
         for (const docType of Object.keys(args.issuerPublicKeys)) {
             const keyPath = args.issuerPublicKeys[docType];
             const keyContent = await fs.readFile(keyPath, "utf-8");
             const jwk = JSON.parse(keyContent);
-            issuerKeys[docType] = await crypto.subtle.importKey(
+            const classicKey = await crypto.subtle.importKey(
                 "jwk", jwk, { name: "ECDSA", namedCurve: jwk.crv || "P-384" }, true, ["verify"]
             );
+
+            const pqcKeyPath = args.issuerPqcPublicKeys?.[docType];
+            if (pqcKeyPath) {
+                const pqcContent = await fs.readFile(pqcKeyPath, "utf-8");
+                const pqcJson = JSON.parse(pqcContent);
+                const pqcPublicKey = Buffer.from(pqcJson.publicKey, "base64url");
+                issuerKeys[docType] = { classic: classicKey, pqcPublicKey: new Uint8Array(pqcPublicKey) };
+            } else {
+                issuerKeys[docType] = classicKey;
+            }
         }
 
         const results = await verifyPresentation(presentation, issuerKeys, args.verifierNonce);
