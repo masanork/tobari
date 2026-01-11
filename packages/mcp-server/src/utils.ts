@@ -123,9 +123,9 @@ function trimLeadingWhitespace(input: Uint8Array): Uint8Array {
     return input.slice(i);
 }
 
-export async function loadAllTrustedIssuers(): Promise<Record<string, CryptoKey>> {
+export async function loadAllTrustedIssuers(): Promise<Record<string, CryptoKey | { classic: CryptoKey; pqcPublicKey?: Uint8Array }>> {
     const examplesDir = path.join(PROJECT_ROOT, "examples");
-    const issuerKeys: Record<string, CryptoKey> = {};
+    const issuerKeys: Record<string, CryptoKey | { classic: CryptoKey; pqcPublicKey?: Uint8Array }> = {};
 
     const entries = await fs.readdir(examplesDir, { withFileTypes: true });
     for (const entry of entries) {
@@ -166,7 +166,16 @@ export async function loadAllTrustedIssuers(): Promise<Record<string, CryptoKey>
                     true,
                     ["verify"]
                 );
-                issuerKeys[docType] = key;
+                const pqcPath = path.join(dir, "issuer-pqc-public-key.json");
+                try {
+                    await fs.access(pqcPath);
+                    const pqcContent = await fs.readFile(pqcPath, "utf-8");
+                    const pqcJson = JSON.parse(pqcContent);
+                    const pqcPublicKey = new Uint8Array(Buffer.from(pqcJson.publicKey, "base64url"));
+                    issuerKeys[docType] = { classic: key, pqcPublicKey };
+                } catch {
+                    issuerKeys[docType] = key;
+                }
                 // Also support "io.github.masanork.tobari.credit-card-statement.v1" etc.
             } catch (e) {
                 console.warn(`Failed to load key for ${docType}:`, e);

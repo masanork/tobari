@@ -7,7 +7,7 @@ import { loadAllTrustedIssuers } from '../utils.js';
 
 let server: http.Server | null = null;
 let lastSubmission: any = null;
-let trustedIssuers: Record<string, CryptoKey> = {};
+let trustedIssuers: Record<string, CryptoKey | { classic: CryptoKey; pqcPublicKey?: Uint8Array }> = {};
 
 const PORT = 22081;
 
@@ -76,7 +76,12 @@ export async function handleStartDemoServer(toolArgs: any) {
                                         // Extract some claims for display
                                         // r.claims is not exposed by verifyPresentation directly in current version?
                                         // Let's rely on the decoded presentation for raw data display
-                                        return { docType, valid: r.issuerValid && r.deviceValid };
+                                        return {
+                                            docType,
+                                            valid: r.issuerValid && r.deviceValid,
+                                            pqcPresent: r.issuerPqcPresent,
+                                            pqcValid: r.issuerPqcValid
+                                        };
                                     })
                                 };
                             } catch (e: any) {
@@ -172,7 +177,10 @@ function renderPage(submission: any) {
              <div class="doc-list">
                 <h3>受信した証明書</h3>
                 <ul>
-                    ${verif.summary.map((s: any) => `<li>${s.docType} ${s.valid ? '✅' : '❌'}</li>`).join('')}
+                    ${verif.summary.map((s: any) => {
+                        const pqcBadge = s.pqcPresent ? (s.pqcValid ? 'PQC ✅' : 'PQC ❌') : 'PQC —';
+                        return `<li>${s.docType} ${s.valid ? '✅' : '❌'} <span class="pqc">${pqcBadge}</span></li>`;
+                    }).join('')}
                 </ul>
              </div>
              ` : ''}
@@ -197,6 +205,7 @@ function renderPage(submission: any) {
         .header { margin-bottom: 2rem; display: flex; align-items: center; justify-content: center; gap: 15px; }
         .logo-img { width: 40px; height: 40px; background: #0066cc; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 20px; }
         .logo-text { font-size: 1.5rem; font-weight: bold; color: #333; }
+        .pqc { margin-left: 8px; font-size: 0.9rem; color: #556; }
         
         .waiting-card, .success-card {
             background: white; padding: 3rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); /* Flatter, more administrative look */
@@ -256,4 +265,3 @@ function renderPage(submission: any) {
 </body>
 </html>`;
 }
-

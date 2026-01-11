@@ -47,3 +47,13 @@ tobari gen --schema examples/ininjo/ininjo.yaml --output ininjo.html
 ```bash
 tobari sign --data data.json --key private.key --output signed.cbor
 ```
+
+### Generate COSE with PQC Countersign
+```bash
+bun run tobari:gen \
+  --schema examples/juminhyo/juminhyo.yaml \
+  --data examples/juminhyo/juminhyo-data.yaml \
+  --out examples/juminhyo/juminhyo.cose \
+  --issuer-private-key examples/juminhyo/issuer-private-key.json \
+  --pqc
+```
