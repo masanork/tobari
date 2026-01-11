@@ -25,12 +25,84 @@ interface MyNumberCardData {
   face_photo?: string;
 }
 
+interface DriverLicenseData {
+  name: string;
+  address: string;
+  birth_date: string;
+  issue_date: string;
+  expiry_date: string;
+  license_number: string;
+  categories: string[];
+}
+
+interface PassportData {
+  name: string;
+  nationality: string;
+  passport_number: string;
+  birth_date: string;
+  gender: string;
+  expiry_date: string;
+  face_photo?: string;
+}
+
 function App() {
   const [request, setRequest] = useState<SignRequest | null>(null);
   const [status, setStatus] = useState<string>("Loading...");
   const [error, setError] = useState<string | null>(null);
   const [pin, setPin] = useState<string>("");
-  const [cardData, setCardData] = useState<MyNumberCardData | null>(null);
+  const [pin2, setPin2] = useState<string>("");
+  const [mrz, setMrz] = useState<string>("");
+  const [cardData, setCardData] = useState<any | null>(null);
+  const [cardType, setCardType] = useState<string>("jpki");
+
+// ... (omitted intermediate parts) ...
+
+  const handleReadPassport = async () => {
+    if (mrz.length < 20) {
+      setError("Please enter a valid MRZ (Passport No + Birth Date + Expiry Date).");
+      return;
+    }
+    setStatus("Reading Passport... Please wait.");
+    setError(null);
+    try {
+      const data = await invoke<PassportData>("read_passport", { request: { mrz } });
+      setCardData(data);
+      setStatus("Passport read successfully!");
+    } catch (e: any) {
+      setError("Failed to read passport: " + formatError(e));
+      setStatus("Error");
+    }
+  };
+
+  const handleReadDriverLicense = async () => {
+    if (!pin || !pin2) {
+      setError("Please enter both PIN1 and PIN2.");
+      return;
+    }
+    setStatus("Reading Driver License... Please wait.");
+    setError(null);
+    try {
+      const data = await invoke<DriverLicenseData>("read_driver_license", { request: { pin1: pin, pin2 } });
+      setCardData(data);
+      setStatus("Driver License read successfully!");
+    } catch (e: any) {
+      setError("Failed to read driver license: " + formatError(e));
+      setStatus("Error");
+    }
+  };
+
+  const handleReadResidenceCard = async () => {
+    setStatus("Reading Residence Card... Please wait.");
+    setError(null);
+    try {
+      const data = await invoke<any>("read_residence_card");
+      setCardData(data);
+      setStatus("Residence Card read successfully!");
+    } catch (e: any) {
+      setError("Failed to read residence card: " + formatError(e));
+      setStatus("Error");
+    }
+  };
 
   const formatError = (e: any): string => {
     if (typeof e === 'string') return e;
@@ -155,28 +227,88 @@ function App() {
         </div>
       )}
 
+      <div className="card-selector">
+        <button className={cardType === 'jpki' ? 'active' : ''} onClick={() => setCardType('jpki')}>JPKI</button>
+        <button className={cardType === 'passport' ? 'active' : ''} onClick={() => setCardType('passport')}>Passport</button>
+        <button className={cardType === 'license' ? 'active' : ''} onClick={() => setCardType('license')}>License</button>
+        <button className={cardType === 'residence' ? 'active' : ''} onClick={() => setCardType('residence')}>Residence</button>
+      </div>
+
       <div className="card-input-section">
-        <input 
-          type="password" 
-          placeholder="PIN (4 or 6-16 digits)" 
-          value={pin} 
-          onChange={(e) => setPin(e.target.value)}
-          maxLength={16}
-        />
-        <button onClick={handleReadCard} disabled={status.includes("Reading")}>
-          Read My Number Card
-        </button>
+        {cardType === 'jpki' && (
+          <>
+            <input 
+              type="password" 
+              placeholder="4-digit PIN" 
+              value={pin} 
+              onChange={(e) => setPin(e.target.value)}
+              maxLength={16}
+            />
+            <button onClick={handleReadCard} disabled={status.includes("Reading")}>
+              Read Card
+            </button>
+          </>
+        )}
+        {cardType === 'passport' && (
+          <>
+            <input 
+              type="text" 
+              placeholder="MRZ (No + Birth + Expiry)" 
+              value={mrz} 
+              onChange={(e) => setMrz(e.target.value)}
+            />
+            <button onClick={handleReadPassport} disabled={status.includes("Reading")}>
+              Read Passport
+            </button>
+          </>
+        )}
+        {cardType === 'license' && (
+          <div className="vertical-inputs">
+            <input type="password" placeholder="PIN1 (4 digits)" value={pin} onChange={(e) => setPin(e.target.value)} />
+            <input type="password" placeholder="PIN2 (4 digits)" value={pin2} onChange={(e) => setPin2(e.target.value)} />
+            <button onClick={handleReadDriverLicense} disabled={status.includes("Reading")}>
+              Read License
+            </button>
+          </div>
+        )}
+        {cardType === 'residence' && (
+          <button onClick={handleReadResidenceCard} disabled={status.includes("Reading")}>
+            Read Residence Card (No PIN)
+          </button>
+        )}
       </div>
 
       {cardData && (
         <div className="card-data-preview">
-          <h3>Card Information</h3>
-          <p><strong>Name:</strong> {cardData.name}</p>
-          <p><strong>Address:</strong> {cardData.address}</p>
-          <p><strong>Birth Date:</strong> {cardData.birth_date}</p>
-          <p><strong>Gender:</strong> {cardData.gender}</p>
+          <h3>Information from {cardType.toUpperCase()}</h3>
+          {cardType === 'jpki' && (
+            <>
+              <p><strong>Name:</strong> {cardData.name}</p>
+              <p><strong>Address:</strong> {cardData.address}</p>
+              <p><strong>Birth Date:</strong> {cardData.birth_date}</p>
+            </>
+          )}
+          {cardType === 'passport' && (
+            <>
+              <p><strong>Name:</strong> {cardData.name}</p>
+              <p><strong>Nationality:</strong> {cardData.nationality}</p>
+              <p><strong>Passport No:</strong> {cardData.passport_number}</p>
+              <p><strong>Expiry:</strong> {cardData.expiry_date}</p>
+            </>
+          )}
+          {cardType === 'license' && (
+            <>
+              <p><strong>Name:</strong> {cardData.name}</p>
+              <p><strong>Address:</strong> {cardData.address}</p>
+              <p><strong>License No:</strong> {cardData.license_number}</p>
+              <p><strong>Categories:</strong> {cardData.categories.join(", ")}</p>
+            </>
+          )}
+          {cardType === 'residence' && (
+            <pre className="raw-json">{JSON.stringify(cardData, null, 2)}</pre>
+          )}
           {cardData.face_photo && (
-            <img src={`data:image/jpeg;base64,${cardData.face_photo}`} alt="Face" style={{width: 100}} />
+            <img src={`data:image/jpeg;base64,${cardData.face_photo}`} alt="Face" style={{width: 100, marginTop: 10, borderRadius: 8}} />
           )}
         </div>
       )}

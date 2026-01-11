@@ -38,8 +38,10 @@ pub mod file_ids {
     pub const EF_SIGNATURE: [u8; 2] = [0x00, 0x01]; // DF3/EF01: Sig (Tag DA, DB)
 }
 
+use serde::Serialize;
+
 /// Parsed Residence Card Information
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct ResidenceCardInfo {
     pub address: String,
     pub date_updated: String,

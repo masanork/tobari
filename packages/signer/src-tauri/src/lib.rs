@@ -6,9 +6,37 @@ use std::sync::Mutex;
 use tauri::{AppHandle, State};
 // Note: civ crate needs to be available. PcscReader is only available on native targets.
 #[cfg(not(target_arch = "wasm32"))]
-use civ::{JpkiController, PcscReader};
+use civ::{JpkiController, PassportController, DriversLicenseController, ResidenceCardController, PcscReader};
 
 // --- Data Structures ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PassportReadRequest {
+    pub mrz: String, // Number + Birth + Expiry (e.g. 123456789850101251231)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PassportData {
+    pub dg1: String, // Base64 MRZ
+    pub dg2: String, // Base64 Photo
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DriverLicenseRequest {
+    pub pin1: String,
+    pub pin2: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DriverLicenseData {
+    pub name: String,
+    pub name_kana: String,
+    pub address: String,
+    pub birth_date: String,
+    pub license_number: String,
+    pub issue_date: String,
+    pub expire_date: String,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct JpkiSignRequest {
@@ -644,6 +672,58 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[tauri::command]
+async fn read_passport(request: PassportReadRequest) -> Result<PassportData, SignerError> {
+    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mut controller = PassportController::new(reader);
+
+    controller.perform_bac(&request.mrz).await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    
+    let dg1 = controller.read_dg1().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let dg2 = controller.read_dg2().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+
+    Ok(PassportData {
+        dg1: URL_SAFE_NO_PAD.encode(dg1),
+        dg2: URL_SAFE_NO_PAD.encode(dg2),
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tauri::command]
+async fn read_driver_license(request: DriverLicenseRequest) -> Result<DriverLicenseData, SignerError> {
+    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mut controller = DriversLicenseController::new(reader);
+
+    controller.select_dl_ap().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    controller.verify_pin1(&request.pin1).await.map_err(SignerError::from)?;
+    controller.verify_pin2(&request.pin2).await.map_err(SignerError::from)?;
+
+    let info = controller.read_common_data().await.map_err(SignerError::from)?;
+
+    Ok(DriverLicenseData {
+        name: info.name,
+        name_kana: info.name_kana,
+        address: info.address,
+        birth_date: info.birth_date,
+        license_number: info.license_number,
+        issue_date: info.issue_date,
+        expire_date: info.expire_date,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tauri::command]
+async fn read_residence_card() -> Result<serde_json::Value, SignerError> {
+    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mut controller = ResidenceCardController::new(reader);
+
+    controller.select_df2().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let info = controller.read_df2_info().await.map_err(SignerError::from)?;
+
+    Ok(serde_json::to_value(&info).unwrap())
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BbsKeyPair {
     pub secret_key: String, // Base64
@@ -782,6 +862,9 @@ pub fn run() {
             reject,
             jpki_sign,
             read_my_number_card,
+            read_passport,
+            read_driver_license,
+            read_residence_card,
             bbs_generate_key,
             perform_bbs_proof
         ])
