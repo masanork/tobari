@@ -6,6 +6,8 @@ import yaml from 'js-yaml';
 async function main() {
     const isLockedBuild = process.argv.includes('--locked');
     const usePqc = process.argv.includes('--pqc');
+    const useDevicePqc = process.argv.includes('--device-pqc');
+    const usePqcEncrypt = process.argv.includes('--pqc-encrypt');
     const pqcPrivateKeyPath = readArgValue('--pqc-private-key');
     const pqcPublicKeyPath = readArgValue('--pqc-public-key');
     const suffix = isLockedBuild ? '.locked' : '';
@@ -23,8 +25,12 @@ async function main() {
     const pqcKeyPair = usePqc
         ? await loadOrCreateIssuerPqcKeyPair(pqcPrivateKeyPath, pqcPublicKeyPath)
         : null;
+    
+    const devicePqcKeyPair = useDevicePqc
+        ? await loadOrCreateDevicePqcKeyPair()
+        : null;
 
-    const encrypt = process.argv.includes('--encrypt') || isLockedBuild;
+    const encrypt = process.argv.includes('--encrypt') || isLockedBuild || usePqcEncrypt;
     let encryptionPublicKey: Uint8Array | undefined;
     let embeddedFont: Uint8Array | undefined;
 
@@ -66,7 +72,9 @@ async function main() {
                 kid: "iss-local-mldsa65"
             }
             : undefined,
+        devicePqcPublicKey: devicePqcKeyPair?.publicKey,
         encryptionPublicKey,
+        pqcEncrypt: usePqcEncrypt,
         embeddedFont
     });
 
@@ -137,6 +145,36 @@ function readArgValue(flag: string): string | undefined {
     const index = process.argv.indexOf(flag);
     if (index === -1) return undefined;
     return process.argv[index + 1];
+}
+
+async function loadOrCreateDevicePqcKeyPair(): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
+    const privKeyPath = path.resolve(__dirname, 'device-pqc-private-key.json');
+    const pubKeyPath = path.resolve(__dirname, 'device-pqc-public-key.json');
+
+    if (fs.existsSync(privKeyPath)) {
+        const stored = JSON.parse(fs.readFileSync(privKeyPath, 'utf-8'));
+        const privateKey = Buffer.from(stored.privateKey, 'base64url');
+        let publicKey: Uint8Array;
+        if (fs.existsSync(pubKeyPath)) {
+            const pubStored = JSON.parse(fs.readFileSync(pubKeyPath, 'utf-8'));
+            publicKey = Buffer.from(pubStored.publicKey, 'base64url');
+        } else {
+            publicKey = new Uint8Array(0);
+        }
+        return { privateKey: new Uint8Array(privateKey), publicKey: new Uint8Array(publicKey) };
+    }
+
+    const { generateMlDsa65KeyPair } = await import('../../packages/crypto/src/pqc');
+    const keys = await generateMlDsa65KeyPair();
+    fs.writeFileSync(privKeyPath, JSON.stringify({
+        alg: "ML-DSA-65",
+        privateKey: Buffer.from(keys.privateKey).toString('base64url')
+    }, null, 2));
+    fs.writeFileSync(pubKeyPath, JSON.stringify({
+        alg: "ML-DSA-65",
+        publicKey: Buffer.from(keys.publicKey).toString('base64url')
+    }, null, 2));
+    return keys;
 }
 
 async function loadOrCreateIssuerPqcKeyPair(

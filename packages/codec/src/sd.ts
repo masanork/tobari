@@ -25,6 +25,7 @@ export interface MSO {
     };
     deviceKeyInfo: {
         deviceKey: any; // Device public key for holder binding
+        deviceKeyPqc?: any; // PQC Device public key (extension)
     };
     docType: string;
     validityInfo: {
@@ -57,7 +58,8 @@ export async function transformToMdocData(
     data: any,
     fields: any[],
     namespace: string = 'io.github.masanork.tobari.v1',
-    devicePublicKey?: any // CryptoKey (Public)
+    devicePublicKey?: any, // CryptoKey (Public)
+    devicePqcPublicKey?: Uint8Array // ML-DSA-65 Public Key (Raw)
 ): Promise<{ mso: MSO, issuerSignedItems: IssuerSignedItemBytes[] }> {
     const valueDigests: { [id: number]: Uint8Array } = {};
     const issuerSignedItems: IssuerSignedItemBytes[] = [];
@@ -96,6 +98,20 @@ export async function transformToMdocData(
             [-3, Uint8Array.from(atob(jwk.y!.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))]
         ]);
     }
+    
+    // Prepare PQC Key Map
+    let devicePqcKeyMap;
+    if (devicePqcPublicKey) {
+        // Experimental COSE_Key for ML-DSA-65
+        // kty: OKP (Octet Key Pair) -> 1 (using generic for now or private)
+        // alg: ML-DSA-65 -> -49 (same as issuer)
+        // x: public key bytes -> -2
+        devicePqcKeyMap = new Map<number, any>([
+            [1, 1], // kty: OKP (simulated)
+            [3, -49], // alg: ML-DSA-65
+            [-2, devicePqcPublicKey]
+        ]);
+    }
 
     const now = new Date();
     const mso: MSO = {
@@ -113,6 +129,10 @@ export async function transformToMdocData(
             validUntil: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 365) // 1 year
         }
     };
+    
+    if (devicePqcKeyMap) {
+        mso.deviceKeyInfo.deviceKeyPqc = devicePqcKeyMap;
+    }
 
     return { mso, issuerSignedItems };
 }
