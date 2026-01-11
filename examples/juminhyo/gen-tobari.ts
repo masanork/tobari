@@ -54,8 +54,14 @@ async function main() {
         if (isLockedBuild && fs.existsSync(recipientKeyPath)) {
             console.log(`🔒 Using REAL Recipient Public Key from ${recipientKeyPath}`);
             const keyData = JSON.parse(fs.readFileSync(recipientKeyPath, 'utf-8'));
-            // Expecting raw base64 encoded public key from HPKE
-            encryptionPublicKey = Uint8Array.from(atob(keyData.pubkey), c => c.charCodeAt(0));
+            
+            const x = Buffer.from(keyData.x, 'base64url');
+            const y = Buffer.from(keyData.y, 'base64url');
+            const raw = new Uint8Array(65);
+            raw[0] = 0x04;
+            raw.set(x, 1);
+            raw.set(y, 33);
+            encryptionPublicKey = raw;
         } else {
             console.log("🔓 Using DEMO Shared Key for encryption...");
             const { deriveHPKEKeyPair } = await import("../../packages/crypto/src/hpke");

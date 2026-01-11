@@ -14,7 +14,9 @@ import {
     handlePreviewPresentation,
     handleAnalyzeServiceRequest,
     handleGeneratePassportZkpInput,
-    handleListAvailableDocuments
+    handleListAvailableDocuments,
+    handleRegisterDevice,
+    handleIssueLocalCredential
 } from "./tools/tobari.js";
 import { handleDemoListExamples } from "./tools/demo.js";
 import {
@@ -42,7 +44,28 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-        tools: [
+            {
+                name: "issue_local_credential",
+                description: "Creates a hardware-bound, encrypted digital identity document by reading info from a My Number Card. This 'Master mdoc' can be used for future applications without the physical card.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        pin: { type: "string", description: "4-digit PIN for My Number Card" },
+                        outputPath: { type: "string", description: "Path where to save the generated document (e.g. ./my-identity.cose)" }
+                    },
+                    required: ["pin", "outputPath"]
+                }
+            },
+            {
+                name: "register_device",
+                description: "Registers the current hardware device as a Tobari holder by exporting its Secure Enclave public keys (Signing & Encryption).",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        rootPath: { type: "string", description: "Optional path where to save the exported public keys (e.g. examples/juminhyo)." }
+                    }
+                }
+            },
             {
                 name: "read_tobari_file",
                 description: "Reads a Tobari file (.cose or .html), extracts the embedded data, and optionally verifies the signature.",
@@ -407,6 +430,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
     switch (request.params.name) {
+        case "issue_local_credential":
+            return handleIssueLocalCredential(request.params.arguments);
+        case "register_device":
+            return handleRegisterDevice(request.params.arguments);
         case "read_tobari_file":
             return handleReadTobariFile(request.params.arguments);
         case "create_presentation":

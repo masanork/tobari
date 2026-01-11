@@ -12,6 +12,14 @@ struct SignResponse: Codable {
 }
 
 class CLIHandler {
+    private let isDebug = ProcessInfo.processInfo.environment["TOBARI_DEBUG"] == "1"
+
+    private func debugLog(_ message: String) {
+        if isDebug {
+            fputs("Debug: \(message)\n", stderr)
+        }
+    }
+
     // Utility for Base64URL input
     private func fromBase64URL(_ string: String) -> Data? {
         var base64 = string
@@ -27,22 +35,94 @@ class CLIHandler {
         let args = ProcessInfo.processInfo.arguments
         
         if args.contains("--scan-card") {
-            fputs("Scanning for Smart Card...\n", stderr)
+            debugLog("Scanning for Smart Card...")
             let manager = SmartCardManager()
             let result = await manager.checkCard()
             print(result)
             exit(0)
         }
 
+        if args.contains("--get-public-key") {
+            do {
+                let signer = SecureEnclaveSigner()
+                let jwk = try signer.getPublicKey()
+                print("{\"publicKey\": \(jwk)}")
+                exit(0)
+            } catch {
+                fputs("Error: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
+        
+        if args.contains("--get-encryption-public-key") {
+            do {
+                let encrypter = SecureEnclaveEncryption()
+                let jwk = try encrypter.getPublicKey()
+                print("{\"publicKey\": \(jwk)}")
+                exit(0)
+            } catch {
+                fputs("Error: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
+        
+        if args.contains("--decrypt") {
+            guard let inputIndex = args.firstIndex(of: "--input"), inputIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --decrypt --input <JSON>\n", stderr)
+                exit(1)
+            }
+            let jsonStr = args[inputIndex + 1]
+            
+            do {
+                let encrypter = SecureEnclaveEncryption()
+                let decryptedData = try encrypter.decrypt(jsonString: jsonStr)
+                
+                if let text = String(data: decryptedData, encoding: .utf8) {
+                    let safeText = text.replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "\\n")
+                    print("{\"plaintext\": \"\(safeText)\"}")
+                } else {
+                    let base64 = decryptedData.base64EncodedString()
+                    print("{\"plaintextBase64\": \"\(base64)\"}")
+                }
+                exit(0)
+            } catch {
+                fputs("Error: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
+
+        if args.contains("--read-certificate") {
+            guard let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --read-certificate --pin <PIN>\n", stderr)
+                exit(1)
+            }
+            let pin = args[pinIndex + 1]
+            
+            debugLog("Reading User Authentication Certificate from JPKI Card...")
+            let manager = SmartCardManager()
+            let jpki = JPKIController(manager: manager)
+            
+            do {
+                let certData = try await jpki.readCertificate(pin: pin)
+                let certBase64 = certData.base64EncodedString()
+                let jwk = jpki.extractPublicKeyJWK(from: certData) ?? ""
+                
+                print("{\"certificate\": \"\(certBase64)\", \"publicKeyJWK\": \(jwk.isEmpty ? "null" : jwk)}")
+                exit(0)
+            } catch {
+                fputs("Error: \(error.localizedDescription)\n", stderr)
+                exit(1)
+            }
+        }
+
         if args.contains("--read-attributes") {
-            // Find PIN
             guard let pinIndex = args.firstIndex(of: "--pin"), pinIndex + 1 < args.count else {
                 fputs("Usage: tobari-signer-macos --read-attributes --pin <PIN>\n", stderr)
                 exit(1)
             }
             let pin = args[pinIndex + 1]
             
-            fputs("Reading attributes from JPKI Card...\n", stderr)
+            debugLog("Reading attributes from JPKI Card...")
             let manager = SmartCardManager()
             let jpki = JPKIController(manager: manager)
             
@@ -66,7 +146,7 @@ class CLIHandler {
             }
             let pin = args[pinIndex + 1]
             
-            fputs("Reading My Number from JPKI Card...\n", stderr)
+            debugLog("Reading My Number from JPKI Card...")
             let manager = SmartCardManager()
             let jpki = JPKIController(manager: manager)
             
@@ -87,7 +167,7 @@ class CLIHandler {
             }
             let pin = args[pinIndex + 1]
             
-            fputs("Reading Face Photo from JPKI Card...\n", stderr)
+            debugLog("Reading Face Photo from JPKI Card...")
             let manager = SmartCardManager()
             let jpki = JPKIController(manager: manager)
             
@@ -126,19 +206,21 @@ class CLIHandler {
                 exit(1)
             }
 
-            fputs("Signing with JPKI Card...\n", stderr)
+            debugLog("Signing with JPKI Card...")
             let manager = SmartCardManager()
             let jpki = JPKIController(manager: manager)
 
             do {
                 let signature = try await jpki.computeAuthSignature(pin: pin, data: challengeData)
-                // Return signature and dummy public key
+                let certData = try await jpki.readCertificate(pin: pin)
+                let jwk = jpki.extractPublicKeyJWK(from: certData) ?? ""
+                
                 let response = SignResponse(
                     signature: signature.base64EncodedString()
                         .replacingOccurrences(of: "+", with: "-")
                         .replacingOccurrences(of: "/", with: "_")
                         .replacingOccurrences(of: "=", with: ""),
-                    publicKey: "" // JPKI Cert extraction not yet implemented in CLI
+                    publicKey: jwk
                 )
                 let responseData = try JSONEncoder().encode(response)
                 print(String(data: responseData, encoding: .utf8)!)
@@ -150,7 +232,7 @@ class CLIHandler {
         }
 
         guard let reqIndex = args.firstIndex(of: "--request"), reqIndex + 1 < args.count else {
-            fputs("Usage: tobari-signer-macos --request '<json>' | --scan-card | --read-attributes --pin <PIN> | --read-mynumber --pin <PIN>\n", stderr)
+            fputs("Usage: tobari-signer-macos --request '<json>' | --scan-card | --read-attributes --pin <PIN> | --read-mynumber --pin <PIN> | --get-public-key\n", stderr)
             exit(1)
         }
         
@@ -181,9 +263,6 @@ class CLIHandler {
             
         } catch {
             fputs("Error: \(error.localizedDescription)\n", stderr)
-            if let nsError = error as NSError? {
-                 fputs("Debug: Error Domain: \(nsError.domain), Code: \(nsError.code)\n", stderr)
-            }
             exit(1)
         }
     }

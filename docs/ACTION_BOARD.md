@@ -6,13 +6,17 @@
 ## 🚀 Now (Current Sprint)
 
 ### macOS & Signer Integration
-- [x] **macOS Native Integration**: `mcp-server` now automatically detects macOS and invokes `signer-macos` (CTK-based) for JPKI operations, bypassing PCSC issues.
-- [ ] **MCP ↔ Tobari Signer (Tauri/FIDO) Coupling**
-  - [ ] Verify external signing flow in `packages/mcp-server/src/tools/tobari.ts` with real devices.
-  - [ ] Define CLI arguments and JSON output spec for `packages/signer`.
-  - [ ] Document build/install steps for macOS/Windows and `TOBARI_SIGNER_PATH` configuration.
+- [x] **macOS Native Integration**: `mcp-server` automatically detects macOS and invokes `signer-macos` (CTK/Secure Enclave) for JPKI and Device Auth.
+- [x] **Device-bound Decryption (ECIES)**: Implemented full-stack decryption flow using Secure Enclave Key Agreement via `mcp-server` and `signer-macos`.
+- [x] **Hardware-backed Registration**: Added `register_device` tool to export Secure Enclave public keys for issuance.
+- [x] **Self-Issuance Workflow**: Implemented `issue_local_credential` to create hardware-bound "Master mdocs" from JPKI data, enabling card-less future interactions.
+- [ ] **JPKI Certificate JWK Conversion**: Implement extraction of public key from JPKI certificates for easier verification in `mcp-server`. (Partially implemented in CLI).
+  - [ ] **Investigate Protocol Mismatch**: `tobari-signer` (Tauri) returns WebAuthn assertion (AuthData + ClientDataHash signature), but mdoc expects direct signature over `DeviceAuthentication`.
+  - [ ] **Implement Solution**: Either support "Raw Key" mode in Tauri (if possible) OR extend Tobari VP format to carry WebAuthn context (AuthData/ClientDataJSON) for verification.
+  - [x] Document build/install steps for macOS/Windows and `TOBARI_SIGNER_PATH` configuration.
 
 ### Performance & PQC
+- [x] **PQC Status Investigation**: Confirmed macOS 15 (Sequoia) supports ML-KEM via CryptoKit, but ML-DSA requires external implementation for now.
 - [ ] **WASM/Performance Optimization Plan**
   - [ ] Measure benchmarks for RSA verification (Passport/JPKI) and ZKP generation.
   - [ ] Investigate multi-threading and hardware acceleration support in Wasm.

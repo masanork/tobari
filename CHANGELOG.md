@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.12] - 2026-01-11
+
+### Features
+- **Signer (macOS)**:
+  - **Secure Enclave Encryption**: Implemented **ECIES (P-256 Key Agreement)** support for hardware-backed decryption.
+  - **JPKI Certificate Retrieval**: Added ability to read User Authentication Certificates from My Number Cards and extract RSA public keys as JWK.
+  - **CLI Stability**: Added `TOBARI_DEBUG` environment variable to control debug output, ensuring stable JSON parsing for parent processes.
+- **MCP Server**:
+  - **Hardware Registration**: Added `register_device` tool to export Secure Enclave signing and encryption public keys.
+  - **Self-Issuance**: Implemented `issue_local_credential` tool to create encrypted, hardware-bound "Master mdocs" directly from My Number Card data.
+  - **Automatic Decryption**: `read_tobari_file` now automatically detects device-bound ECIES encryption and invokes `signer-macos` for seamless hardware-backed decryption.
+  - **Platform Optimization**: Refined `create_presentation` to prioritize `signer-macos` (direct ECDSA) over WebAuthn on macOS for standard mdoc compatibility.
+- **Tests**:
+  - **Integration Tests**: Added `signer_integration.test.ts` to verify the full ECIES decryption flow between Node.js (WebCrypto) and macOS (CryptoKit).
+
 ## [0.3.11] - 2026-01-11
 
 ### Features

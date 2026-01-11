@@ -117,6 +117,45 @@ async function decryptIfNeeded(input: Uint8Array, options: TobariDecryptOptions 
         return input;
     }
 
+    // New: Support for Device-bound Decryption (ECIES via signer-macos)
+    if (wrapper.ephemeralPublicKey && process.platform === 'darwin') {
+        const { spawn } = await import("child_process");
+        const signerPath = DEFAULT_SIGNER_MACOS_PATH;
+        try {
+            await fs.access(signerPath);
+            const decryptInput = JSON.stringify({
+                ephemeralPublicKey: wrapper.ephemeralPublicKey,
+                ciphertext: wrapper.data,
+                iv: wrapper.iv,
+                tag: wrapper.tag
+            });
+
+            const signerProcess = spawn(signerPath, ["--decrypt", "--input", decryptInput], {
+                env: { ...process.env, TOBARI_SIGNER_USE_KEYCHAIN: process.env.TOBARI_SIGNER_USE_KEYCHAIN || "1" }
+            });
+            const outputPromise = new Promise<string>((resolve, reject) => {
+                let stdout = "";
+                let stderr = "";
+                signerProcess.stdout.on("data", (data) => stdout += data);
+                signerProcess.stderr.on("data", (data) => stderr += data);
+                signerProcess.on("close", (code) => {
+                    if (code === 0) resolve(stdout);
+                    else reject(new Error(`Signer decryption failed: ${stderr}`));
+                });
+            });
+
+            const outputStr = await outputPromise;
+            const output = JSON.parse(outputStr);
+            if (output.plaintext) {
+                return new TextEncoder().encode(output.plaintext);
+            } else if (output.plaintextBase64) {
+                return new Uint8Array(Buffer.from(output.plaintextBase64, 'base64'));
+            }
+        } catch (e: any) {
+            console.warn(`Device-bound decryption failed or signer not found: ${e.message}. Falling back to standard HPKE.`);
+        }
+    }
+
     const ciphertext = new Uint8Array(Buffer.from(wrapper.data, "base64"));
     const infoText = options.hpkeInfo ?? process.env.TOBARI_HPKE_INFO ?? DEMO_HPKE_INFO;
     const secretText = options.hpkeSecret ?? process.env.TOBARI_HPKE_SECRET ?? DEMO_HPKE_SECRET;
