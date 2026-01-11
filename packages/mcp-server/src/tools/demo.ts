@@ -1,5 +1,6 @@
 import * as fs from "fs/promises";
 import * as path from "path";
+import * as os from "os";
 import { spawn } from "child_process";
 import http from 'http';
 import { decode } from "cbor-x";
@@ -119,7 +120,8 @@ export async function handleDemoGenerateExample(toolArgs: any) {
 
         console.error(`Executing: bun ${cmdArgs.join(" ")}`);
 
-        const proc = spawn("bun", cmdArgs, { cwd: PROJECT_ROOT });
+        const bunCommand = process.env.BUN_PATH || path.join(os.homedir(), ".bun/bin/bun");
+        const proc = spawn(bunCommand, cmdArgs, { cwd: PROJECT_ROOT });
         
         const output = await new Promise<string>((resolve, reject) => {
             let stdout = "";
@@ -130,7 +132,13 @@ export async function handleDemoGenerateExample(toolArgs: any) {
                 if (code === 0) resolve(stdout);
                 else reject(new Error(`Script exited with code ${code}:\n${stderr}\n${stdout}`));
             });
-            proc.on("error", reject);
+            proc.on("error", (err: NodeJS.ErrnoException) => {
+                if (err.code === "ENOENT") {
+                    reject(new Error("bun not found. Install bun or set BUN_PATH to the bun binary path."));
+                } else {
+                    reject(err);
+                }
+            });
         });
 
         // Parse output to find generated file path (convention: "✅ Generated: /path/to/file")
@@ -217,10 +225,14 @@ export async function handleDemoStartServer(toolArgs: any) {
 
                         // Process and Verify if VP
                         let verificationResult = null;
-                        if (data.vp_base64) {
+                        let vpSummary: any = null;
+                        let vpDecoded: any = null;
+                        if (typeof data.vp_base64 === "string") {
                             try {
                                 const vpBytes = new Uint8Array(Buffer.from(data.vp_base64, 'base64'));
                                 const presentation = decode(vpBytes);
+                                vpSummary = summarizeVp(presentation);
+                                vpDecoded = normalizeForJson(presentation);
                                 const results = await verifyPresentation(presentation, trustedIssuers);
                                 const isValid = results.every(r => r.issuerValid && r.deviceValid);
 
@@ -240,12 +252,17 @@ export async function handleDemoStartServer(toolArgs: any) {
                                 };
                             } catch (e: any) {
                                 verificationResult = { valid: false, error: e.message };
+                                if (!vpSummary) {
+                                    vpSummary = { error: `Failed to decode VP: ${e.message}` };
+                                }
                             }
                         }
 
                         lastSubmission = {
                             ...data,
-                            _verification: verificationResult
+                            _verification: verificationResult,
+                            _vp_summary: vpSummary,
+                            _vp_decoded: vpDecoded
                         };
 
                         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -298,10 +315,17 @@ function renderPage(submission: any) {
              <div class="loader"></div>
              <h2>電子申請・届出 受付システム</h2>
              <p>申請データの送信を待機しています...</p>
+             <div class="timeline waiting">
+               <div class="step">証明書を取得中</div>
+               <div class="step">VPを生成中</div>
+               <div class="step">提出先へ送信中</div>
+             </div>
              <p class="sub">Listening on http://localhost:${PORT}/submit</p>
            </div>`;
     } else {
         const verif = submission._verification;
+        const vpSummary = submission._vp_summary;
+        const vpDecoded = submission._vp_decoded;
         let badge = '';
         if (verif) {
             if (verif.valid) {
@@ -316,6 +340,8 @@ function renderPage(submission: any) {
         // Clean up display data
         const displayData = { ...submission };
         delete displayData._verification;
+        delete displayData._vp_summary;
+        delete displayData._vp_decoded;
         delete displayData.vp_base64; // Show count or something instead?
 
         content = `<div class="success-card">
@@ -326,6 +352,12 @@ function renderPage(submission: any) {
              <h2>申請を受け付けました</h2>
              ${badge}
              <p>以下の内容で電子申請が処理されました。</p>
+
+             <div class="timeline complete">
+               <div class="step">証明書を取得</div>
+               <div class="step">VPを生成</div>
+               <div class="step">提出先で検証</div>
+             </div>
              
              ${verif && verif.summary ? `
              <div class="doc-list">
@@ -339,10 +371,32 @@ function renderPage(submission: any) {
              </div>
              ` : ''}
 
+             ${vpSummary ? `
+             <div class="doc-list">
+                <h3>VP Summary</h3>
+                ${vpSummary.error ? `<p class="error-text">${vpSummary.error}</p>` : `
+                <ul>
+                    ${vpSummary.documents.map((d: any) => {
+                        const count = typeof d.fieldCount === "number" ? ` (${d.fieldCount} fields)` : "";
+                        return `<li>${d.docType || 'Unknown'}${count}</li>`;
+                    }).join('')}
+                </ul>
+                <p class="sub">Documents: ${vpSummary.documentCount ?? 0}</p>
+                `}
+             </div>
+             ` : ''}
+
              <div class="details">
                 <h3>JSON Payload</h3>
                 <pre>${JSON.stringify(displayData, null, 2)}</pre>
              </div>
+
+             ${vpDecoded ? `
+             <div class="details">
+                <h3>VP JSON (decoded)</h3>
+                <pre>${JSON.stringify(vpDecoded, null, 2)}</pre>
+             </div>
+             ` : ''}
            </div>`;
     }
 
@@ -381,6 +435,7 @@ function renderPage(submission: any) {
         .doc-list h3 { margin-top: 0; font-size: 1rem; color: #333; border-left: 4px solid #0066cc; padding-left: 10px; }
         .doc-list ul { margin: 0; padding-left: 1.5rem; margin-top: 10px; }
         .doc-list li { margin-bottom: 5px; }
+        .error-text { color: #dc3545; }
 
         .details { background: #f8f9fa; padding: 1.5rem; border: 1px solid #dee2e6; margin-top: 1.5rem; }
         .details h3 { margin-top: 0; font-size: 0.9rem; text-transform: uppercase; color: #666; }
@@ -395,6 +450,15 @@ function renderPage(submission: any) {
             margin-bottom: 1rem;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .timeline { margin-top: 1.5rem; display: grid; gap: 0.75rem; }
+        .timeline .step { padding: 0.75rem 1rem; border-radius: 6px; background: #eef1f4; color: #556; position: relative; opacity: 0.6; }
+        .timeline.complete .step { opacity: 1; }
+        .timeline.complete .step.done { background: #e6f6ea; color: #1e7e34; }
+        .timeline.waiting .step { animation: pulse 1.6s ease-in-out infinite; }
+        .timeline.waiting .step:nth-child(2) { animation-delay: 0.2s; }
+        .timeline.waiting .step:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.9; } }
     </style>
     <script>
         if (!${!!submission}) {
@@ -405,6 +469,11 @@ function renderPage(submission: any) {
                     if (data.hasSubmission) location.reload();
                 } catch(e) {}
             }, 1000);
+        } else {
+            const steps = Array.from(document.querySelectorAll('.timeline.complete .step'));
+            steps.forEach((step, idx) => {
+                setTimeout(() => step.classList.add('done'), 400 + idx * 500);
+            });
         }
     </script>
 </head>
@@ -418,4 +487,60 @@ function renderPage(submission: any) {
     </div>
 </body>
 </html>`;
+}
+
+function summarizeVp(vp: any) {
+    if (!vp || !Array.isArray(vp.documents)) {
+        return { error: "VP does not contain documents." };
+    }
+    return {
+        documentCount: vp.documents.length,
+        documents: vp.documents.map((doc: any) => ({
+            docType: doc?.docType,
+            fieldCount: countNamespaceItems(doc?.issuerSigned?.nameSpaces)
+        }))
+    };
+}
+
+function countNamespaceItems(ns: any): number | null {
+    if (!ns) return null;
+    let count = 0;
+    if (ns instanceof Map) {
+        for (const value of ns.values()) {
+            if (Array.isArray(value)) count += value.length;
+        }
+        return count;
+    }
+    if (typeof ns === "object") {
+        for (const key of Object.keys(ns)) {
+            const value = (ns as any)[key];
+            if (Array.isArray(value)) count += value.length;
+        }
+        return count;
+    }
+    return null;
+}
+
+function normalizeForJson(value: any): any {
+    if (value instanceof Uint8Array) {
+        return Buffer.from(value).toString("base64");
+    }
+    if (value instanceof Map) {
+        const obj: Record<string, any> = {};
+        for (const [k, v] of value.entries()) {
+            obj[String(k)] = normalizeForJson(v);
+        }
+        return obj;
+    }
+    if (Array.isArray(value)) {
+        return value.map((v) => normalizeForJson(v));
+    }
+    if (value && typeof value === "object") {
+        const obj: Record<string, any> = {};
+        for (const [k, v] of Object.entries(value)) {
+            obj[k] = normalizeForJson(v);
+        }
+        return obj;
+    }
+    return value;
 }

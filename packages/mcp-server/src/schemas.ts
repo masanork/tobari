@@ -23,6 +23,8 @@ export const CreatePresentationSchema = z.object({
     devicePrivateKeyPath: z.string().optional().describe("Path to the holder's device private key (JWK)."),
     devicePrivateKeyJson: z.union([z.string(), z.record(z.any())]).optional().describe("Device private key as a JSON string or object. Use this if the key file is not accessible by the server."),
     ephemeralKey: z.boolean().optional().describe("If true, generates a temporary key for testing. Ignored if devicePrivateKeyPath or devicePrivateKeyJson is provided."),
+    signerPath: z.string().optional().describe("Path to the tobari-signer binary. Overrides TOBARI_SIGNER_PATH if set."),
+    fallbackToEphemeral: z.boolean().optional().describe("If true, falls back to an ephemeral key when signer is unavailable."),
     verifierNonce: z.string().optional().describe("Optional nonce for replay protection"),
     deviceAlg: z.number().optional().describe("COSE algorithm for DeviceAuth (default: -35 / ES384, use -7 for ES256)"),
     decrypt: DecryptOptionsSchema.describe("Optional decryption settings applied to all input documents."),
@@ -56,6 +58,13 @@ export const AssemblePresentationSchema = z.object({
 export const VerifyPresentationSchema = z.object({
     vpBase64: z.string().describe("The base64-encoded DeviceResponse (VP) to verify"),
     issuerPublicKeys: z.record(z.string()).describe("Map of docType to absolute path of issuer's public key (JWK)"),
+    issuerPqcPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's PQC public key (base64url JSON)"),
+    verifierNonce: z.string().optional().describe("Expected nonce to prevent replay attacks"),
+});
+
+export const PreviewPresentationSchema = z.object({
+    vpBase64: z.string().describe("The base64-encoded DeviceResponse (VP) to preview"),
+    issuerPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's public key (JWK)"),
     issuerPqcPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's PQC public key (base64url JSON)"),
     verifierNonce: z.string().optional().describe("Expected nonce to prevent replay attacks"),
 });

@@ -11,8 +11,10 @@ import {
     handlePreparePresentation,
     handleAssemblePresentation,
     handleVerifyPresentation,
+    handlePreviewPresentation,
     handleAnalyzeServiceRequest,
-    handleGeneratePassportZkpInput
+    handleGeneratePassportZkpInput,
+    handleListAvailableDocuments
 } from "./tools/tobari.js";
 import {
     handleDemoListExamples,
@@ -96,6 +98,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         devicePrivateKeyPath: {
                             type: "string",
                             description: "Path to holder's private key (JWK). Optional if using external signer UI."
+                        },
+                        signerPath: {
+                            type: "string",
+                            description: "Path to tobari-signer binary. Overrides TOBARI_SIGNER_PATH."
+                        },
+                        fallbackToEphemeral: {
+                            type: "boolean",
+                            description: "If true, falls back to an ephemeral key when signer is unavailable."
                         },
                         verifierNonce: {
                             type: "string",
@@ -200,6 +210,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 }
             },
             {
+                name: "preview_presentation",
+                description: "Decodes a Verifiable Presentation (VP) and returns a summary plus decoded JSON. Optionally verifies signatures.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        vpBase64: { type: "string", description: "Base64-encoded DeviceResponse" },
+                        issuerPublicKeys: {
+                            type: "object",
+                            additionalProperties: { type: "string" },
+                            description: "Optional map of docType to path of issuer's public key (JWK)"
+                        },
+                        issuerPqcPublicKeys: {
+                            type: "object",
+                            additionalProperties: { type: "string" },
+                            description: "Optional map of docType to path of issuer's PQC public key (base64url JSON)"
+                        },
+                        verifierNonce: { type: "string", description: "Expected nonce to prevent replay attacks" }
+                    },
+                    required: ["vpBase64"]
+                }
+            },
+            {
                 name: "analyze_service_request",
                 description: "Analyzes an administrative service request document to identify required credentials and user inputs.",
                 inputSchema: {
@@ -217,6 +249,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         }
                     },
                     required: ["path"]
+                }
+            },
+            {
+                name: "list_available_documents",
+                description: "Lists available Tobari documents and service requests found in the project's examples or specified directory.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        rootPath: { type: "string", description: "Optional path to scan. Defaults to the Tobari examples directory." },
+                        decrypt: {
+                            type: "object",
+                            description: "Optional decryption overrides for encrypted Tobari files.",
+                            properties: {
+                                hpkeSecret: { type: "string", description: "Override HPKE secret for decryption." },
+                                hpkeInfo: { type: "string", description: "Override HPKE info for decryption." },
+                                pqcPrivateKeyPath: { type: "string", description: "Path to recipient PQC private key (base64url JSON) for hybrid decryption." }
+                            }
+                        }
+                    }
                 }
             },
             {
@@ -399,8 +450,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleAssemblePresentation(request.params.arguments);
         case "verify_presentation":
             return handleVerifyPresentation(request.params.arguments);
+        case "preview_presentation":
+            return handlePreviewPresentation(request.params.arguments);
         case "analyze_service_request":
             return handleAnalyzeServiceRequest(request.params.arguments);
+        case "list_available_documents":
+            return handleListAvailableDocuments(request.params.arguments);
         case "demo_list_examples":
             return handleDemoListExamples(request.params.arguments);
         case "demo_generate_example":

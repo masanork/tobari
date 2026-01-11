@@ -89,7 +89,7 @@ describe("MCP Server", () => {
 
         expect(resultData._meta.valid).toBe(true);
         expect(resultData.docType).toBe("io.github.masanork.tobari.ininjo.v1");
-        expect(resultData.principal.name).toBe("甲野 太郎");
+        expect(resultData.principal.name).toBe("山田太郎");
     }, 10000);
 
     it("should read and verify ininjo.cose", async () => {
@@ -176,7 +176,7 @@ describe("MCP Server", () => {
 
         expect(resultData._meta.valid).toBe(true);
         expect(resultData.docType).toBe("io.github.masanork.tobari.ininjo.v1");
-        expect(resultData.principal.name).toBe("甲野 太郎");
+        expect(resultData.principal.name).toBe("山田太郎");
     }, 10000);
 
     it("should read and verify juminhyo.cose", async () => {
