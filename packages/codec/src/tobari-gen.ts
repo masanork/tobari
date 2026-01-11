@@ -44,6 +44,8 @@ export async function generateSignedTobari(
         };
         encryptionPublicKey?: Uint8Array; // HPKE Public Key
         embeddedFont?: Uint8Array;        // Raw font binary
+        devicePqcPublicKey?: Uint8Array;  // PQC Device Key
+        pqcEncrypt?: boolean;             // Simulate PQC Encryption
     } = {}
 ): Promise<Uint8Array> {
     const schema = yaml.load(schemaYaml) as any;
@@ -87,7 +89,14 @@ export async function generateSignedTobari(
     }
 
     // 1. Transform data to mdoc format (MSO + SignedItems)
-    const { mso, issuerSignedItems } = await transformToMdocData(schema.id, data, schema.fields, namespace, devicePublicKey);
+    const { mso, issuerSignedItems } = await transformToMdocData(
+        schema.id, 
+        data, 
+        schema.fields, 
+        namespace, 
+        devicePublicKey, 
+        options.devicePqcPublicKey
+    );
 
     // Prepare Countersignature (single slot)
     let countersignSetup;
@@ -140,12 +149,30 @@ export async function generateSignedTobari(
         console.log("Applying HPKE Encryption to payload...");
         const { encryptHPKE } = await import('@tobari/crypto/hpke');
         const info = new TextEncoder().encode("tobari-storage-v1");
-        const ciphertext = await encryptHPKE(options.encryptionPublicKey, encoded, info);
+        let ciphertext = await encryptHPKE(options.encryptionPublicKey, encoded, info);
+        
+        let alg = "HPKE-P256-SHA256-AES128GCM";
+        if (options.pqcEncrypt) {
+            console.log("Simulating ML-KEM-768 Ciphertext overhead (+1088 bytes)...");
+            const dummyCt = new Uint8Array(1088); 
+            crypto.getRandomValues(dummyCt);
+            
+            // Insert dummyCt after the ephemeral key (first 65 bytes)
+            const epk = ciphertext.slice(0, 65);
+            const payload = ciphertext.slice(65);
+            const newCt = new Uint8Array(epk.length + dummyCt.length + payload.length);
+            newCt.set(epk);
+            newCt.set(dummyCt, epk.length);
+            newCt.set(payload, epk.length + dummyCt.length);
+            ciphertext = newCt;
+            
+            alg = "HPKE-P256-MLKEM768-SHA256-AES128GCM";
+        }
 
         // Wrap in a simple JSON for the demo viewer to detect encryption
         const wrapper = {
             tobari_enc: true,
-            alg: "HPKE-P256-SHA256-AES128GCM",
+            alg: alg,
             data: Buffer.from(ciphertext).toString('base64')
         };
         return new TextEncoder().encode(JSON.stringify(wrapper));
