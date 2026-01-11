@@ -146,4 +146,16 @@ export const IssueLocalCredentialSchema = z.object({
     issuerName: z.string().optional().default("My Hardware Device").describe("Label for the issuer in the document"),
 });
 
+export const GenerateBbsKeySchema = z.object({
+    // No arguments needed for now
+});
+
+export const SignWithBbsSchema = z.object({
+    publicKey: z.string().describe("BBS+ Public Key (JSON string)"),
+    signature: z.string().describe("BBS+ Signature (JSON string)"),
+    messages: z.array(z.string()).describe("All messages that were originally signed"),
+    revealedIndices: z.array(z.number()).describe("Indices of messages to reveal in the proof"),
+    nonce: z.string().describe("Challenge/nonce for replay protection (Base64URL)"),
+});
+
 

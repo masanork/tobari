@@ -56,6 +56,10 @@ struct Cli {
     /// Path to a file containing the sign request JSON
     #[arg(long, value_parser)]
     file: Option<String>,
+
+    /// Generate a BBS+ key pair and exit
+    #[arg(long)]
+    bbs_generate_key: bool,
 }
 
 struct AppState {
@@ -733,9 +737,22 @@ fn bbs_derive_proof(
     serde_json::to_string(&proof).map_err(|e| SignerError::Serialization(e.to_string()))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args = Cli::parse();
+
+    if args.bbs_generate_key {
+        match bbs_generate_key() {
+            Ok(keys) => {
+                println!("{}", serde_json::to_string(&keys).unwrap());
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("BBS Keygen failed: {:?}", e);
+                std::process::exit(1);
+            }
+        }
+    }
 
     let sign_request = if let Some(req_str) = args.request {
         serde_json::from_str::<SignRequest>(&req_str).ok()
