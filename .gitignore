@@ -36,3 +36,4 @@ packages/civ/docs/*.pdf
 # VitePress
 docs/.vitepress/dist
 docs/.vitepress/cache
+shared/certs/

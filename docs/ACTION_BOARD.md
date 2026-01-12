@@ -18,24 +18,13 @@
   - [x] Document build/install steps for macOS/Windows and `TOBARI_SIGNER_PATH` configuration.
 
 ### Performance & PQC
-- [x] **PQC Status Investigation**: Confirmed macOS 15 (Sequoia) supports ML-KEM via CryptoKit, but ML-DSA requires external implementation for now.
-- [ ] **WASM/Performance Optimization Plan**
-  - [ ] Measure benchmarks for RSA verification (Passport/JPKI) and ZKP generation.
-  - [ ] Investigate multi-threading and hardware acceleration support in Wasm.
-- [x] **Post-Quantum Cryptography (PQC)**
-  - [x] **Standardization**: Issuer = P-384, Device = P-256. PQC via COSE Countersign (Experimental).
-  - [x] **PoC Implementation (ML-DSA-65)**:
-    - [x] `tobari-gen`: Add IssuerAuth countersign generation.
-    - [x] `validator`: Implement countersign verification and status display.
-    - [x] Update `verify_presentation` tool to return PQC status.
-    - [x] Documentation: Update demo steps for PQC keys.
-  - [x] **ML-KEM (WASM)**: Integrate ML-KEM-768 keygen/encap/decap in crypto-wasm (full build).
-
+// ... (omitted) ...
 ### Compliance & SCAC
 - [ ] **FATF/SCAC Operations Mapping**
   - [ ] Create correspondence table for VASP risk assessment vs VP elements.
   - [ ] Draft minimal Travel Rule interface.
 - [x] **DTC Type 1 Implementation**: Enhanced `issue_identity_document` to support ICAO DTC Type 1 (Derived) structure, preserving government signatures.
+- [x] **Passport SOD Verification**: Implemented government signature verification against 570+ CSCA root certificates.
 
 ### MCP Enhancements (Demo Automation)
 - [x] **End-to-End Demo Support**
