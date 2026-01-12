@@ -27,15 +27,17 @@ import { generateSignedTobari } from "@tobari/codec/tobari-gen";
 export async function handleIssueIdentityDocument(toolArgs: any) {
     try {
         const args = IssueIdentityDocumentSchema.parse(toolArgs);
+        const signerPath = getNativeSignerPath();
 
         // 1. Get Device Public Keys for Holder Binding and Encryption
         let deviceKeys: any = null;
-        if (process.platform === 'darwin') {
+        if (process.platform === 'darwin' && signerPath) {
             const registrationResult = await handleRegisterDevice({});
             deviceKeys = JSON.parse(registrationResult.content[0].text);
         }
 
-        // 2. Generate Mock Issuer Key for local sign
+        // 2. Generate Mock Issuer Key for local sign (MSO signature)
+        // If we use externalSigner, this privateKey will be unused but needed for the function signature.
         const issuerKeyPair = await crypto.subtle.generateKey(
             { name: "ECDSA", namedCurve: "P-384" },
             true,
@@ -51,7 +53,19 @@ fields:
 ${fields}
 `;
 
-        // 4. Handle Encryption if requested
+        // 4. Define External Signer for hardware-bound MSO signature
+        let externalSigner: ((msoHash: Uint8Array) => Promise<Uint8Array>) | undefined;
+        
+        if (process.platform === 'darwin' && signerPath === DEFAULT_SIGNER_MACOS_PATH) {
+            externalSigner = async (msoHash: Uint8Array) => {
+                const hashBase64Url = Buffer.from(msoHash).toString('base64url');
+                const output = await runCivCommand(signerPath, ["--sign-mso", "--hash", hashBase64Url]);
+                const result = JSON.parse(output);
+                return new Uint8Array(Buffer.from(result.signature, 'base64url'));
+            };
+        }
+
+        // 5. Handle Encryption if requested
         let encryptionPublicKey: Uint8Array | undefined;
         if (args.encrypt && deviceKeys) {
             const x = Buffer.from(deviceKeys.encryptionPublicKey.x, 'base64url');
@@ -62,9 +76,10 @@ ${fields}
             encryptionPublicKey.set(y, 33);
         }
 
-        // 5. Generate signed document
+        // 6. Generate signed document
         const coseBinary = await generateSignedTobari(docSchemaYaml, args.data, issuerKeyPair.privateKey, {
-            kid: "self-issued-local-key",
+            kid: externalSigner ? "hardware-device-key" : "self-issued-local-key",
+            alg: externalSigner ? -7 : -35, // P-256 for SE, P-384 for mock
             devicePublicKey: deviceKeys ? await crypto.subtle.importKey(
                 "jwk",
                 deviceKeys.signingPublicKey,
@@ -72,10 +87,11 @@ ${fields}
                 true,
                 ["verify"]
             ) : undefined,
-            encryptionPublicKey: encryptionPublicKey
+            encryptionPublicKey: encryptionPublicKey,
+            externalSigner: externalSigner
         });
 
-        // 6. Save
+        // 7. Save
         await fs.writeFile(args.outputPath, coseBinary);
 
         return {
@@ -86,7 +102,8 @@ ${fields}
                     path: path.resolve(args.outputPath),
                     docType: args.docType,
                     encrypted: !!encryptionPublicKey,
-                    message: `Local identity document issued and saved to ${args.outputPath}`
+                    hardwareSigned: !!externalSigner,
+                    message: `Local identity document issued and saved to ${args.outputPath}. ${externalSigner ? "Authenticated with hardware signature." : ""}`
                 }, null, 2)
             }],
         };
@@ -207,16 +224,22 @@ fields:
         };
 
         // 5. Generate mdoc
-        // Using device signing key for holder binding, and device encryption key for protection
-        const x = Buffer.from(deviceKeys.encryptionPublicKey.x, 'base64url');
-        const y = Buffer.from(deviceKeys.encryptionPublicKey.y, 'base64url');
-        const rawEncryptionPub = new Uint8Array(65);
-        rawEncryptionPub[0] = 0x04;
-        rawEncryptionPub.set(x, 1);
-        rawEncryptionPub.set(y, 33);
+        const isMac = process.platform === 'darwin';
+        const signerPath = getNativeSignerPath();
+        let externalSigner: ((msoHash: Uint8Array) => Promise<Uint8Array>) | undefined;
+        
+        if (isMac && signerPath === DEFAULT_SIGNER_MACOS_PATH) {
+            externalSigner = async (msoHash: Uint8Array) => {
+                const hashBase64Url = Buffer.from(msoHash).toString('base64url');
+                const output = await runCivCommand(signerPath, ["--sign-mso", "--hash", hashBase64Url]);
+                const result = JSON.parse(output);
+                return new Uint8Array(Buffer.from(result.signature, 'base64url'));
+            };
+        }
 
         const coseBinary = await generateSignedTobari(docSchemaYaml, dataToSign, issuerKeyPair.privateKey, {
-            kid: "self-issued-local-key",
+            kid: externalSigner ? "hardware-device-key" : "self-issued-local-key",
+            alg: externalSigner ? -7 : -35,
             devicePublicKey: await crypto.subtle.importKey(
                 "jwk",
                 deviceKeys.signingPublicKey,
@@ -224,7 +247,8 @@ fields:
                 true,
                 ["verify"]
             ),
-            encryptionPublicKey: rawEncryptionPub
+            encryptionPublicKey: rawEncryptionPub,
+            externalSigner: externalSigner
         });
 
         // 6. Save and Return

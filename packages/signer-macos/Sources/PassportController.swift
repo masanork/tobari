@@ -2,6 +2,19 @@ import Foundation
 import CryptoKit
 import CommonCrypto
 
+struct PassportInfo: Codable {
+    var name: String = ""
+    var passportNumber: String = ""
+    var nationality: String = ""
+    var birthDate: String = ""
+    var gender: String = ""
+    var expiryDate: String = ""
+    var address: String?
+    var issuingAuthority: String?
+    var issueDate: String?
+    var facePhoto: String? // Base64
+}
+
 class PassportController {
     let manager: SmartCardInterface
     private var sm: SecureMessaging?
@@ -145,6 +158,92 @@ class PassportController {
     
     func readDG2() async throws -> Data {
         return try await readEF(fileID: Data([0x01, 0x02]))
+    }
+    
+    func readDG11() async throws -> Data {
+        return try await readEF(fileID: Data([0x01, 0x0B]))
+    }
+    
+    func readDG12() async throws -> Data {
+        return try await readEF(fileID: Data([0x01, 0x0C]))
+    }
+    
+    func readFullPassportInfo() async throws -> PassportInfo {
+        let dg1 = try await readDG1()
+        let dg2 = try await readDG2()
+        let dg11 = try? await readDG11()
+        let dg12 = try? await readDG12()
+        
+        var info = parseDG1(dg1)
+        info.facePhoto = dg2.base64EncodedString()
+        
+        if let dg11Data = dg11 {
+            let dg11Info = parseDG11(dg11Data)
+            if info.name.isEmpty, let dg11Name = dg11Info.name { info.name = dg11Name }
+            info.address = dg11Info.address
+        }
+        
+        if let dg12Data = dg12 {
+            let dg12Info = parseDG12(dg12Data)
+            info.issuingAuthority = dg12Info.authority
+            info.issueDate = dg12Info.issueDate
+        }
+        
+        return info
+    }
+    
+    private func parseDG1(_ data: Data) -> PassportInfo {
+        // DG1 is Tag 61 -> L -> MRZ (TD3 is 88 bytes, TD1 is 90)
+        let tlvs = TLVParser.parse(data: data)
+        guard let mrzData = tlvs.first?.value,
+              let mrz = String(data: mrzData, encoding: .ascii) else {
+            return PassportInfo()
+        }
+        
+        // Simple TD3 (Passport) MRZ parsing
+        // Line 1: P<JPNKYOKUYA<<TARO<<<<<<<<<<<<<<<<<<<<<<<<
+        // Line 2: TR77777770JPN8501019M2512311<<<<<<<<<<<<<<06
+        let lines = mrz.split(separator: "\n").map(String.init)
+        if lines.count < 2 { return PassportInfo() }
+        
+        let line1 = lines[0]
+        let line2 = lines[1]
+        
+        var info = PassportInfo()
+        if line1.count >= 44 {
+            info.nationality = String(line1.prefix(5).suffix(3))
+            let namePart = String(line1.suffix(39))
+            info.name = namePart.replacingOccurrences(of: "<", with: " ").trimmingCharacters(in: .whitespaces)
+        }
+        
+        if line2.count >= 44 {
+            info.passportNumber = String(line2.prefix(9))
+            info.birthDate = String(line2.prefix(19).suffix(6))
+            info.gender = String(line2.prefix(21).suffix(1))
+            info.expiryDate = String(line2.prefix(27).suffix(6))
+        }
+        
+        return info
+    }
+    
+    private func parseDG11(_ data: Data) -> (name: String?, address: String?) {
+        let tlvs = TLVParser.parse(data: data)
+        guard let wrapper = tlvs.first?.find(tag: 0x5C) else { return (nil, nil) }
+        
+        // Tags: 5F0E (Name), 5F11 (Address)
+        let name = wrapper.findString(tag: 0x5F0E)
+        let address = wrapper.findString(tag: 0x5F11)
+        return (name, address)
+    }
+    
+    private func parseDG12(_ data: Data) -> (authority: String?, issueDate: String?) {
+        let tlvs = TLVParser.parse(data: data)
+        guard let wrapper = tlvs.first?.find(tag: 0x5C) else { return (nil, nil) }
+        
+        // Tags: 5F19 (Issuing Authority), 5F26 (Issue Date)
+        let auth = wrapper.findString(tag: 0x5F19)
+        let date = wrapper.findString(tag: 0x5F26)
+        return (auth, date)
     }
     
     private func readEF(fileID: Data) async throws -> Data {

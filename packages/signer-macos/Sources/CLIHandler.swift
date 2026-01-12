@@ -72,6 +72,44 @@ class CLIHandler {
                 exit(1)
             }
         }
+
+        if args.contains("--sign-mso") {
+            guard let hashIndex = args.firstIndex(of: "--hash"), hashIndex + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --sign-mso --hash <hex_or_base64url>\n", stderr)
+                exit(1)
+            }
+            let hashStr = args[hashIndex + 1]
+            let hashData: Data
+            if let d = Data(base64Encoded: hashStr.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")) {
+                hashData = d
+            } else if let d = Data(hex: hashStr) {
+                hashData = d
+            } else {
+                printError(SignerError.internalError("Invalid hash format"))
+                exit(1)
+            }
+
+            do {
+                // Request Touch ID for hardware signing
+                let authenticated = await SecurityUtils.authenticateUser(reason: "Authorize hardware-bound signature for identity document")
+                if !authenticated { exit(1) }
+
+                let signer = SecureEnclaveSigner()
+                let (signature, publicKey) = try signer.sign(challenge: hashData)
+                
+                let response = SignResponse(
+                    signature: signature,
+                    authData: nil,
+                    clientDataJSON: nil,
+                    publicKey: publicKey
+                )
+                printResult(response)
+                exit(0)
+            } catch {
+                printError(error)
+                exit(1)
+            }
+        }
         
         if args.contains("--get-encryption-public-key") {
             do {
@@ -227,9 +265,8 @@ class CLIHandler {
                     exit(1)
                 }
                 
-                let dg1 = try await controller.readDG1()
-                let dg2 = try await controller.readDG2()
-                print("{\"dg1\": \"\(dg1.base64EncodedString())\", \"dg2\": \"\(dg2.base64EncodedString())\"}")
+                let info = try await controller.readFullPassportInfo()
+                printResult(info)
                 exit(0)
             } catch {
                 printError(error)
