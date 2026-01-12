@@ -161,6 +161,14 @@ export const IssueLocalCredentialSchema = z.object({
     issuerName: z.string().optional().default("My Hardware Device").describe("Label for the issuer in the document"),
 });
 
+export const IssueIdentityDocumentSchema = z.object({
+    docType: z.string().describe("Document type ID (e.g. io.github.masanork.tobari.passport.v1)"),
+    title: z.string().describe("Human readable title for the document"),
+    data: z.record(z.any()).describe("Key-value pairs of identity data"),
+    outputPath: z.string().describe("File path to save the .cose file"),
+    encrypt: z.boolean().optional().default(true).describe("Whether to encrypt the document using the device hardware key"),
+});
+
 export const GenerateBbsKeySchema = z.object({
     // No arguments needed for now
 });
