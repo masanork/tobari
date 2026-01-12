@@ -22,7 +22,8 @@ All notable changes to this project will be documented in this file.
   - **BBS+ Unlinkability**: Integrated BBS+ key generation and Zero-Knowledge Proof (ZKP) generation into the Tauri signer backend.
   - **Structured Error Handling**: Implemented detailed error reporting for PIN retries, card locking, and hardware failures across all platforms.
 - **MCP Server**:
-  - **Authenticity Analysis**: Updated `preview_presentation` to automatically detect and report the presence of authenticity evidence (SOD, CA Certs, Police Signatures) and perform initial hash-based integrity analysis.
+  - **Authenticity Analysis**: Updated `preview_presentation` to automatically detect and report the presence of authenticity evidence (SOD, CA Certs, Police Signatures).
+  - **ePassport Trust Chain**: Implemented full trust chain verification for ePassport SOD using a local CSCA Master List (570+ government roots).
   - **DTC Type 1 Compliance**: Enhanced `issue_identity_document` to support ICAO DTC Type 1 (Derived) structure, preserving binary government signatures (SOD) and Data Groups (DG1, DG2).
   - **Identity Tools**: Exposed `read_passport`, `read_driver_license`, and `read_residence_card` tools to LLM.
   - **Hardware-bound Issuance**: Added `issue_identity_document` tool to create hardware-encrypted mdocs from arbitrary physical card data, leveraging the new `--sign-mso` hardware signing capability.
