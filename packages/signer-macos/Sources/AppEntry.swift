@@ -87,4 +87,75 @@ class AppState: ObservableObject {
         }
         isReading = false
     }
+    
+    @MainActor
+    func readPassport(mrz: String? = nil, can: String? = nil) async {
+        isReading = true
+        status = "Accessing Passport..."
+        error = nil
+        
+        do {
+            let controller = PassportController(manager: SmartCardManager.shared)
+            try await controller.selectPassportAP()
+            
+            if let can = can {
+                try await controller.performPACE(password: can, isCan: true)
+            } else if let mrz = mrz {
+                try await controller.performBAC(mrz: mrz)
+            }
+            
+            let info = try await controller.readFullPassportInfo()
+            
+            let fields = [
+                "Name": info.name,
+                "Passport No": info.passportNumber,
+                "Nationality": info.nationality,
+                "Birth Date": info.birthDate,
+                "Expiry": info.expiryDate
+            ]
+            
+            var photo: NSImage? = nil
+            if let facePhotoB64 = info.facePhoto {
+                photo = NSImage(data: Data(base64Encoded: facePhotoB64)!)
+            }
+            
+            self.cardData = IdentityData(type: "ePassport", fields: fields, facePhoto: photo)
+            status = "Success"
+        } catch {
+            self.error = error.localizedDescription
+            status = "Error"
+        }
+        isReading = false
+    }
+    
+    @MainActor
+    func readDriverLicense(pin1: String, pin2: String) async {
+        isReading = true
+        status = "Accessing Driver's License..."
+        error = nil
+        
+        do {
+            let controller = DriversLicenseController(manager: SmartCardManager.shared)
+            try await controller.selectDLAP()
+            try await controller.verifyPIN1(pin1)
+            try await controller.verifyPIN2(pin2)
+            
+            let info = try await controller.readCommonData()
+            
+            let fields = [
+                "Name": info.name,
+                "Address": info.address,
+                "Birth Date": info.birthDate,
+                "License No": info.licenseNumber,
+                "Color": info.colorClass
+            ]
+            
+            self.cardData = IdentityData(type: "Driver's License", fields: fields, facePhoto: nil)
+            status = "Success"
+        } catch {
+            self.error = error.localizedDescription
+            status = "Error"
+        }
+        isReading = false
+    }
 }

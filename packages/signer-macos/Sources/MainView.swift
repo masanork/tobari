@@ -3,6 +3,13 @@ import SwiftUI
 struct MainView: View {
     @EnvironmentObject var state: AppState
     @State private var pin: String = ""
+    @State private var pin2: String = ""
+    @State private var mrz: String = ""
+    @State private var entryMode: EntryMode = .none
+    
+    enum EntryMode {
+        case none, jpki, passport, license
+    }
     
     var body: some View {
         ZStack {
@@ -28,10 +35,15 @@ struct MainView: View {
                     
                     Button("Read Another Card") {
                         state.cardData = nil
+                        entryMode = .none
                     }
                     .buttonStyle(.bordered)
                 } else if state.isCardPresent {
-                    CardMenuView()
+                    if entryMode == .none {
+                        CardMenuView(entryMode: $entryMode)
+                    } else {
+                        EntryView(mode: $entryMode, pin: $pin, pin2: $pin2, mrz: $mrz)
+                    }
                 } else {
                     CardInteractionView()
                 }
@@ -50,15 +62,6 @@ struct MainView: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.bottom, 20)
-            }
-        }
-        .sheet(isPresented: $state.showPinEntry) {
-            PinEntryView(pin: $pin) {
-                state.showPinEntry = false
-                Task {
-                    await state.readMyNumber(pin: pin)
-                    pin = ""
-                }
             }
         }
     }
@@ -81,7 +84,7 @@ struct CardInteractionView: View {
             
             if let error = state.error {
                 Text(error)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundColor(.red)
                     .padding()
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.1)))
@@ -93,6 +96,7 @@ struct CardInteractionView: View {
 
 struct CardMenuView: View {
     @EnvironmentObject var state: AppState
+    @Binding var entryMode: MainView.EntryMode
     
     var body: some View {
         VStack(spacing: 15) {
@@ -101,19 +105,111 @@ struct CardMenuView: View {
                 .foregroundColor(.secondary)
             
             ActionBtn(title: "My Number Card", icon: "person.badge.shield.fill") {
-                state.pinPrompt = "Enter 4-digit PIN"
-                state.showPinEntry = true
+                entryMode = .jpki
             }
             
             ActionBtn(title: "Passport", icon: "globe.europe.africa.fill", color: .green) {
-                // To be implemented
+                entryMode = .passport
             }
             
             ActionBtn(title: "Driver's License", icon: "car.fill", color: .orange) {
-                // To be implemented
+                entryMode = .license
             }
         }
         .padding()
+    }
+}
+
+struct EntryView: View {
+    @EnvironmentObject var state: AppState
+    @Binding var mode: MainView.EntryMode
+    @Binding var pin: String
+    @Binding var pin2: String
+    @Binding var mrz: String
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack {
+                Button(action: { mode = .none }) {
+                    Image(systemName: "chevron.left")
+                    Text("Back")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.blue)
+                Spacer()
+            }
+            .padding(.horizontal)
+            
+            Text(title)
+                .font(.headline)
+            
+            VStack(spacing: 12) {
+                if mode == .jpki {
+                    SecureField("4-digit PIN", text: $pin)
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.center)
+                } else if mode == .passport {
+                    TextField("MRZ (or CAN)", text: $mrz)
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.center)
+                    Text("Enter MRZ (Passport No + Birth + Expiry) or 6-digit CAN")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                } else if mode == .license {
+                    SecureField("PIN 1 (4 digits)", text: $pin)
+                        .textFieldStyle(.roundedBorder)
+                    SecureField("PIN 2 (4 digits)", text: $pin2)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            .frame(width: 250)
+            
+            Button("Read Card") {
+                executeRead()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canRead || state.isReading)
+            
+            if let error = state.error {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 10)
+            }
+        }
+        .padding()
+    }
+    
+    private var title: String {
+        switch mode {
+        case .jpki: return "JPKI Verification"
+        case .passport: return "Passport Reading"
+        case .license: return "Driver's License"
+        default: return ""
+        }
+    }
+    
+    private var canRead: Bool {
+        switch mode {
+        case .jpki: return pin.count >= 4
+        case .passport: return mrz.count >= 6
+        case .license: return pin.count >= 4 && pin2.count >= 4
+        default: return false
+        }
+    }
+    
+    private func executeRead() {
+        Task {
+            switch mode {
+            case .jpki: await state.readMyNumber(pin: pin)
+            case .passport: 
+                if mrz.count == 6 { await state.readPassport(can: mrz) }
+                else { await state.readPassport(mrz: mrz) }
+            case .license: await state.readDriverLicense(pin1: pin, pin2: pin2)
+            default: break
+            }
+        }
     }
 }
 
@@ -146,64 +242,39 @@ struct IdentityResultView: View {
     let data: AppState.IdentityData
     
     var body: some View {
-        VStack(spacing: 15) {
-            if let photo = data.facePhoto {
-                Image(nsImage: photo)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 120, height: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(radius: 5)
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text(data.type.uppercased())
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.blue)
+        ScrollView {
+            VStack(spacing: 15) {
+                if let photo = data.facePhoto {
+                    Image(nsImage: photo)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 120, height: 150)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(radius: 5)
+                }
                 
-                ForEach(data.fields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
-                    HStack {
-                        Text(key)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(width: 80, alignment: .leading)
-                        Text(value)
-                            .font(.system(.body, design: .monospaced))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(data.type.uppercased())
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
+                    
+                    ForEach(data.fields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                        HStack {
+                            Text(key)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: 80, alignment: .leading)
+                            Text(value)
+                                .font(.system(.body, design: .monospaced))
+                        }
                     }
                 }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
             }
             .padding()
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
         }
-        .padding()
-    }
-}
-
-struct PinEntryView: View {
-    @Binding var pin: String
-    let onCommit: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            Text("Security Verification")
-                .font(.headline)
-            
-            SecureField("Enter PIN", text: $pin)
-                .textFieldStyle(.roundedBorder)
-                .multilineTextAlignment(.center)
-                .font(.title)
-                .frame(width: 200)
-            
-            HStack {
-                Button("Cancel") { pin = "" }
-                Button("Unlock") { onCommit() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(pin.isEmpty)
-            }
-        }
-        .padding(30)
-        .frame(width: 300)
     }
 }
 
