@@ -18,11 +18,13 @@ All notable changes to this project will be documented in this file.
   - **Extended Length APDU**: Optimized data transfer for large blobs (like face photos) using ISO 7816-4 extended length support.
   - **Universal TLV Parser**: Developed a robust, recursive BER-TLV parser used by all document controllers.
 - **Signer (Unified)**:
+  - **Multi-Platform Verifiability Parity**: Ported advanced evidence collection (JPKI CA certs, Driver's License raw bytes/signatures) to the Tauri (Rust) signer via `civ` crate enhancements.
   - **JPKI/My Number Card**: Integrated full JPKI support (Sign, Read attributes/mynumber/photo) across both Tauri and macOS signers.
   - **Identity Documents**: Added native support for reading **ePassport (ICAO 9303)**, **Japanese Driver's License**, and **Residence Card**.
   - **BBS+ Unlinkability**: Integrated BBS+ key generation and Zero-Knowledge Proof (ZKP) generation into the Tauri signer backend.
   - **Structured Error Handling**: Implemented detailed error reporting for PIN retries, card locking, and hardware failures across all platforms.
 - **MCP Server**:
+  - **Authenticity Analysis**: Updated `preview_presentation` to automatically detect and report the presence of authenticity evidence (SOD, CA Certs, Police Signatures) within documents.
   - **DTC Type 1 Compliance**: Enhanced `issue_identity_document` to support ICAO DTC Type 1 (Derived) structure, preserving binary government signatures (SOD) and Data Groups (DG1, DG2).
   - **Identity Tools**: Exposed `read_passport`, `read_driver_license`, and `read_residence_card` tools to LLM.
   - **Hardware-bound Issuance**: Added `issue_identity_document` tool to create hardware-encrypted mdocs from arbitrary physical card data, leveraging the new `--sign-mso` hardware signing capability.

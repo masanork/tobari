@@ -957,6 +957,27 @@ export async function handlePreviewPresentation(toolArgs: any) {
             readable = formatReadableVp(presentation, verification, { redact, maxStringLength });
         }
 
+        // --- NEW: Add Authenticity Evidence Analysis ---
+        let evidenceVerification: any = null;
+        if (presentation.documents && presentation.documents.length > 0) {
+            const { verifyIdentityEvidence } = await import("@tobari/codec/validator");
+            const evidenceResults = [];
+            for (const doc of presentation.documents) {
+                // Extract disclosed fields to check for SOD/Certs/Sigs
+                const fields = extractDisclosedFields(doc);
+                const res = await verifyIdentityEvidence(fields);
+                if (res.details.length > 0) {
+                    evidenceResults.push({
+                        docType: doc.docType,
+                        ...res
+                    });
+                }
+            }
+            if (evidenceResults.length > 0) {
+                evidenceVerification = evidenceResults;
+            }
+        }
+
         const includeDecoded = format === "full" || !!args.includeDecoded;
         const decodedVp = includeDecoded ? normalizeForJson(presentation) : undefined;
 
@@ -969,7 +990,8 @@ export async function handlePreviewPresentation(toolArgs: any) {
                         meta,
                         readable,
                         decodedVp,
-                        verification
+                        verification,
+                        evidenceVerification // New field in response
                     }, null, 2),
                 },
             ],

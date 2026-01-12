@@ -226,24 +226,65 @@ impl<R: CardReader> DriversLicenseController<R> {
     /// Requires PIN 1 & PIN 2. Must select DF2 first.
     pub async fn read_photo(&mut self) -> Result<Vec<u8>> {
         self.select_dl_photo_ap().await?;
+        self.read_ef_full(&[0x00, 0x01]).await
+    }
 
-        let raw = self.read_file(&file_ids::EF_PHOTO).await?;
+    /// Read raw EF data (handling multiple reads if necessary)
+    pub async fn read_ef_full(&mut self, ef_id: &[u8]) -> Result<Vec<u8>> {
+        self.select_ef(ef_id).await?;
 
-        // Parse TLV Tag 0x5F40
-        use crate::utils::parse_ber_tlv;
-        let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
-        for tlv in tlvs {
-            if tlv.tag == 0x5F40 {
-                return Ok(tlv.value.to_vec());
+        let mut data = Vec::new();
+        let mut offset = 0;
+
+        loop {
+            let p1 = (offset >> 8) as u8;
+            let p2 = (offset & 0xFF) as u8;
+            // READ BINARY: CLA=00, INS=B0, P1, P2, Le=00 (Short)
+            let cmd = [0x00, 0xB0, p1, p2, 0x00];
+            let res = self.reader.transmit(&cmd).await?;
+
+            if res.len() < 2 {
+                break;
             }
+
+            let sw1 = res[res.len() - 2];
+            let sw2 = res[res.len() - 1];
+            let chunk = &res[..res.len() - 2];
+
+            if chunk.is_empty() {
+                break;
+            }
+
+            data.extend_from_slice(chunk);
+            offset += chunk.len();
+
+            if sw1 == 0x90 && sw2 == 0x00 {
+                // If the EF is small, we are done
+                if chunk.len() < 256 { break; }
+            } else if sw1 == 0x6B {
+                // Offset out of range
+                break;
+            } else {
+                return Err(CivError::ApduError(sw1, sw2));
+            }
+            
+            // Temporary: limit to avoid infinite loops in some cards
+            if offset > 32768 { break; }
         }
 
-        // Fallback: search for JPEG2000 header (FF 4F)
-        if let Some(start) = raw.windows(2).position(|w| w == [0xFF, 0x4F]) {
-            return Ok(raw[start..].to_vec());
-        }
+        Ok(data)
+    }
 
-        Ok(Vec::new())
+    /// Select an EF by ID
+    async fn select_ef(&mut self, fid: &[u8]) -> Result<()> {
+        let mut cmd = vec![0x00, 0xA4, 0x02, 0x0C, 0x02];
+        cmd.extend_from_slice(fid);
+        let res = self.reader.transmit(&cmd).await?;
+        if res.len() < 2 { return Err(CivError::Unexpected("Response too short".to_string())); }
+        let sw1 = res[res.len()-2];
+        let sw2 = res[res.len()-1];
+        if sw1 == 0x90 && sw2 == 0x00 { Ok(()) }
+        else { Err(CivError::ApduError(sw1, sw2)) }
     }
 
     /// Helper to Select EF and Read Binary

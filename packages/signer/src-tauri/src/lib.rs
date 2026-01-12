@@ -20,6 +20,8 @@ pub struct PassportData {
     pub dg1: String, // Base64 MRZ
     pub dg2: String, // Base64 Photo
     pub sod: Option<String>,
+    pub dg11: Option<String>,
+    pub dg12: Option<String>,
     pub dg14: Option<String>,
     pub dg15: Option<String>,
 }
@@ -40,6 +42,7 @@ pub struct DriverLicenseData {
     pub issue_date: String,
     pub expire_date: String,
     pub signature: Option<String>, // Base64
+    pub raw_data_group1: Option<String>, // Base64
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -63,6 +66,8 @@ pub struct MyNumberCardData {
     pub face_photo: Option<String>,
     pub auth_cert: Option<String>, // Base64
     pub sign_cert: Option<String>, // Base64
+    pub auth_ca_cert: Option<String>, // Base64
+    pub sign_ca_cert: Option<String>, // Base64
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -670,6 +675,10 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
     
     let auth_cert = controller.read_auth_cert().await.ok();
     let sign_cert = controller.read_sign_cert().await.ok();
+    
+    // Read CA Certs: 000B for Auth, 0002 for Sign
+    let auth_ca = controller.read_ef_full(&[0x00, 0x0B]).await.ok();
+    let sign_ca = controller.read_ef_full(&[0x00, 0x02]).await.ok();
 
     Ok(MyNumberCardData {
         name: info.name,
@@ -680,6 +689,8 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
         face_photo: info.face_photo,
         auth_cert: auth_cert.map(|d| URL_SAFE_NO_PAD.encode(d)),
         sign_cert: sign_cert.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        auth_ca_cert: auth_ca.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        sign_ca_cert: sign_ca.map(|d| URL_SAFE_NO_PAD.encode(d)),
     })
 }
 
@@ -694,6 +705,8 @@ async fn read_passport(request: PassportReadRequest) -> Result<PassportData, Sig
     let dg1 = controller.read_dg1().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
     let dg2 = controller.read_dg2().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
     let sod = controller.read_sod().await.ok();
+    let dg11 = controller.read_dg11().await.ok();
+    let dg12 = controller.read_dg12().await.ok();
     let dg14 = controller.read_dg14().await.ok();
     let dg15 = controller.read_dg15().await.ok();
 
@@ -701,6 +714,8 @@ async fn read_passport(request: PassportReadRequest) -> Result<PassportData, Sig
         dg1: URL_SAFE_NO_PAD.encode(dg1),
         dg2: URL_SAFE_NO_PAD.encode(dg2),
         sod: sod.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        dg11: dg11.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        dg12: dg12.map(|d| URL_SAFE_NO_PAD.encode(d)),
         dg14: dg14.map(|d| URL_SAFE_NO_PAD.encode(d)),
         dg15: dg15.map(|d| URL_SAFE_NO_PAD.encode(d)),
     })
@@ -716,6 +731,8 @@ async fn read_driver_license(request: DriverLicenseRequest) -> Result<DriverLice
     controller.verify_pin1(&request.pin1).await.map_err(SignerError::from)?;
     controller.verify_pin2(&request.pin2).await.map_err(SignerError::from)?;
 
+    // Use raw EF read for Group 1 (common data)
+    let raw_dg1 = controller.read_ef_full(&[0x00, 0x01]).await.ok();
     let info = controller.read_common_data().await.map_err(SignerError::from)?;
     let signature = controller.read_signature().await.ok();
 
@@ -728,6 +745,7 @@ async fn read_driver_license(request: DriverLicenseRequest) -> Result<DriverLice
         issue_date: info.issue_date,
         expire_date: info.expire_date,
         signature: signature.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        raw_data_group1: raw_dg1.map(|d| URL_SAFE_NO_PAD.encode(d)),
     })
 }
 
