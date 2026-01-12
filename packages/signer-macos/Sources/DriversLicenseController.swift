@@ -9,6 +9,7 @@ struct LicenseInfo: Codable {
     let expiryDate: String
     let colorClass: String
     var signature: String? = nil // Base64
+    var rawDataGroup1: String? = nil // Base64 raw bytes of common data
 }
 
 class DriversLicenseController {
@@ -58,8 +59,9 @@ class DriversLicenseController {
     func readCommonData() async throws -> LicenseInfo {
         let data = try await readEF(fileID: Data([0x00, 0x01]))
         var info = try parseLicenseInfo(data: data)
+        info.rawDataGroup1 = data.base64EncodedString()
         
-        // Also read signature (Group 7 usually contains the issuer signature)
+        // Also read signature
         if let sig = try? await readSignature() {
             info.signature = sig.base64EncodedString()
         }
