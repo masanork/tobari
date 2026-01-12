@@ -19,6 +19,9 @@ pub struct PassportReadRequest {
 pub struct PassportData {
     pub dg1: String, // Base64 MRZ
     pub dg2: String, // Base64 Photo
+    pub sod: Option<String>,
+    pub dg14: Option<String>,
+    pub dg15: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -682,10 +685,16 @@ async fn read_passport(request: PassportReadRequest) -> Result<PassportData, Sig
     
     let dg1 = controller.read_dg1().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
     let dg2 = controller.read_dg2().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let sod = controller.read_sod().await.ok();
+    let dg14 = controller.read_dg14().await.ok();
+    let dg15 = controller.read_dg15().await.ok();
 
     Ok(PassportData {
         dg1: URL_SAFE_NO_PAD.encode(dg1),
         dg2: URL_SAFE_NO_PAD.encode(dg2),
+        sod: sod.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        dg14: dg14.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        dg15: dg15.map(|d| URL_SAFE_NO_PAD.encode(d)),
     })
 }
 

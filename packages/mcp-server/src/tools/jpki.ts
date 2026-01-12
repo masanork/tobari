@@ -48,6 +48,9 @@ export async function handleReadPassport(toolArgs: any) {
                     dg1: result.dg1,
                     dg2: result.dg2,
                     sod: result.sod,
+                    dg14: result.dg14,
+                    dg15: result.dg15,
+                    protocolUsed: result.protocolUsed,
                     format: "base64",
                     description: "Passport data read successfully. dg1 contains MRZ, dg2 contains face photo, sod contains the Document Security Object (signature)."
                 }, null, 2)
