@@ -9,6 +9,22 @@ struct SignerApp: App {
         if args.count > 1 {
             // CLI Mode: Run handler and exit
             Task {
+                // Check if this is a unified interface request
+                if let requestIndex = args.firstIndex(of: "--request"),
+                   requestIndex + 1 < args.count {
+                    let requestJSON = args[requestIndex + 1]
+
+                    // Try to parse as UnifiedRequest
+                    if let data = requestJSON.data(using: .utf8),
+                       let request = try? JSONDecoder().decode(UnifiedRequest.self, from: data) {
+                        // Use unified handler
+                        let handler = UnifiedCLIHandler()
+                        await handler.handle(request: request)
+                        exit(0)
+                    }
+                }
+
+                // Fall back to legacy CLI handler
                 let handler = CLIHandler()
                 await handler.run()
                 exit(0)

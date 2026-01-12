@@ -3,6 +3,36 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.15] - 2026-01-13
+
+### Features
+- **Unified Interface**:
+  - **JSON-based Protocol**: Implemented unified request/response interface between signer-macos and MCP Server with structured error handling, preview support, and extensible command system.
+  - **Swift Types**: Added `UnifiedRequest`, `UnifiedResponse`, `ResponseResult`, and `PreviewInfo` structures with full CBOR/JSON compatibility.
+  - **TypeScript Types**: Mirrored type definitions in `unified-interface.ts` with helper functions for response creation and parsing.
+  - **UnifiedCLIHandler**: Centralized request routing and response formatting in signer-macos with consistent error handling across all commands.
+- **VP Preview (SwiftUI)**:
+  - **COSE Parser**: Implemented native Swift parser for COSE_Sign1 and ISO 18013-5 mdoc structures without external dependencies.
+  - **Preview UI**: Added `PresentationPreviewView` with field-by-field disclosure visualization, verifier information display, and approve/cancel workflows.
+  - **Session Management**: Implemented `PreviewSession` with automatic timeout (5 minutes) and secure session ID generation for two-phase approval flow.
+  - **Preview Flow**: Added `sign_presentation` (preview mode) and `approve_preview` commands following AP2-compatible design patterns.
+- **Holder Binding** (juminhyo_poc_proposal.md):
+  - **Application Creation**: Implemented `create_application` command to generate Device Keys (Signing + Encryption), read JPKI card for applicant info, and create JPKI-signed application documents.
+  - **Issuer Workflow**: Added `issue_with_binding` to verify JPKI signature, embed Device public key in MSO, and encrypt mdoc for Device encryption key.
+  - **OID4VP Presentation**: Implemented `create_oid4vp_presentation` with Device signature, selective disclosure, and session handover (verifierId, nonce, responseUri) for phishing prevention.
+  - **ApplicationDocument**: Defined complete application structure in Swift with Device Key binding, JPKI signature info, and applicant identification metadata.
+- **MCP Server**:
+  - **Holder Binding Tools**: Added three new MCP tools (`create_application`, `issue_with_binding`, `create_oid4vp_presentation`) exposing the complete holder binding workflow to LLM.
+  - **Unified Migration**: Migrated existing JPKI reading tools (`read_basic_info`, `read_mynumber`, `read_photo`, etc.) to use unified interface for consistent error handling and preview support.
+  - **VP Tools Migration**: Updated VP generation and signing tools to leverage unified signer interface with improved error reporting.
+- **Developer Experience**:
+  - **Test Scripts**: Added comprehensive test scripts (`test-holder-binding.ts`, `test-vp-preview.ts`) demonstrating full workflows with colored output and step-by-step explanations.
+  - **Schema Validation**: Updated `create_application` to accept `requestedDocType` and `requestedFields` directly instead of requiring pre-existing mdoc files, aligning with real-world application flows.
+  - **Decryption Utility**: Added `decrypt-demo-mdoc-v3.ts` for converting encrypted demo files to plaintext for testing.
+
+### Breaking Changes
+- **create_application API**: Changed from `documentPath` parameter to `requestedDocType` + `requestedFields`, reflecting the reality that applicants don't yet have the document they're applying for.
+
 ## [0.3.14] - 2026-01-12
 
 ### Features
