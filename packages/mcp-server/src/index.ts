@@ -35,6 +35,11 @@ import {
     handleSignWithWebAuthn,
     handleRegisterWebAuthn
 } from "./tools/webauthn.js";
+import {
+    handleCreateApplication,
+    handleIssueWithBinding,
+    handleCreateOid4vpPresentation
+} from "./tools/holder-binding.js";
 
 const server = new Server(
     {
@@ -500,6 +505,50 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     properties: {}
                 }
             },
+            {
+                name: "create_application",
+                description: "Creates an application document for identity document issuance with holder binding. Generates Device Keys (signing + encryption), reads JPKI card for applicant info, and signs the application with JPKI. This is Step 1 of the holder binding workflow from juminhyo_poc_proposal.md.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        requestedDocType: { type: "string", description: "Document type to apply for (e.g., 'io.github.masanork.tobari.juminhyo.v1')" },
+                        requestedFields: { type: "array", items: { type: "string" }, description: "Optional: specific fields to request (e.g., ['name', 'birthDate', 'address'])" },
+                        jpkiPin: { type: "string", description: "4-digit PIN for JPKI authentication" },
+                        outputPath: { type: "string", description: "Path where to save the application JSON file" }
+                    },
+                    required: ["requestedDocType", "jpkiPin", "outputPath"]
+                }
+            },
+            {
+                name: "issue_with_binding",
+                description: "Issues an mdoc with Device Key binding (Issuer side). Verifies the JPKI signature on the application, embeds the Device public key in MSO, signs with Issuer key, and encrypts for the Device encryption key. This is Step 2 of the holder binding workflow.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        applicationPath: { type: "string", description: "Path to the application JSON file from create_application" },
+                        docSchemaPath: { type: "string", description: "Path to the document schema YAML file" },
+                        issuerKeyPath: { type: "string", description: "Path to the issuer's private key (JWK)" },
+                        outputPath: { type: "string", description: "Path where to save the issued mdoc COSE file" }
+                    },
+                    required: ["applicationPath", "docSchemaPath", "issuerKeyPath", "outputPath"]
+                }
+            },
+            {
+                name: "create_oid4vp_presentation",
+                description: "Creates an OID4VP-compliant Verifiable Presentation with Device signature and session handover. Selectively discloses requested fields, signs with Device key (Holder Binding), and includes OID4VP session handover to prevent phishing attacks. This is Step 3 of the holder binding workflow.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        documentPath: { type: "string", description: "Path to the mdoc file issued with binding" },
+                        disclosureFields: { type: "array", items: { type: "string" }, description: "Fields to selectively disclose (optional, discloses all if not specified)" },
+                        verifierId: { type: "string", description: "Verifier identifier for session binding" },
+                        nonce: { type: "string", description: "Nonce for replay protection" },
+                        responseUri: { type: "string", description: "Response URI for OID4VP callback" },
+                        outputPath: { type: "string", description: "Path where to save the presentation JSON" }
+                    },
+                    required: ["documentPath", "verifierId", "nonce", "outputPath"]
+                }
+            },
             // No local demo server tools (MCP-only demo flow)
         ],
     };
@@ -556,6 +605,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleReadDriverLicense(request.params.arguments);
         case "read_residence_card":
             return handleReadResidenceCard(request.params.arguments);
+        case "create_application":
+            return handleCreateApplication(request.params.arguments);
+        case "issue_with_binding":
+            return handleIssueWithBinding(request.params.arguments);
+        case "create_oid4vp_presentation":
+            return handleCreateOid4vpPresentation(request.params.arguments);
         // No demo_start_* handlers
         default:
             throw new Error(`Tool not found: ${request.params.name}`);
