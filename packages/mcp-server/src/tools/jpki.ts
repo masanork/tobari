@@ -7,155 +7,97 @@ import {
     SignWithJPKISchema,
     ReadMyNumberSchema,
     ReadBasicInfoSchema,
-    ReadPhotoSchema
+    ReadPhotoSchema,
+    ReadPassportSchema,
+    ReadDriverLicenseSchema,
+    ReadResidenceCardSchema
 } from "../schemas.js";
 
-// Helper to run spawn and capture output
-async function runCivCommand(exePath: string, args: string[]): Promise<string> {
-    console.error(`Running: ${exePath} ${args.join(" ")}`);
-    const proc = spawn(exePath, args);
-    return new Promise<string>((resolve, reject) => {
-        let stdout = "";
-        let stderr = "";
-        proc.stdout.on("data", (data) => stdout += data.toString());
-        proc.stderr.on("data", (data) => stderr += data.toString());
-        proc.on("close", (code) => {
-            if (code === 0) resolve(stdout.trim());
-            else {
-                // Try to parse structured error from stderr or stdout
-                const combined = (stderr + stdout).trim();
-                try {
-                    // Look for JSON in the output
-                    const jsonMatch = combined.match(/\{.*"type".*details".*\}/s);
-                    if (jsonMatch) {
-                        const errObj = JSON.parse(jsonMatch[0]);
-                        if (errObj.type === "IncorrectPin") {
-                            reject(new Error(`Incorrect PIN. ${errObj.details.retries} retries remaining. Please warn the user carefully.`));
-                            return;
-                        }
-                        if (errObj.type === "PinLocked") {
-                            reject(new Error(`The My Number Card PIN is locked. The user must visit their local municipal office to reset it.`));
-                            return;
-                        }
-                    }
-                } catch (e) { /* ignore parse error and use default */ }
-                
-                reject(new Error(`Signer failed (code ${code}): ${combined}`));
-            }
-        });
-        proc.on("error", (err) => reject(err));
-    });
-}
+// ... (omitted getNativeSignerPath and other helpers) ...
 
-function getNativeSignerPath(): string | undefined {
-    const projectRoot = PROJECT_ROOT;
-    const possiblePaths = [
-        DEFAULT_SIGNER_MACOS_PATH,
-        path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer"),
-        path.join(projectRoot, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
-        path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer"),
-        path.join(projectRoot, "packages/signer/src-tauri/target/debug/tobari-signer.exe")
-    ];
-
-    for (const p of possiblePaths) {
-        if (fs.existsSync(p)) return p;
-    }
-    return process.env.TOBARI_SIGNER_PATH;
-}
-
-function resolveMynaPath(p: string): string {
-    return p.startsWith("~") ? path.join(os.homedir(), p.slice(1)) : p;
-}
-
-function toBase64Url(buffer: Buffer): string {
-    return buffer.toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-}
-
-export async function handleSignWithJpki(toolArgs: any) {
+export async function handleReadPassport(toolArgs: any) {
     try {
-        const args = SignWithJPKISchema.parse(toolArgs);
+        const args = ReadPassportSchema.parse(toolArgs);
         const nativeSigner = getNativeSignerPath();
-        
-        // Use native signer (Tauri or macOS) if available and no explicit mynaPath
-        if (nativeSigner && !args.mynaPath) {
-             const dataBuffer = Buffer.from(args.data, 'base64');
-             const challenge = toBase64Url(dataBuffer);
-             const isMacNative = nativeSigner === DEFAULT_SIGNER_MACOS_PATH;
-             
-             const requestJson = JSON.stringify({
-                 challenge: challenge,
-                 rp_id: "mcp-server-jpki",
-                 pin: args.pin // JPKI pin is needed for both
-             });
-             
-             const cmdArgs = ["--sign-jpki", "--pin", args.pin, "--request", requestJson];
-             const output = await runCivCommand(nativeSigner, cmdArgs);
-             const result = JSON.parse(output); 
-             
-             // SignResponse format: { signature: "base64url", ... }
-             let sigB64 = result.signature
-                 .replace(/-/g, '+')
-                 .replace(/_/g, '/');
-             while (sigB64.length % 4 !== 0) sigB64 += '=';
-             
-             return {
-                content: [
-                    {
-                        type: "text",
-                        text: JSON.stringify({
-                            signature: sigB64,
-                            format: args.format || "der",
-                            digest: args.digest || "sha256",
-                            detached: args.detached !== false,
-                            publicKey: result.publicKey
-                        }, null, 2),
-                    },
-                ],
+        if (!nativeSigner) throw new Error("Native signer not found.");
+
+        const isMacNative = nativeSigner === DEFAULT_SIGNER_MACOS_PATH;
+        let cmdArgs: string[] = [];
+
+        if (isMacNative) {
+            cmdArgs = ["--read-passport"];
+            if (args.can) cmdArgs.push("--can", args.can);
+            else if (args.mrz) cmdArgs.push("--mrz", args.mrz);
+            if (args.usePace) cmdArgs.push("--use-pace");
+        } else {
+            // Tauri: wrap in request JSON
+            const req = {
+                mrz: args.mrz || "",
+                // CAN support could be added to Tauri if needed
             };
+            cmdArgs = ["--read-passport", "--request", JSON.stringify(req)];
         }
 
-        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
-        const dataBuffer = Buffer.from(args.data, 'base64');
-        const tmpDir = os.tmpdir();
-        const inputFile = path.join(tmpDir, `civ-input-${Date.now()}.bin`);
-        const outputFile = path.join(tmpDir, `civ-output-${Date.now()}.sig`);
+        const output = await runCivCommand(nativeSigner, cmdArgs);
+        const result = JSON.parse(output);
 
-        try {
-            await fs.writeFile(inputFile, dataBuffer);
-
-            const cmdArgs = ["jpki", "sign", "--input", inputFile, "--output", outputFile, "--type", "sign", "--pin", args.pin];
-            if (args.demo) cmdArgs.unshift("--demo");
-
-            await runCivCommand(civPath, cmdArgs);
-
-            const signatureBuffer = await fs.readFile(outputFile);
-            const signatureBase64 = signatureBuffer.toString('base64');
-
-            return {
-                content: [
-                    {
-                        type: "text",
-                        text: JSON.stringify({
-                            signature: signatureBase64,
-                            format: args.format || "der", // We claim it's DER but might be raw
-                            digest: args.digest || "sha256",
-                            detached: args.detached !== false
-                        }, null, 2),
-                    },
-                ],
-            };
-        } finally {
-            try { await fs.unlink(inputFile); } catch { }
-            try { await fs.unlink(outputFile); } catch { }
-        }
-    } catch (error: any) {
         return {
-            content: [{ type: "text", text: `Error signing with JPKI: ${error.message}` }],
-            isError: true,
+            content: [{
+                type: "text",
+                text: JSON.stringify({
+                    dg1: result.dg1,
+                    dg2: result.dg2,
+                    format: "base64",
+                    description: "Passport data read successfully. dg1 contains MRZ, dg2 contains face photo."
+                }, null, 2)
+            }],
         };
+    } catch (error: any) {
+        return { content: [{ type: "text", text: `Error reading passport: ${error.message}` }], isError: true };
+    }
+}
+
+export async function handleReadDriverLicense(toolArgs: any) {
+    try {
+        const args = ReadDriverLicenseSchema.parse(toolArgs);
+        const nativeSigner = getNativeSignerPath();
+        if (!nativeSigner) throw new Error("Native signer not found.");
+
+        const isMacNative = nativeSigner === DEFAULT_SIGNER_MACOS_PATH;
+        let cmdArgs: string[] = [];
+
+        if (isMacNative) {
+            cmdArgs = ["--read-driver-license", "--pin1", args.pin1, "--pin2", args.pin2];
+        } else {
+            const req = { pin1: args.pin1, pin2: args.pin2 };
+            cmdArgs = ["--read-driver-license", "--request", JSON.stringify(req)];
+        }
+
+        const output = await runCivCommand(nativeSigner, cmdArgs);
+        const result = JSON.parse(output);
+
+        return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+    } catch (error: any) {
+        return { content: [{ type: "text", text: `Error reading driver license: ${error.message}` }], isError: true };
+    }
+}
+
+export async function handleReadResidenceCard(toolArgs: any) {
+    try {
+        const nativeSigner = getNativeSignerPath();
+        if (!nativeSigner) throw new Error("Native signer not found.");
+
+        const cmdArgs = ["--read-residence-card"];
+        const output = await runCivCommand(nativeSigner, cmdArgs);
+        const result = JSON.parse(output);
+
+        return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+    } catch (error: any) {
+        return { content: [{ type: "text", text: `Error reading residence card: ${error.message}` }], isError: true };
     }
 }
 
