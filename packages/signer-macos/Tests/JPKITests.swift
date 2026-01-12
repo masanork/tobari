@@ -119,6 +119,8 @@ struct JPKITests {
             assertEqual(info.name, "Taro", "Name mismatch")
             assert(info.authCert != nil, "Auth Cert should be present")
             assert(info.signCert != nil, "Sign Cert should be present")
+            assert(info.authCACert != nil, "Auth CA Cert should be present")
+            assert(info.signCACert != nil, "Sign CA Cert should be present")
         } catch {
              print("❌ Unexpected Error: \(error)")
              exit(1)

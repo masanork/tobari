@@ -54,8 +54,8 @@ export async function handleIssueIdentityDocument(toolArgs: any) {
 
         for (const [k, v] of Object.entries(args.data)) {
             if ((args.isDtc && (k.startsWith("dg") || k === "sod")) || 
-                k.endsWith("_cert") || k === "signature") {
-                // Keep as binary if it's an ICAO Data Group, JPKI Cert, or DL Signature
+                k.endsWith("_cert") || k === "signature" || k.startsWith("raw_data")) {
+                // Keep as binary if it's an ICAO Data Group, JPKI Cert, DL Signature, or Raw Data
                 if (v && typeof v === 'string') {
                     processedData[k] = new Uint8Array(Buffer.from(v, 'base64'));
                 } else {

@@ -9,6 +9,8 @@ struct BasicInfo: Codable {
     var facePhoto: String? = nil // Base64 encoded
     var authCert: String? = nil // Base64
     var signCert: String? = nil // Base64
+    var authCACert: String? = nil // Base64
+    var signCACert: String? = nil // Base64
 }
 
 class JPKIController {
@@ -31,7 +33,9 @@ class JPKIController {
         static let EF_AUTH_KEY = Data([0x00, 0x17])
         static let EF_SIGN_KEY = Data([0x00, 0x1A]) // Digital Signature Key
         static let EF_USER_AUTH_CERT = Data([0x00, 0x0A])
+        static let EF_AUTH_CA_CERT = Data([0x00, 0x0B])
         static let EF_SIGN_CERT = Data([0x00, 0x01]) // Digital Signature Certificate
+        static let EF_SIGN_CA_CERT = Data([0x00, 0x02])
     }
     
     enum APDU {
@@ -339,6 +343,14 @@ class JPKIController {
         }
         if let signCert = try? await readCertificate(pin: pin, type: "sign") {
             info.signCert = signCert.base64EncodedString()
+        }
+        
+        // 6. Read CA Certificates
+        if let authCACert = try? await readEFFull(ef: FileID.EF_AUTH_CA_CERT) {
+            info.authCACert = authCACert.base64EncodedString()
+        }
+        if let signCACert = try? await readEFFull(ef: FileID.EF_SIGN_CA_CERT) {
+            info.signCACert = signCACert.base64EncodedString()
         }
         
         return info

@@ -71,6 +71,7 @@ struct DriversLicenseTests {
             let info = try await controller.readCommonData()
             assertEqual(info.name, "山田 太郎", "Name mismatch")
             assert(info.signature != nil, "Signature should be present")
+            assert(info.rawDataGroup1 != nil, "Raw Data Group 1 should be present")
         } catch {
             print("❌ Unexpected Error: \(error)")
             exit(1)

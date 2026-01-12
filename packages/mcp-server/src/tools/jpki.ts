@@ -74,14 +74,17 @@ export async function handleReadDriverLicense(toolArgs: any) {
             cmdArgs = ["--read-driver-license", "--pin1", args.pin1, "--pin2", args.pin2];
         } else {
             const req = { pin1: args.pin1, pin2: args.pin2 };
-            cmdArgs = ["--read-driver-license", "--request", JSON.stringify(req)];
-        }
-
         const output = await runCivCommand(nativeSigner, cmdArgs);
         const result = JSON.parse(output);
 
+        // Normalize to include raw data for verifiability
+        const normalized = {
+            ...result,
+            raw_data_group1: result.rawDataGroup1 || result.raw_data_group1
+        };
+
         return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            content: [{ type: "text", text: JSON.stringify(normalized, null, 2) }],
         };
     } catch (error: any) {
         return { content: [{ type: "text", text: `Error reading driver license: ${error.message}` }], isError: true };
@@ -165,7 +168,9 @@ export async function handleReadBasicInfo(toolArgs: any) {
                  birth_date: result.birthDate || result.birth_date,
                  gender: result.gender,
                  auth_cert: result.authCert || result.auth_cert,
-                 sign_cert: result.signCert || result.sign_cert
+                 sign_cert: result.signCert || result.sign_cert,
+                 auth_ca_cert: result.authCACert || result.auth_ca_cert,
+                 sign_ca_cert: result.signCACert || result.sign_ca_cert
              };
              
              return {

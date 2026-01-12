@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
   - **Strict MRZ Parsing**: Implemented ICAO 9303 compliant parsing for TD1, TD2, and TD3 formats with full checksum validation.
   - **PACE Protocol**: Completed the Password Authenticated Connection Establishment (PACE) protocol skeleton, including ECDH key agreement and session key derivation.
   - **Passport Authenticity**: Added support for reading **EF.SOD (Document Security Object)** to enable downstream verification of government signatures.
+  - **JPKI Verifiability**: Added retrieval of **Intermediate CA Certificates** to enable offline verification of the full trust chain.
+  - **License Verifiability**: Captured **raw Data Group 1 bytes** and police signatures to enable mathematical proof of non-alteration.
   - **OS Integration**: Added Touch ID authentication and native secure PIN input dialogs for a seamless macOS experience.
   - **Extended Length APDU**: Optimized data transfer for large blobs (like face photos) using ISO 7816-4 extended length support.
   - **Universal TLV Parser**: Developed a robust, recursive BER-TLV parser used by all document controllers.
