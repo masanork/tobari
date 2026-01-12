@@ -90,19 +90,31 @@ class PassportController {
         // We skip exact parsing for now and assume the card followed the protocol.
         
         // 4. Step 3: Key Agreement on Mapped Curve
-        // Establish final session keys using the new generator G'
-        // This is complex because we need to perform DH on a custom generator.
-        // For simplicity in this PoC, we use the standard curve for the final step
-        // or assume the card returns the shared secret if it's a mock.
+        // Remote public key P_ic is in ga2Res (Tag 82)
+        // For brevity in this POC, we extract the payload of Tag 82 (assumed at fixed offset or via simple TLV)
+        let cardPubKaData = ga2Res.subdata(in: 4..<ga2Res.count-2)
         
-        debugPrint("PACE Mapped Generator G' calculated: \(gPrimeData.hexString)")
-        debugPrint("Performing final Key Agreement...")
+        let (ephemeralPubFinal, sharedSecret) = try ECMath.performECDHWithMappedGenerator(gPrimeData: gPrimeData, remotePublicKeyData: cardPubKaData)
         
-        // Final Session Keys derivation from shared secret (Mocked for now)
-        let (ksEnc, ksMac) = PACEUtils.deriveSessionKeys(sharedSecret: gPrimeData) // Placeholder secret
+        // Step 3: Exchange ephemeral public keys for final shared secret (GA3)
+        var ga3Data = Data([0x7C, UInt8(ephemeralPubFinal.count + 2), 0x83])
+        ga3Data.append(UInt8(ephemeralPubFinal.count))
+        ga3Data.append(ephemeralPubFinal)
+        
+        var ga3Apdu = Data([0x00, 0x86, 0x00, 0x00, UInt8(ga3Data.count)])
+        ga3Apdu.append(ga3Data)
+        ga3Apdu.append(0x00)
+        
+        let ga3Res = try await manager.transmit(apdu: ga3Apdu)
+        try checkSW(ga3Res, context: "PACE GA3")
+        
+        // 5. Establish Secure Messaging
+        let (ksEnc, ksMac) = PACEUtils.deriveSessionKeys(sharedSecret: sharedSecret)
+        
+        // SSC is typically initialized to 0 or derived from previous steps in PACE
         self.sm = SecureMessaging(ksEnc: ksEnc, ksMac: ksMac, ssc: 0)
         
-        debugPrint("PACE Secure Messaging Established.")
+        debugPrint("PACE Secure Messaging Established with Shared Secret: \(sharedSecret.count) bytes")
     }
     
     /// Performs BAC (Basic Access Control) Mutual Authentication
