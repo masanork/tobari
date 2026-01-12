@@ -167,6 +167,7 @@ export const IssueIdentityDocumentSchema = z.object({
     data: z.record(z.any()).describe("Key-value pairs of identity data"),
     outputPath: z.string().describe("File path to save the .cose file"),
     encrypt: z.boolean().optional().default(true).describe("Whether to encrypt the document using the device hardware key"),
+    isDtc: z.boolean().optional().describe("If true, treats input as ICAO LDS data and uses org.icao.dtc.v1 docType"),
 });
 
 export const GenerateBbsKeySchema = z.object({

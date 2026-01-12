@@ -35,7 +35,7 @@
 - [ ] **FATF/SCAC Operations Mapping**
   - [ ] Create correspondence table for VASP risk assessment vs VP elements.
   - [ ] Draft minimal Travel Rule interface.
-- [ ] **DTC Type 1 Implementation**: Fully align `issue_identity_document` with ICAO Digital Travel Credentials LDS structure.
+- [x] **DTC Type 1 Implementation**: Enhanced `issue_identity_document` to support ICAO DTC Type 1 (Derived) structure, preserving government signatures.
 
 ### MCP Enhancements (Demo Automation)
 - [x] **End-to-End Demo Support**
