@@ -17,6 +17,7 @@ import {
     handleListAvailableDocuments,
     handleRegisterDevice,
     handleIssueLocalCredential,
+    handleIssueIdentityDocument,
     handleGenerateBbsKey,
     handleSignWithBbs
 } from "./tools/tobari.js";
@@ -60,6 +61,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         outputPath: { type: "string", description: "Path where to save the generated document (e.g. ./my-identity.cose)" }
                     },
                     required: ["pin", "outputPath"]
+                }
+            },
+            {
+                name: "issue_identity_document",
+                description: "Generates and optionally encrypts an identity document (mdoc) from provided identity data. Useful for digitizing physical cards for future use.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        docType: { type: "string", description: "Document type ID" },
+                        title: { type: "string", description: "Human readable title" },
+                        data: { type: "object", description: "Key-value pairs of identity information" },
+                        outputPath: { type: "string", description: "Path to save the .cose file" },
+                        encrypt: { type: "boolean", description: "Encrypt using hardware device key (default: true)" }
+                    },
+                    required: ["docType", "title", "data", "outputPath"]
                 }
             },
             {
@@ -493,6 +509,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
     switch (request.params.name) {
         case "issue_local_credential":
             return handleIssueLocalCredential(request.params.arguments);
+        case "issue_identity_document":
+            return handleIssueIdentityDocument(request.params.arguments);
         case "register_device":
             return handleRegisterDevice(request.params.arguments);
         case "generate_bbs_key":

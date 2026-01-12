@@ -17,11 +17,87 @@ import {
     GeneratePassportZkpInputSchema,
     RegisterDeviceSchema,
     IssueLocalCredentialSchema,
+    IssueIdentityDocumentSchema,
     GenerateBbsKeySchema,
     SignWithBbsSchema
 } from "../schemas.js";
 import { handleReadBasicInfo } from "./jpki.js";
 import { generateSignedTobari } from "@tobari/codec/tobari-gen";
+
+export async function handleIssueIdentityDocument(toolArgs: any) {
+    try {
+        const args = IssueIdentityDocumentSchema.parse(toolArgs);
+
+        // 1. Get Device Public Keys for Holder Binding and Encryption
+        let deviceKeys: any = null;
+        if (process.platform === 'darwin') {
+            const registrationResult = await handleRegisterDevice({});
+            deviceKeys = JSON.parse(registrationResult.content[0].text);
+        }
+
+        // 2. Generate Mock Issuer Key for local sign
+        const issuerKeyPair = await crypto.subtle.generateKey(
+            { name: "ECDSA", namedCurve: "P-384" },
+            true,
+            ["sign"]
+        );
+
+        // 3. Construct schema YAML
+        const fields = Object.keys(args.data).map(k => `  - id: ${k}\n    title: ${k.charAt(0).toUpperCase() + k.slice(1)}`).join("\n");
+        const docSchemaYaml = `
+id: ${args.docType}
+title: ${args.title}
+fields:
+${fields}
+`;
+
+        // 4. Handle Encryption if requested
+        let encryptionPublicKey: Uint8Array | undefined;
+        if (args.encrypt && deviceKeys) {
+            const x = Buffer.from(deviceKeys.encryptionPublicKey.x, 'base64url');
+            const y = Buffer.from(deviceKeys.encryptionPublicKey.y, 'base64url');
+            encryptionPublicKey = new Uint8Array(65);
+            encryptionPublicKey[0] = 0x04;
+            encryptionPublicKey.set(x, 1);
+            encryptionPublicKey.set(y, 33);
+        }
+
+        // 5. Generate signed document
+        const coseBinary = await generateSignedTobari(docSchemaYaml, args.data, issuerKeyPair.privateKey, {
+            kid: "self-issued-local-key",
+            devicePublicKey: deviceKeys ? await crypto.subtle.importKey(
+                "jwk",
+                deviceKeys.signingPublicKey,
+                { name: "ECDSA", namedCurve: "P-256" },
+                true,
+                ["verify"]
+            ) : undefined,
+            encryptionPublicKey: encryptionPublicKey
+        });
+
+        // 6. Save
+        await fs.writeFile(args.outputPath, coseBinary);
+
+        return {
+            content: [{
+                type: "text",
+                text: JSON.stringify({
+                    success: true,
+                    path: path.resolve(args.outputPath),
+                    docType: args.docType,
+                    encrypted: !!encryptionPublicKey,
+                    message: `Local identity document issued and saved to ${args.outputPath}`
+                }, null, 2)
+            }],
+        };
+
+    } catch (error: any) {
+        return {
+            content: [{ type: "text", text: `Error issuing identity document: ${error.message}` }],
+            isError: true,
+        };
+    }
+}
 
 export async function handleGenerateBbsKey(toolArgs: any) {
     try {
