@@ -25,7 +25,10 @@ import {
     handleSignWithJpki,
     handleReadMyNumber,
     handleReadBasicInfo,
-    handleReadPhoto
+    handleReadPhoto,
+    handleReadPassport,
+    handleReadDriverLicense,
+    handleReadResidenceCard
 } from "./tools/jpki.js";
 import {
     handleSignWithWebAuthn,
@@ -449,6 +452,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     required: ["pin"]
                 }
             },
+            {
+                name: "read_passport",
+                description: "Reads personal information and photo from an ePassport (ICAO 9303). Supports BAC (MRZ) and PACE (CAN) authentication.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        mrz: { type: "string", description: "MRZ info (PassportNo+Birth+Expiry with check digits)" },
+                        can: { type: "string", description: "6-digit CAN (optional, used for PACE)" },
+                        usePace: { type: "boolean", description: "Force use of PACE instead of BAC (default: false)" }
+                    }
+                }
+            },
+            {
+                name: "read_driver_license",
+                description: "Reads information from a Japanese Driver's License. Requires card reader and two 4-digit PINs.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        pin1: { type: "string", description: "4-digit PIN1" },
+                        pin2: { type: "string", description: "4-digit PIN2" }
+                    },
+                    required: ["pin1", "pin2"]
+                }
+            },
+            {
+                name: "read_residence_card",
+                description: "Reads back-side information (address updates, etc.) from a Japanese Residence Card. No PIN required for basic info.",
+                inputSchema: {
+                    type: "object",
+                    properties: {}
+                }
+            },
             // No local demo server tools (MCP-only demo flow)
         ],
     };
@@ -497,6 +532,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             return handleReadBasicInfo(request.params.arguments);
         case "read_photo":
             return handleReadPhoto(request.params.arguments);
+        case "read_passport":
+            return handleReadPassport(request.params.arguments);
+        case "read_driver_license":
+            return handleReadDriverLicense(request.params.arguments);
+        case "read_residence_card":
+            return handleReadResidenceCard(request.params.arguments);
         // No demo_start_* handlers
         default:
             throw new Error(`Tool not found: ${request.params.name}`);

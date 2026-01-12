@@ -136,6 +136,21 @@ export const ReadPhotoSchema = z.object({
     demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
 
+export const ReadPassportSchema = z.object({
+    mrz: z.string().optional().describe("MRZ info (PassportNo+Birth+Expiry with check digits)"),
+    can: z.string().optional().describe("6-digit Card Access Number (for PACE)"),
+    usePace: z.boolean().optional().describe("Force use of PACE instead of BAC"),
+});
+
+export const ReadDriverLicenseSchema = z.object({
+    pin1: z.string().describe("4-digit PIN1"),
+    pin2: z.string().describe("4-digit PIN2"),
+});
+
+export const ReadResidenceCardSchema = z.object({
+    // No PIN usually required for basic info
+});
+
 export const RegisterDeviceSchema = z.object({
     rootPath: z.string().optional().describe("Optional path where to save the exported public keys. If not provided, keys are only returned in the response."),
 });
