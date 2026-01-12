@@ -6,18 +6,19 @@ All notable changes to this project will be documented in this file.
 ## [0.3.14] - 2026-01-12
 
 ### Features
-- **Signer (Unified)**:
-  - **JPKI/My Number Card**: Integrated full JPKI support (Sign, Read attributes/mynumber/photo) across both Tauri and macOS signers.
-  - **Identity Documents**: Added native support for reading **ePassport (ICAO 9303)**, **Japanese Driver's License**, and **Residence Card**.
-  - **BBS+ Unlinkability**: Integrated BBS+ key generation and Zero-Knowledge Proof (ZKP) generation into the Tauri signer backend.
-  - **Structured Error Handling**: Implemented detailed error reporting for PIN retries, card locking, and hardware failures across all platforms.
 - **Signer (macOS)**:
   - **SwiftUI GUI**: Implemented a modern, native GUI with automatic card detection, secure PIN entry sheets, and identity result views.
+  - **Camera MRZ Scanning**: Integrated macOS **Vision framework** for real-time OCR scanning of Passport MRZ (Machine Readable Zone), eliminating manual entry.
   - **PACE Protocol**: Completed the Password Authenticated Connection Establishment (PACE) protocol skeleton, including ECDH key agreement and session key derivation.
   - **Passport Authenticity**: Added support for reading **EF.SOD (Document Security Object)** to enable downstream verification of government signatures.
   - **OS Integration**: Added Touch ID authentication and native secure PIN input dialogs for a seamless macOS experience.
   - **Extended Length APDU**: Optimized data transfer for large blobs (like face photos) using ISO 7816-4 extended length support.
   - **Universal TLV Parser**: Developed a robust, recursive BER-TLV parser used by all document controllers.
+- **Signer (Unified)**:
+  - **JPKI/My Number Card**: Integrated full JPKI support (Sign, Read attributes/mynumber/photo) across both Tauri and macOS signers.
+  - **Identity Documents**: Added native support for reading **ePassport (ICAO 9303)**, **Japanese Driver's License**, and **Residence Card**.
+  - **BBS+ Unlinkability**: Integrated BBS+ key generation and Zero-Knowledge Proof (ZKP) generation into the Tauri signer backend.
+  - **Structured Error Handling**: Implemented detailed error reporting for PIN retries, card locking, and hardware failures across all platforms.
 - **MCP Server**:
   - **DTC Type 1 Compliance**: Enhanced `issue_identity_document` to support ICAO DTC Type 1 (Derived) structure, preserving binary government signatures (SOD) and Data Groups (DG1, DG2).
   - **Identity Tools**: Exposed `read_passport`, `read_driver_license`, and `read_residence_card` tools to LLM.

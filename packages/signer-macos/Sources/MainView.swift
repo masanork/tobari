@@ -6,6 +6,7 @@ struct MainView: View {
     @State private var pin2: String = ""
     @State private var mrz: String = ""
     @State private var entryMode: EntryMode = .none
+    @State private var showScanner: Bool = false
     
     enum EntryMode {
         case none, jpki, passport, license
@@ -42,7 +43,7 @@ struct MainView: View {
                     if entryMode == .none {
                         CardMenuView(entryMode: $entryMode)
                     } else {
-                        EntryView(mode: $entryMode, pin: $pin, pin2: $pin2, mrz: $mrz)
+                        EntryView(mode: $entryMode, pin: $pin, pin2: $pin2, mrz: $mrz, showScanner: $showScanner)
                     }
                 } else {
                     CardInteractionView()
@@ -63,6 +64,10 @@ struct MainView: View {
                 }
                 .padding(.bottom, 20)
             }
+        }
+        .sheet(isPresented: $showScanner) {
+            ScannerView(isPresented: $showScanner, mrzResult: $mrz)
+                .frame(width: 500, height: 400)
         }
     }
 }
@@ -126,6 +131,7 @@ struct EntryView: View {
     @Binding var pin: String
     @Binding var pin2: String
     @Binding var mrz: String
+    @Binding var showScanner: Bool
     
     var body: some View {
         VStack(spacing: 20) {
@@ -149,9 +155,18 @@ struct EntryView: View {
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.center)
                 } else if mode == .passport {
-                    TextField("MRZ (or CAN)", text: $mrz)
-                        .textFieldStyle(.roundedBorder)
-                        .multilineTextAlignment(.center)
+                    HStack {
+                        TextField("MRZ (or CAN)", text: $mrz)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.center)
+                        
+                        Button(action: { showScanner = true }) {
+                            Image(systemName: "camera.viewfinder")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Scan with Camera")
+                    }
                     Text("Enter MRZ (Passport No + Birth + Expiry) or 6-digit CAN")
                         .font(.caption2)
                         .foregroundColor(.secondary)
