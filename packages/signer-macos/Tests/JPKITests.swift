@@ -88,20 +88,28 @@ struct JPKITests {
         let mock = MockSmartCardManager()
         let controller = JPKIController(manager: mock)
         
+        var selectedEF: Data = Data()
+        
         mock.handler = { apdu in
             let ins = apdu[1]
+            if ins == 0xA4 && apdu[2] == 0x02 { // Select EF
+                selectedEF = apdu.subdata(in: 5..<apdu.count)
+                return Data([0x90, 0x00])
+            }
             if ins == 0xB0 { // READ BINARY
-                // Construct TLV: Wrapper(DF20) -> Name (DF22) = "Taro"
-                var inner = Data()
-                inner.append(contentsOf: [0xDF, 0x22, 0x04])
-                inner.append(contentsOf: "Taro".data(using: .utf8)!)
-                
-                var outer = Data()
-                outer.append(contentsOf: [0xDF, 0x20])
-                outer.append(UInt8(inner.count))
-                outer.append(inner)
-                outer.append(contentsOf: [0x90, 0x00])
-                return outer
+                if selectedEF == Data([0x00, 0x02]) { // Attributes
+                    var inner = Data()
+                    inner.append(contentsOf: [0xDF, 0x22, 0x04])
+                    inner.append(contentsOf: "Taro".data(using: .utf8)!)
+                    var outer = Data()
+                    outer.append(contentsOf: [0xDF, 0x20, UInt8(inner.count)])
+                    outer.append(inner)
+                    outer.append(contentsOf: [0x90, 0x00])
+                    return outer
+                } else if selectedEF == Data([0x00, 0x0A]) || selectedEF == Data([0x00, 0x01]) {
+                    // Certificates
+                    return Data([0x30, 0x04, 0x01, 0x02, 0x03, 0x04, 0x90, 0x00])
+                }
             }
             return Data([0x90, 0x00])
         }
@@ -109,6 +117,8 @@ struct JPKITests {
         do {
             let info = try await controller.readAttributes(pin: "1234")
             assertEqual(info.name, "Taro", "Name mismatch")
+            assert(info.authCert != nil, "Auth Cert should be present")
+            assert(info.signCert != nil, "Sign Cert should be present")
         } catch {
              print("❌ Unexpected Error: \(error)")
              exit(1)

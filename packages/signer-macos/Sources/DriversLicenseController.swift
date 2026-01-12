@@ -8,6 +8,7 @@ struct LicenseInfo: Codable {
     let issueDate: String
     let expiryDate: String
     let colorClass: String
+    var signature: String? = nil // Base64
 }
 
 class DriversLicenseController {
@@ -56,21 +57,24 @@ class DriversLicenseController {
     
     func readCommonData() async throws -> LicenseInfo {
         let data = try await readEF(fileID: Data([0x00, 0x01]))
-        return try parseLicenseInfo(data: data)
+        var info = try parseLicenseInfo(data: data)
+        
+        // Also read signature (Group 7 usually contains the issuer signature)
+        if let sig = try? await readSignature() {
+            info.signature = sig.base64EncodedString()
+        }
+        
+        return info
+    }
+    
+    func readSignature() async throws -> Data {
+        // Read Signature EF (00 02 in the same AP usually)
+        return try await readEF(fileID: Data([0x00, 0x02]))
     }
     
     private func parseLicenseInfo(data: Data) throws -> LicenseInfo {
         let tlvs = TLVParser.parse(data: data)
         let sjis = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.shiftJIS.rawValue)))
-        
-        // Tags for Japanese Driver's License:
-        // 0x12: Name
-        // 0x13: Address
-        // 0x14: BirthDate (Gengou)
-        // 0x15: IssueDate (Gengou)
-        // 0x17: ExpiryDate (Gengou)
-        // 0x16: LicenseNumber (ASCII)
-        // 0x11: Name Kana (not used here for simplicity)
         
         let name = tlvs.first?.findString(tag: 0x12, encoding: sjis) ?? "Unknown"
         let address = tlvs.first?.findString(tag: 0x13, encoding: sjis) ?? "Unknown"
@@ -79,7 +83,6 @@ class DriversLicenseController {
         let expiryDate = tlvs.first?.findString(tag: 0x17, encoding: sjis) ?? "Unknown"
         let licenseNumber = tlvs.first?.findString(tag: 0x16, encoding: .ascii) ?? "Unknown"
         
-        // Tag 0x18: Color Class (e.g. "優良", "一般")
         let colorClass = tlvs.first?.findString(tag: 0x18, encoding: sjis) ?? ""
         
         return LicenseInfo(
@@ -89,18 +92,17 @@ class DriversLicenseController {
             licenseNumber: licenseNumber,
             issueDate: issueDate,
             expiryDate: expiryDate,
-            colorClass: colorClass
+            colorClass: colorClass,
+            signature: nil
         )
     }
     
     private func readEF(fileID: Data) async throws -> Data {
-        // Select EF
         var selApdu = Data([0x00, 0xA4, 0x02, 0x0C, 0x02])
         selApdu.append(fileID)
         let resSel = try await manager.transmit(apdu: selApdu)
         try checkSW(resSel, context: "Select EF")
         
-        // Read Binary with loop and Extended Le
         var result = Data()
         var offset = 0
         while true {
@@ -114,10 +116,7 @@ class DriversLicenseController {
             if chunk.isEmpty { break }
             result.append(chunk)
             offset += chunk.count
-            
-            if chunk.count < 256 { break } // Heuristic: if we got less than short max, likely end
-            // With Extended Le, if we get data and 9000, we check if more is needed.
-            // For simple EFs, usually one read is enough.
+            if chunk.count < 256 { break }
             break 
         }
         return result
@@ -138,4 +137,3 @@ class DriversLicenseController {
         throw SignerError.jpki("\(context) failed: \(String(format: "%02X%02X", sw1, sw2))")
     }
 }
-

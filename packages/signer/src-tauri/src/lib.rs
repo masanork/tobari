@@ -39,6 +39,7 @@ pub struct DriverLicenseData {
     pub license_number: String,
     pub issue_date: String,
     pub expire_date: String,
+    pub signature: Option<String>, // Base64
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -60,6 +61,8 @@ pub struct MyNumberCardData {
     pub gender: String,
     pub my_number: String,
     pub face_photo: Option<String>,
+    pub auth_cert: Option<String>, // Base64
+    pub sign_cert: Option<String>, // Base64
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -664,6 +667,9 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
         .read_attributes(&request.pin)
         .await
         .map_err(SignerError::from)?;
+    
+    let auth_cert = controller.read_auth_cert().await.ok();
+    let sign_cert = controller.read_sign_cert().await.ok();
 
     Ok(MyNumberCardData {
         name: info.name,
@@ -672,6 +678,8 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
         gender: info.gender,
         my_number,
         face_photo: info.face_photo,
+        auth_cert: auth_cert.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        sign_cert: sign_cert.map(|d| URL_SAFE_NO_PAD.encode(d)),
     })
 }
 
@@ -709,6 +717,7 @@ async fn read_driver_license(request: DriverLicenseRequest) -> Result<DriverLice
     controller.verify_pin2(&request.pin2).await.map_err(SignerError::from)?;
 
     let info = controller.read_common_data().await.map_err(SignerError::from)?;
+    let signature = controller.read_signature().await.ok();
 
     Ok(DriverLicenseData {
         name: info.name,
@@ -718,6 +727,7 @@ async fn read_driver_license(request: DriverLicenseRequest) -> Result<DriverLice
         license_number: info.license_number,
         issue_date: info.issue_date,
         expire_date: info.expire_date,
+        signature: signature.map(|d| URL_SAFE_NO_PAD.encode(d)),
     })
 }
 

@@ -20,6 +20,7 @@ func assertEqual<T: Equatable>(_ actual: T, _ expected: T, _ message: String, fi
 struct PassportTests {
     static func main() async {
         print("🚀 Starting Passport Tests...")
+        ECMath.useMock = true
         await testPassportSelection()
         await testPassportReadDG1()
         await testPassportPACE()
