@@ -293,41 +293,44 @@ struct ActionBtn: View {
 
 struct IdentityResultView: View {
     let data: AppState.IdentityData
-    
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 15) {
-                if let photo = data.facePhoto {
-                    Image(nsImage: photo)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 120, height: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .shadow(radius: 5)
-                }
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(data.type.uppercased())
-                        .font(.caption2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                    
-                    ForEach(data.fields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
-                        HStack {
-                            Text(key)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .frame(width: 80, alignment: .leading)
-                            Text(value)
-                                .font(.system(.body, design: .monospaced))
-                        }
+        HStack(alignment: .top, spacing: 20) {
+            // Left side: Photo
+            if let photo = data.facePhoto {
+                Image(nsImage: photo)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 160, height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(radius: 5)
+            }
+
+            // Right side: Information
+            VStack(alignment: .leading, spacing: 12) {
+                Text(data.type.uppercased())
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.blue)
+
+                ForEach(data.fields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(key)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(value)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
                     }
                 }
-                .padding()
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+
+            Spacer(minLength: 0)
         }
+        .padding()
     }
 }
 
