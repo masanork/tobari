@@ -44,16 +44,25 @@ struct DriversLicenseTests {
         let mock = MockSmartCardManager()
         let controller = DriversLicenseController(manager: mock)
         
+        var selectedEF: Data = Data()
+        
         mock.handler = { apdu in
             let ins = apdu[1]
+            if ins == 0xA4 && apdu[2] == 0x02 { // Select EF
+                selectedEF = apdu.subdata(in: 5..<apdu.count)
+                return Data([0x90, 0x00])
+            }
             if ins == 0xB0 { // READ BINARY
-                // Construct TLV: Name (0x12) = "山田 太郎"
-                // Using a simpler string or verifying the byte mapping
-                let sjisName = "山田 太郎".data(using: String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.shiftJIS.rawValue))))!
-                var res = Data([0x12, UInt8(sjisName.count)])
-                res.append(sjisName)
-                res.append(contentsOf: [0x90, 0x00])
-                return res
+                if selectedEF == Data([0x00, 0x01]) {
+                    // Name (0x12) = "山田 太郎"
+                    let sjisName = "山田 太郎".data(using: String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.shiftJIS.rawValue))))!
+                    var res = Data([0x12, UInt8(sjisName.count)])
+                    res.append(sjisName)
+                    res.append(contentsOf: [0x90, 0x00])
+                    return res
+                } else if selectedEF == Data([0x00, 0x02]) { // Signature
+                    return Data([0xAA, 0xBB, 0xCC, 0xDD, 0x90, 0x00])
+                }
             }
             return Data([0x90, 0x00])
         }
@@ -61,6 +70,7 @@ struct DriversLicenseTests {
         do {
             let info = try await controller.readCommonData()
             assertEqual(info.name, "山田 太郎", "Name mismatch")
+            assert(info.signature != nil, "Signature should be present")
         } catch {
             print("❌ Unexpected Error: \(error)")
             exit(1)

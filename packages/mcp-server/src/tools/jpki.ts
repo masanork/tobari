@@ -163,7 +163,9 @@ export async function handleReadBasicInfo(toolArgs: any) {
                  name: result.name,
                  address: result.address,
                  birth_date: result.birthDate || result.birth_date,
-                 gender: result.gender
+                 gender: result.gender,
+                 auth_cert: result.authCert || result.auth_cert,
+                 sign_cert: result.signCert || result.sign_cert
              };
              
              return {

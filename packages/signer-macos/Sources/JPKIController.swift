@@ -7,6 +7,8 @@ struct BasicInfo: Codable {
     var birthDate: String = ""
     var gender: String = ""
     var facePhoto: String? = nil // Base64 encoded
+    var authCert: String? = nil // Base64
+    var signCert: String? = nil // Base64
 }
 
 class JPKIController {
@@ -329,7 +331,17 @@ class JPKIController {
         let data = try await readEFFull(ef: FileID.EF_ATTRIBUTES)
         
         // 4. Parse
-        return try parseBasicInfo(data: data)
+        var info = try parseBasicInfo(data: data)
+        
+        // 5. Read Certificates
+        if let authCert = try? await readCertificate(pin: pin, type: "auth") {
+            info.authCert = authCert.base64EncodedString()
+        }
+        if let signCert = try? await readCertificate(pin: pin, type: "sign") {
+            info.signCert = signCert.base64EncodedString()
+        }
+        
+        return info
     }
 
     // MARK: - Reading Face Photo
