@@ -1,5 +1,6 @@
 import * as path from "path";
 import * as fs from "fs/promises";
+import * as os from "os";
 import { decryptHpkeWithAlg, deriveHPKEKeyPair, HPKE_ALG_HYBRID, type HpkeAlg } from "@tobari/crypto/hpke";
 
 export const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
@@ -7,10 +8,32 @@ export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/de
 export const DEFAULT_SIGNER_MACOS_PATH = path.join(PROJECT_ROOT, "packages/signer-macos/bin/tobari-signer-macos");
 
 /**
- * Find the best available native signer binary.
+ * Find the best available native signer binary based on current platform and environment.
  */
 export function getNativeSignerPath(): string | undefined {
-    const possiblePaths = [
+    const platform = os.platform();
+    const arch = os.arch();
+    
+    // 1. Check environment variable (highest priority override)
+    const envPath = process.env.TOBARI_SIGNER_PATH;
+    if (envPath) return envPath;
+
+    // 2. Check for npm-installed platform-specific packages (future-proof)
+    const binaryName = platform === "win32" ? "tobari-signer.exe" : (platform === "darwin" ? "tobari-signer-macos" : "tobari-signer");
+    const packageName = `@tobari/signer-${platform}-${arch}`;
+    
+    // Try to resolve within node_modules relative to the current script
+    const possibleInstalledPaths = [
+        path.join(PROJECT_ROOT, "node_modules", packageName, "bin", binaryName),
+        path.join(PROJECT_ROOT, "..", "node_modules", packageName, "bin", binaryName), // Monorepo root
+    ];
+
+    for (const p of possibleInstalledPaths) {
+        try { if (require.resolve(p)) return p; } catch {}
+    }
+
+    // 3. Fallback to local development paths
+    const devPaths = [
         DEFAULT_SIGNER_MACOS_PATH,
         path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/release/tobari-signer"),
         path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
@@ -18,15 +41,14 @@ export function getNativeSignerPath(): string | undefined {
         path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/debug/tobari-signer.exe")
     ];
 
-    const envPath = process.env.TOBARI_SIGNER_PATH;
-    if (envPath) return envPath;
-
-    // Direct check since fs.existsSync is fast
-    for (const p of possiblePaths) {
+    for (const p of devPaths) {
         try {
-            if (fs.statSync(p).isFile()) return p;
+            // Using synchronous check for path resolution in initialization helpers
+            const { existsSync } = require("fs");
+            if (existsSync(p)) return p;
         } catch { }
     }
+    
     return undefined;
 }
 

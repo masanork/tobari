@@ -67,28 +67,40 @@ export async function verifyIdentityEvidence(data: any): Promise<Record<string, 
     // 1. Passport (ICAO 9303) SOD Verification
     if (data.sod && (data.dg1 || data.dg2)) {
         try {
-            // SOD is a DER encoded ContentInfo (PKCS#7)
-            // It contains LDSSecurityObject which lists hashes of DGs.
             const sodBinary = data.sod instanceof Uint8Array ? data.sod : new Uint8Array(Buffer.from(data.sod as string, 'base64'));
             
-            // Verify DG Hashes
+            // Search for DG hashes in SOD (simplified search for PoC)
+            // In a real SOD, DG hashes are OCTET STRINGs inside a SEQUENCE.
             const dgResults = [];
-            if (data.dg1) {
-                const dg1Bytes = data.dg1 instanceof Uint8Array ? data.dg1 : new Uint8Array(Buffer.from(data.dg1 as string, 'base64'));
-                const actualHash = new Uint8Array(await crypto.subtle.digest("SHA-256", dg1Bytes));
-                // In a real implementation, compare actualHash with the hash inside SOD
-                dgResults.push({ dg: "DG1", status: "Hash Calculated", verified: true });
-            }
-            if (data.dg2) {
-                const dg2Bytes = data.dg2 instanceof Uint8Array ? data.dg2 : new Uint8Array(Buffer.from(data.dg2 as string, 'base64'));
-                const actualHash = new Uint8Array(await crypto.subtle.digest("SHA-256", dg2Bytes));
-                dgResults.push({ dg: "DG2", status: "Hash Calculated", verified: true });
-            }
+            const hexSod = Buffer.from(sodBinary).toString('hex');
+
+            const verifyDG = async (dgKey: string, label: string) => {
+                const dgData = data[dgKey];
+                if (!dgData) return;
+                const dgBytes = dgData instanceof Uint8Array ? dgData : new Uint8Array(Buffer.from(dgData as string, 'base64'));
+                const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", dgBytes));
+                const hexHash = Buffer.from(hash).toString('hex');
+                
+                // Check if this hash exists in the SOD block
+                const found = hexSod.includes(hexHash);
+                dgResults.push({
+                    dg: label,
+                    status: found ? "Verified" : "Mismatch",
+                    verified: found,
+                    hash: hexHash.substring(0, 16) + "..."
+                });
+                if (!found) results.overallValid = false;
+            };
+
+            await verifyDG("dg1", "DG1 (MRZ)");
+            await verifyDG("dg2", "DG2 (Face)");
 
             results.details.push({
                 type: "Passport SOD",
-                status: "Integrity Verified",
-                message: "Government signature (SOD) and Data Group hashes match. Authenticity confirmed.",
+                status: results.overallValid ? "Integrity Verified" : "Integrity Failed",
+                message: results.overallValid 
+                    ? "Data Group hashes matched the government-signed SOD." 
+                    : "Some Data Groups did not match the SOD hashes.",
                 dgDetails: dgResults
             });
         } catch (e: any) {
@@ -101,13 +113,15 @@ export async function verifyIdentityEvidence(data: any): Promise<Record<string, 
     if (data.raw_data_group1 && data.signature) {
         try {
             const rawDg1 = data.raw_data_group1 instanceof Uint8Array ? data.raw_data_group1 : new Uint8Array(Buffer.from(data.raw_data_group1 as string, 'base64'));
-            const sig = data.signature instanceof Uint8Array ? data.signature : new Uint8Array(Buffer.from(data.signature as string, 'base64'));
-            
-            // In a real implementation, verify sig over rawDg1 using public key of Prefectural Police
+            const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", rawDg1));
+            const hexHash = Buffer.from(hash).toString('hex');
+
             results.details.push({
-                type: "Driver's License Signature",
-                status: "Integrity Verified",
-                message: "Police signature verified over raw data group. Content is authentic."
+                type: "Driver's License Integrity",
+                status: "Evidence Present",
+                message: "Police signature and raw data group found. Verification can be performed by matching signature with the calculated hash.",
+                calculatedHash: hexHash.substring(0, 16) + "...",
+                signatureLength: data.signature.length
             });
         } catch (e: any) {
             results.overallValid = false;
@@ -118,11 +132,14 @@ export async function verifyIdentityEvidence(data: any): Promise<Record<string, 
     // 3. JPKI Certificate Chain Check
     if (data.auth_cert && data.auth_ca_cert) {
         try {
-            // Proof of identity source
+            const userCert = data.auth_cert instanceof Uint8Array ? data.auth_cert : new Uint8Array(Buffer.from(data.auth_cert as string, 'base64'));
+            const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", userCert));
+            
             results.details.push({
                 type: "JPKI Trust Chain",
                 status: "Evidence Present",
-                message: "Intermediate CA certificate included. Ready for offline chain verification."
+                message: "User certificate and Intermediate CA found. Offline verification possible.",
+                userCertFingerprint: Buffer.from(hash).toString('hex').substring(0, 16) + "..."
             });
         } catch (e: any) {
             results.overallValid = false;
