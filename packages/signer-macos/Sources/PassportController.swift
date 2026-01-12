@@ -13,6 +13,7 @@ struct PassportInfo: Codable {
     var issuingAuthority: String?
     var issueDate: String?
     var facePhoto: String? // Base64
+    var sod: String? // Base64 EF.SOD
 }
 
 class PassportController {
@@ -194,14 +195,20 @@ class PassportController {
         return try await readEF(fileID: Data([0x01, 0x0C]))
     }
     
+    func readSOD() async throws -> Data {
+        return try await readEF(fileID: Data([0x01, 0x1D])) // EF.SOD is 01 1D
+    }
+    
     func readFullPassportInfo() async throws -> PassportInfo {
         let dg1 = try await readDG1()
         let dg2 = try await readDG2()
         let dg11 = try? await readDG11()
         let dg12 = try? await readDG12()
+        let sod = try? await readSOD()
         
         var info = parseDG1(dg1)
         info.facePhoto = dg2.base64EncodedString()
+        if let sodData = sod { info.sod = sodData.base64EncodedString() }
         
         if let dg11Data = dg11 {
             let dg11Info = parseDG11(dg11Data)

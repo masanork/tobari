@@ -29,33 +29,48 @@ export async function handleIssueIdentityDocument(toolArgs: any) {
         const args = IssueIdentityDocumentSchema.parse(toolArgs);
         const signerPath = getNativeSignerPath();
 
-        // 1. Get Device Public Keys for Holder Binding and Encryption
+        // 1. Determine DocType and Namespace
+        const docType = args.isDtc ? "org.icao.dtc.v1" : args.docType;
+        const mainNamespace = args.isDtc ? "org.icao.lds.1" : args.docType;
+
+        // 2. Get Device Public Keys for Holder Binding and Encryption
         let deviceKeys: any = null;
         if (process.platform === 'darwin' && signerPath) {
             const registrationResult = await handleRegisterDevice({});
             deviceKeys = JSON.parse(registrationResult.content[0].text);
         }
 
-        // 2. Generate Mock Issuer Key for local sign (MSO signature)
-        // If we use externalSigner, this privateKey will be unused but needed for the function signature.
+        // 3. Prepare Mock Issuer Key for local sign (MSO signature)
         const issuerKeyPair = await crypto.subtle.generateKey(
             { name: "ECDSA", namedCurve: "P-384" },
             true,
             ["sign"]
         );
 
-        // 3. Construct schema YAML
-        const fields = Object.keys(args.data).map(k => `  - id: ${k}\n    title: ${k.charAt(0).toUpperCase() + k.slice(1)}`).join("\n");
+        // 4. Construct data and schema
+        // If DTC mode, map dg1, dg2, sod keys to binary from base64
+        const processedData: Record<string, any> = {};
+        const fields: any[] = [];
+
+        for (const [k, v] of Object.entries(args.data)) {
+            if (args.isDtc && (k.startsWith("dg") || k === "sod")) {
+                // Keep as binary if it's an ICAO Data Group
+                processedData[k] = new Uint8Array(Buffer.from(v as string, 'base64'));
+            } else {
+                processedData[k] = v;
+            }
+            fields.push({ id: k, title: k.toUpperCase() });
+        }
+
         const docSchemaYaml = `
-id: ${args.docType}
+id: ${docType}
 title: ${args.title}
 fields:
-${fields}
+${fields.map(f => `  - id: ${f.id}\n    title: ${f.title}`).join("\n")}
 `;
 
-        // 4. Define External Signer for hardware-bound MSO signature
+        // 5. Define External Signer for hardware-bound MSO signature
         let externalSigner: ((msoHash: Uint8Array) => Promise<Uint8Array>) | undefined;
-        
         if (process.platform === 'darwin' && signerPath === DEFAULT_SIGNER_MACOS_PATH) {
             externalSigner = async (msoHash: Uint8Array) => {
                 const hashBase64Url = Buffer.from(msoHash).toString('base64url');
@@ -65,7 +80,7 @@ ${fields}
             };
         }
 
-        // 5. Handle Encryption if requested
+        // 6. Handle Encryption
         let encryptionPublicKey: Uint8Array | undefined;
         if (args.encrypt && deviceKeys) {
             const x = Buffer.from(deviceKeys.encryptionPublicKey.x, 'base64url');
@@ -76,10 +91,10 @@ ${fields}
             encryptionPublicKey.set(y, 33);
         }
 
-        // 6. Generate signed document
-        const coseBinary = await generateSignedTobari(docSchemaYaml, args.data, issuerKeyPair.privateKey, {
+        // 7. Generate signed document
+        const coseBinary = await generateSignedTobari(docSchemaYaml, processedData, issuerKeyPair.privateKey, {
             kid: externalSigner ? "hardware-device-key" : "self-issued-local-key",
-            alg: externalSigner ? -7 : -35, // P-256 for SE, P-384 for mock
+            alg: externalSigner ? -7 : -35,
             devicePublicKey: deviceKeys ? await crypto.subtle.importKey(
                 "jwk",
                 deviceKeys.signingPublicKey,
@@ -91,7 +106,7 @@ ${fields}
             externalSigner: externalSigner
         });
 
-        // 7. Save
+        // 8. Save
         await fs.writeFile(args.outputPath, coseBinary);
 
         return {
@@ -100,10 +115,11 @@ ${fields}
                 text: JSON.stringify({
                     success: true,
                     path: path.resolve(args.outputPath),
-                    docType: args.docType,
+                    docType: docType,
+                    namespace: mainNamespace,
                     encrypted: !!encryptionPublicKey,
                     hardwareSigned: !!externalSigner,
-                    message: `Local identity document issued and saved to ${args.outputPath}. ${externalSigner ? "Authenticated with hardware signature." : ""}`
+                    message: `Local identity document (${args.isDtc ? "DTC Type 1" : "Custom"}) issued and saved to ${args.outputPath}`
                 }, null, 2)
             }],
         };
