@@ -125,6 +125,10 @@ app: | $(BIN_DIR)
 	@$(SWIFTC) -o "$(APP_BUNDLE)/Contents/MacOS/$(PROJECT_NAME)" $(ALL_SOURCES) $(FRAMEWORKS) $(SWIFT_FLAGS_RELEASE)
 	@echo "📄 Copying Info.plist..."
 	@cp "$(INFO_PLIST)" "$(APP_BUNDLE)/Contents/Info.plist"
+	@if [ -f "AppIcon.icns" ]; then \
+		echo "🎨 Copying AppIcon.icns..."; \
+		cp "AppIcon.icns" "$(APP_BUNDLE)/Contents/Resources/AppIcon.icns"; \
+	fi
 	@echo "🔏 Code signing app bundle..."
 	@$(CODESIGN) $(SIGN_WITH_ENTITLEMENTS) "$(APP_BUNDLE)"
 	@echo "✅ App bundle created: $(APP_BUNDLE)"

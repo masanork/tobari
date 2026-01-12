@@ -52,7 +52,19 @@ export async function generateSignedTobari(
         externalSigner?: (msoHash: Uint8Array) => Promise<Uint8Array>; // For hardware-bound signing
     } = {}
 ): Promise<Uint8Array> {
-// ... (omitted) ...
+    // 1. Parse Schema & Transform Data
+    const schema = yaml.load(schemaYaml) as any;
+    const namespace = schema.id; // Use schema ID as namespace
+
+    const { mso, issuerSignedItems } = await transformToMdocData(
+        schema.id,
+        data,
+        schema.fields,
+        namespace,
+        options.devicePublicKey,
+        options.devicePqcPublicKey
+    );
+
     // 2. Sign MSO
     let issuerAuth: Uint8Array;
     
