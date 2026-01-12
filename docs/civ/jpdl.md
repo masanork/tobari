@@ -36,11 +36,19 @@
 | **DF2** | EF01 | `00 01` | WEF | Face Photo | 2005 | **PIN 1 & 2** | - |
 | **DF3** | EF01 | `00 01` | WEF | RFU | 512 | **PIN 1** | - |
 
-**Access Rights Note:**
-*   If **MF/EF02** Byte 1 Bit 1 is `0` (PIN not set), verification is treated as using a Default PIN (`****`) or skipped.
-*   "Condition Changes" (EF04) Read is **Forbidden** (or treated as PIN1) if PIN is not set.
+**Access Rights & Sequence Note:**
+*   To verify PINs, you MUST select **MF** first, then select the IEF (`00 01` or `00 02`), then send `VERIFY`.
+    *   Sequence: `Select MF` -> `Select IEF` -> `Verify` -> `Select DF` -> `Select EF` -> `Read`.
+*   Condition Changes (EF04) Read is **Forbidden** (or treated as PIN1) if PIN is not set.
 
 ## 4. Data Content Details
+
+**Encoding Note:**
+*   **Text Fields** (Name, Address, etc.) are encoded in **Raw JIS X 0208** (ISO-2022-JP without escapes), NOT standard Shift-JIS.
+    *   Bytes are in the range `0x21`-`0x7E`. Conversion to Shift-JIS or UTF-8 is required.
+    *   Some implementations may treat the first 2 bytes as a header/length and skip them.
+*   **Date/Number Fields** (Birth, License No) are **ASCII** encoded.
+*   **Tag `1F` (Condition 4)** is treated as a **Single Byte Tag** in this application, despite BER-TLV rules (where `1F` indicates multi-byte). Parsers must handle this exception.
 
 ### 4.1 Common Data Element (MF/EF01)
 | Tag | Len | Content | Encoding |

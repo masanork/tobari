@@ -112,7 +112,7 @@ class PassportController {
         let (ksEnc, ksMac) = PACEUtils.deriveSessionKeys(sharedSecret: sharedSecret)
         
         // SSC is typically initialized to 0 or derived from previous steps in PACE
-        self.sm = SecureMessaging(ksEnc: ksEnc, ksMac: ksMac, ssc: 0)
+        self.sm = SecureMessaging(ksEnc: ksEnc, ksMac: ksMac, ssc: 0, proto: .pace)
         
         debugPrint("PACE Secure Messaging Established with Shared Secret: \(sharedSecret.count) bytes")
     }
@@ -129,10 +129,14 @@ class PassportController {
         let rndIcRes = try await manager.transmit(apdu: getChallengeApdu)
         try checkSW(rndIcRes, context: "Get Challenge")
         let rndIc = rndIcRes.prefix(8)
+        if rndIc.count != 8 {
+            throw SignerError.passport("Invalid RND.IC length: \(rndIc.count)")
+        }
         
         // 3. Prepare Mutual Authentication Data
-        let rndIf = Data(AES.GCM.Nonce()) // 8 bytes random
-        let kIf = Data(AES.GCM.Nonce())   // 16 bytes random
+        var rng = SystemRandomNumberGenerator()
+        let rndIf = Data((0..<8).map { _ in UInt8.random(in: 0...255, using: &rng) })
+        let kIf = Data((0..<16).map { _ in UInt8.random(in: 0...255, using: &rng) })
         
         // S = RND.IF || RND.IC || K.IF
         var s = Data()
@@ -140,11 +144,11 @@ class PassportController {
         s.append(rndIc)
         s.append(kIf)
         
-        // E.IF = Enc(Kenc, S)
-        let eIf = try aesEncrypt(data: s, key: kEnc)
+        // E.IF = Enc(Kenc, S) using 3DES-CBC with IV=0
+        let eIf = try des3Encrypt(data: s, key: kEnc)
         
-        // M.IF = MAC(Kmac, E.IF)
-        let mIf = try calculateMAC(data: eIf, key: kMac)
+        // M.IF = Retail-MAC(Kmac, E.IF)
+        let mIf = try calculateRetailMAC(data: eIf, key: kMac)
         
         // 4. Send EXTERNAL AUTHENTICATE
         // CLA=00, INS=82, P1=00, P2=00, Lc=28, Data=E.IF || M.IF, Le=28
@@ -158,9 +162,29 @@ class PassportController {
         
         // 5. Establish Session Keys
         let eIc = authRes.prefix(32)
-        let sRes = try aesDecrypt(data: eIc, key: kEnc)
+        let sRes = try des3Decrypt(data: eIc, key: kEnc)
         // S.RES = RND.IC || RND.IF || K.IC
-        let kIc = sRes.suffix(16)
+        if sRes.count < 32 {
+             throw SignerError.passport("Invalid Mutual Auth Response length")
+        }
+        
+        let decryptedRndIc = sRes.prefix(8)
+        if decryptedRndIc != rndIc {
+             let expected = rndIc.map { String(format: "%02X", $0) }.joined()
+             let got = decryptedRndIc.map { String(format: "%02X", $0) }.joined()
+             print("DEBUG: RND.IC mismatch! Expected: \(expected), Got: \(got)")
+             throw SignerError.passport("Mutual Auth: RND.IC mismatch")
+        }
+        
+        let decryptedRndIf = sRes.dropFirst(8).prefix(8)
+        if decryptedRndIf != rndIf {
+             let expected = rndIf.map { String(format: "%02X", $0) }.joined()
+             let got = decryptedRndIf.map { String(format: "%02X", $0) }.joined()
+             print("DEBUG: RND.IF mismatch! Expected: \(expected), Got: \(got)")
+             throw SignerError.passport("Mutual Auth: RND.IF mismatch")
+        }
+
+        let kIc = Data(sRes.suffix(16)) // Reset indices
         
         // K.Seed = K.IF ^ K.IC
         var kSeed = Data(count: 16)
@@ -179,7 +203,10 @@ class PassportController {
         sscData.append(rndIf.suffix(4))
         let ssc = sscData.withUnsafeBytes { $0.load(as: UInt64.self).byteSwapped }
         
-        self.sm = SecureMessaging(ksEnc: SymmetricKey(data: ksEncBytes), ksMac: SymmetricKey(data: ksMacBytes), ssc: ssc)
+        self.sm = SecureMessaging(ksEnc: SymmetricKey(data: ksEncBytes), ksMac: SymmetricKey(data: ksMacBytes), ssc: ssc, proto: .bac)
+        print("DEBUG: KS.Enc: \(ksEncBytes.map { String(format: "%02X", $0) }.joined())")
+        print("DEBUG: KS.Mac: \(ksMacBytes.map { String(format: "%02X", $0) }.joined())")
+        print("DEBUG: SSC: \(String(format: "%016llX", ssc))")
         debugPrint("Secure Messaging Established.")
     }
     
@@ -332,6 +359,12 @@ class PassportController {
         if let sm = self.sm {
             let wrapped = try sm.wrap(apdu: apdu)
             let res = try await manager.transmit(apdu: wrapped)
+            
+            // If response is too short (just SW), it implies SM layer error or plain response
+            if res.count < 4 {
+                return res
+            }
+            
             let (unwrapped, sw1, sw2) = try sm.unwrap(response: res)
             var fullRes = unwrapped
             fullRes.append(sw1)
@@ -368,11 +401,82 @@ class PassportController {
         guard status == kCCSuccess else { throw SignerError.internalError("AES failed: \(status)") }
         return outData.prefix(outLength)
     }
+
+    private func des3Encrypt(data: Data, key: SymmetricKey, iv: Data = Data(count: 8)) throws -> Data {
+        return try crypt3DES(operation: CCOperation(kCCEncrypt), data: data, key: key, iv: iv)
+    }
+
+    private func des3Decrypt(data: Data, key: SymmetricKey, iv: Data = Data(count: 8)) throws -> Data {
+        return try crypt3DES(operation: CCOperation(kCCDecrypt), data: data, key: key, iv: iv)
+    }
+
+    private func crypt3DES(operation: CCOperation, data: Data, key: SymmetricKey, iv: Data) throws -> Data {
+        var keyData = key.withUnsafeBytes { Data($0) }
+        if keyData.count == 16 {
+            keyData.append(keyData.prefix(8))
+        }
+        var outLength = Int(0)
+        let dataCount = data.count
+        var outData = Data(count: dataCount + kCCBlockSize3DES)
+        let outCount = outData.count
+        let status = outData.withUnsafeMutableBytes { outBytes in
+            data.withUnsafeBytes { dataBytes in
+                keyData.withUnsafeBytes { keyBytes in
+                    iv.withUnsafeBytes { ivBytes in
+                        CCCrypt(operation, CCAlgorithm(kCCAlgorithm3DES), 0, keyBytes.baseAddress, kCCKeySize3DES, ivBytes.baseAddress, dataBytes.baseAddress, dataCount, outBytes.baseAddress, outCount, &outLength)
+                    }
+                }
+            }
+        }
+        guard status == kCCSuccess else { throw SignerError.internalError("3DES failed: \(status)") }
+        return outData.prefix(outLength)
+    }
+
+    private func calculateRetailMAC(data: Data, key: SymmetricKey) throws -> Data {
+        let keyData = key.withUnsafeBytes { Data($0) }
+        let k1 = keyData.prefix(8)
+        let k2 = keyData.suffix(8)
+        let padded = padRetailMAC(data)
+        var currentIV = Data(count: 8)
+        for i in 0..<(padded.count / 8) {
+            let block = padded.subdata(in: (i*8)..<(i*8+8))
+            let input = Data(zip(block, currentIV).map { $0 ^ $1 })
+            currentIV = try desEncryptECB(data: input, key: k1)
+        }
+        let decrypted = try desDecryptECB(data: currentIV, key: k2)
+        let finalMAC = try desEncryptECB(data: decrypted, key: k1)
+        return finalMAC
+    }
+
+    private func desEncryptECB(data: Data, key: Data) throws -> Data {
+        return try cryptDES(operation: CCOperation(kCCEncrypt), data: data, key: key)
+    }
     
-    private func calculateMAC(data: Data, key: SymmetricKey) throws -> Data {
-        // Placeholder for AES-CMAC or Retail MAC. 
-        // Real implementation needs 8 bytes MAC.
-        return Data(repeating: 0x00, count: 8)
+    private func desDecryptECB(data: Data, key: Data) throws -> Data {
+        return try cryptDES(operation: CCOperation(kCCDecrypt), data: data, key: key)
+    }
+
+    private func cryptDES(operation: CCOperation, data: Data, key: Data) throws -> Data {
+        var outLength = Int(0)
+        let dataCount = data.count
+        var outData = Data(count: dataCount + kCCBlockSizeDES)
+        let outCount = outData.count
+        let status = outData.withUnsafeMutableBytes { outBytes in
+            data.withUnsafeBytes { dataBytes in
+                key.withUnsafeBytes { keyBytes in
+                    CCCrypt(operation, CCAlgorithm(kCCAlgorithmDES), UInt32(kCCOptionECBMode), keyBytes.baseAddress, kCCKeySizeDES, nil, dataBytes.baseAddress, dataCount, outBytes.baseAddress, outCount, &outLength)
+                }
+            }
+        }
+        guard status == kCCSuccess else { throw SignerError.internalError("DES failed: \(status)") }
+        return outData.prefix(outLength)
+    }
+
+    private func padRetailMAC(_ data: Data) -> Data {
+        var padded = data
+        padded.append(0x80)
+        while padded.count % 8 != 0 { padded.append(0x00) }
+        return padded
     }
     
     private func deriveSessionKey(seed: Data, counter: [UInt8]) -> Data {
@@ -383,10 +487,10 @@ class PassportController {
     }
     
     private func checkSW(_ data: Data, context: String) throws {
-        if data.count < 2 { throw SignerError.jpki("\(context): too short") }
+        if data.count < 2 { throw SignerError.passport("\(context): too short") }
         let sw = (UInt16(data[data.count-2]) << 8) | UInt16(data[data.count-1])
         if sw != 0x9000 {
-            throw SignerError.jpki("\(context) failed: \(String(format: "%04X", sw))")
+            throw SignerError.passport("\(context) failed: \(String(format: "%04X", sw))")
         }
     }
 }

@@ -202,7 +202,7 @@ struct EntryView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 } else if mode == .license {
-                    SecureField("PIN 1 (4 digits)", text: $pin)
+                    SecureField("PIN 1 (Common)", text: $pin)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .pin)
                         .onAppear {
@@ -210,9 +210,14 @@ struct EntryView: View {
                                 focusedField = .pin
                             }
                         }
-                    SecureField("PIN 2 (4 digits)", text: $pin2)
+                    
+                    SecureField("PIN 2 (Sensitive - Optional)", text: $pin2)
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .pin2)
+                        
+                    Text("PIN2 is required for Registered Domicile & Photo")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
             .frame(width: 250)
@@ -247,7 +252,7 @@ struct EntryView: View {
         switch mode {
         case .jpki: return pin.count >= 4
         case .passport: return mrz.count >= 6
-        case .license: return pin.count >= 4 && pin2.count >= 4
+        case .license: return pin.count >= 4
         default: return false
         }
     }
@@ -259,7 +264,7 @@ struct EntryView: View {
             case .passport: 
                 if mrz.count == 6 { await state.readPassport(can: mrz) }
                 else { await state.readPassport(mrz: mrz) }
-            case .license: await state.readDriverLicense(pin1: pin, pin2: pin2)
+            case .license: await state.readDriverLicense(pin1: pin, pin2: pin2.isEmpty ? nil : pin2)
             default: break
             }
         }
@@ -308,19 +313,36 @@ struct IdentityResultView: View {
 
             // Right side: Information
             VStack(alignment: .leading, spacing: 12) {
-                Text(data.type.uppercased())
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.blue)
+                HStack {
+                    Text(data.type.uppercased())
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
+                    Spacer()
+                    if let dump = data.fields["Debug Dump"] {
+                        Button(action: {
+                            let pasteboard = NSPasteboard.general
+                            pasteboard.clearContents()
+                            pasteboard.setString(dump, forType: .string)
+                        }) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy Debug Info")
+                    }
+                }
 
                 ForEach(data.fields.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(key)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(value)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
+                    if key != "Debug Dump" {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(key)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(value)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
                     }
                 }
             }

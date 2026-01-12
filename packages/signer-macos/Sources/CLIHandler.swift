@@ -280,21 +280,20 @@ class CLIHandler {
         }
 
         if args.contains("--read-driver-license") {
-            guard let pin1Index = args.firstIndex(of: "--pin1"), pin1Index + 1 < args.count,
-                  let pin2Index = args.firstIndex(of: "--pin2"), pin2Index + 1 < args.count else {
-                fputs("Usage: tobari-signer-macos --read-driver-license --pin1 <PIN1> --pin2 <PIN2>\n", stderr)
+            guard let pin1Index = args.firstIndex(of: "--pin1"), pin1Index + 1 < args.count else {
+                fputs("Usage: tobari-signer-macos --read-driver-license --pin1 <PIN1> [--pin2 <PIN2>]\n", stderr)
                 exit(1)
             }
             let pin1 = args[pin1Index + 1]
-            let pin2 = args[pin2Index + 1]
+            var pin2: String? = nil
+            if let pin2Index = args.firstIndex(of: "--pin2"), pin2Index + 1 < args.count {
+                pin2 = args[pin2Index + 1]
+            }
             
             let manager = SmartCardManager()
             let controller = DriversLicenseController(manager: manager)
             do {
-                try await controller.selectDLAP()
-                try await controller.verifyPIN1(pin1)
-                try await controller.verifyPIN2(pin2)
-                let info = try await controller.readCommonData()
+                let info = try await controller.readData(pin1: pin1, pin2: pin2)
                 printResult(info)
                 exit(0)
             } catch {

@@ -61,7 +61,8 @@ class TLVParser {
         let firstTagByte = bytes[offset]
         offset += 1
         
-        if (firstTagByte & 0x1F) == 0x1F {
+        // JPDL Special: 0x1F is used as a single byte tag despite bits 5-1 being 11111
+        if (firstTagByte & 0x1F) == 0x1F && firstTagByte != 0x1F {
             // Multi-byte tag
             while offset < bytes.count {
                 let nextByte = bytes[offset]
