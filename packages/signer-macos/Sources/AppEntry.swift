@@ -21,7 +21,7 @@ struct SignerApp: App {
             if ProcessInfo.processInfo.arguments.count <= 1 {
                 MainView()
                     .environmentObject(appState)
-                    .frame(minWidth: 400, minHeight: 500)
+                    .frame(minWidth: 600, minHeight: 450)
             }
         }
         //.windowStyle(.hiddenTitleBar) // Removed to fix focus issues
