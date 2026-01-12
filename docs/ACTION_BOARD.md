@@ -10,9 +10,11 @@
 - [x] **Device-bound Decryption (ECIES)**: Implemented full-stack decryption flow using Secure Enclave Key Agreement via `mcp-server` and `signer-macos`.
 - [x] **Hardware-backed Registration**: Added `register_device` tool to export Secure Enclave public keys for issuance.
 - [x] **Self-Issuance Workflow**: Implemented `issue_local_credential` to create hardware-bound "Master mdocs" from JPKI data, enabling card-less future interactions.
-- [ ] **MCP ↔ Tobari Signer (Tauri/FIDO) Coupling**
+- [x] **MCP ↔ Tobari Signer (Tauri/FIDO) Coupling**
   - [x] **Resolve Protocol Mismatch**: Extended Tobari VP format and `@tobari/codec` to natively support WebAuthn assertions (`authData` + `clientDataJSON`).
-  - [ ] **Implement in Tauri**: Update `tobari-signer` (Rust) to return raw WebAuthn assertions for assembly by MCP.
+  - [x] **Implement in Tauri**: Updated `tobari-signer` (Rust) to return raw WebAuthn assertions for assembly by MCP.
+  - [x] **Extended Identity Support**: Added Passport (BAC/PACE), Driver's License, and Residence Card reading.
+  - [x] **Native macOS UX**: Integrated Touch ID and native PIN prompt dialogs.
   - [x] Document build/install steps for macOS/Windows and `TOBARI_SIGNER_PATH` configuration.
 
 ### Performance & PQC
@@ -33,6 +35,7 @@
 - [ ] **FATF/SCAC Operations Mapping**
   - [ ] Create correspondence table for VASP risk assessment vs VP elements.
   - [ ] Draft minimal Travel Rule interface.
+- [ ] **DTC Type 1 Implementation**: Fully align `issue_identity_document` with ICAO Digital Travel Credentials LDS structure.
 
 ### MCP Enhancements (Demo Automation)
 - [x] **End-to-End Demo Support**
@@ -43,16 +46,18 @@
 ## 📅 Next (1-2 Months)
 
 ### Privacy & ZKP
-- [ ] **BBS+ Unlinkable Credentials**
-  - [ ] Resolve Wasm interface issues for blind signatures.
-  - [ ] Implement seamless proof generation pipeline.
+- [x] **BBS+ Unlinkable Credentials (Tauri)**: Integrated keygen and proof generation into Tauri signer.
+- [ ] **BBS+ Portability**: Port/Bridge BBS+ implementation to `signer-macos` via Rust FFI.
 - [ ] **Production ZKP Pipeline (snarkjs)**
-  - [ ] Integrate RSA/ECDSA verification circuits into `passport.circom`.
-  - [ ] Establish testing with real passport data.
-
+// ... (omitted) ...
 ### Civ Library Refinement
-- [ ] **Error Handling**: Explicitly handle card-specific errors (`IncorrectPin`, `CardLocked`, `NotAuthenticated`) in `CivError`.
-- [ ] **Documentation**: Standardize Rustdoc comments for public APIs.
+- [x] **Error Handling**: Explicitly handle card-specific errors (`IncorrectPin`, `CardLocked`) across all platforms.
+- [ ] **Extended Length APDU**: Verify stability for large data across various readers.
+- [ ] **Full PACE/BAC Crypto**: Complete the ECC/MAC implementation for macOS native passport reading.
+
+### Signer UX Evolution
+- [ ] **macOS GUI (SwiftUI)**: Port Tauri's rich identity display and interaction to a native macOS SwiftUI application.
+- [ ] **Interactive PIN Recovery**: Guide users through municipal office reset procedures via LLM when a card is locked.
 
 ## 🔮 Later (2026 / Q2+)
 

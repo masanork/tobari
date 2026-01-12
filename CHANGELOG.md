@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.14] - 2026-01-12
+
+### Features
+- **Signer (Unified)**:
+  - **JPKI/My Number Card**: Integrated full JPKI support (Sign, Read attributes/mynumber/photo) across both Tauri and macOS signers.
+  - **Identity Documents**: Added native support for reading **ePassport (ICAO 9303)**, **Japanese Driver's License**, and **Residence Card**.
+  - **BBS+ Unlinkability**: Integrated BBS+ key generation and Zero-Knowledge Proof (ZKP) generation into the Tauri signer backend.
+  - **Structured Error Handling**: Implemented detailed error reporting for PIN retries, card locking, and hardware failures across all platforms.
+- **Signer (macOS)**:
+  - **OS Integration**: Added Touch ID authentication and native secure PIN input dialogs for a seamless macOS experience.
+  - **Passport Protocol**: Implemented **BAC (Basic Access Control)** and **PACE (Password Authenticated Connection Establishment)** skeleton for encrypted passport communication.
+  - **Extended Length APDU**: Optimized data transfer for large blobs (like face photos) using ISO 7816-4 extended length support.
+  - **Universal TLV Parser**: Developed a robust, recursive BER-TLV parser used by all document controllers.
+- **MCP Server**:
+  - **Identity Tools**: Exposed `read_passport`, `read_driver_license`, and `read_residence_card` tools to LLM.
+  - **Hardware-bound Issuance**: Added `issue_identity_document` to create hardware-encrypted mdocs (DTC Type 1 inspired) from arbitrary physical card data.
+  - **BBS+ Integration**: Added `generate_bbs_key` and `sign_with_bbs` tools.
+- **Testing**:
+  - **Signer-macOS Tests**: Added comprehensive mock-based unit tests for JPKI, Passport, and License controllers with an automated test runner.
+
 ## [0.3.13] - 2026-01-11
 
 ### Features
