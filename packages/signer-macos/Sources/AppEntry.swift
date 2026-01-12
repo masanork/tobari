@@ -24,7 +24,7 @@ struct SignerApp: App {
                     .frame(minWidth: 400, minHeight: 500)
             }
         }
-        .windowStyle(.hiddenTitleBar)
+        //.windowStyle(.hiddenTitleBar) // Removed to fix focus issues
     }
 }
 
@@ -65,22 +65,35 @@ class AppState: ObservableObject {
         do {
             let jpki = JPKIController(manager: SmartCardManager.shared)
             let info = try await jpki.readAttributes(pin: pin)
+            print("DEBUG: Attributes retrieved - Name: '\(info.name)', Address: '\(info.address)', Birth: '\(info.birthDate)', Gender: '\(info.gender)'")
+
             let myNumber = try await jpki.readMyNumber(pin: pin)
-            
+            print("DEBUG: My Number: '\(myNumber)'")
+
             var fields = [
                 "Name": info.name,
                 "Address": info.address,
                 "Birth Date": info.birthDate,
+                "Gender": info.gender,
                 "My Number": myNumber
             ]
-            
+
             var photo: NSImage? = nil
-            if let photoData = try? await jpki.readFacePhoto(pin: pin) {
+            var photoStatus = ""
+            do {
+                let photoData = try await jpki.readFacePhoto(myNumber: myNumber)
                 photo = NSImage(data: photoData)
+                if photo == nil {
+                    photoStatus = " (Photo: failed to decode \(photoData.count) bytes)"
+                } else {
+                    photoStatus = " (Photo: OK)"
+                }
+            } catch {
+                photoStatus = " (Photo error: \(error.localizedDescription))"
             }
-            
+
             self.cardData = IdentityData(type: "My Number Card", fields: fields, facePhoto: photo)
-            status = "Success"
+            status = "Success" + photoStatus
         } catch {
             self.error = error.localizedDescription
             status = "Error"

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct MainView: View {
     @EnvironmentObject var state: AppState
@@ -7,15 +8,16 @@ struct MainView: View {
     @State private var mrz: String = ""
     @State private var entryMode: EntryMode = .none
     @State private var showScanner: Bool = false
-    
+
     enum EntryMode {
         case none, jpki, passport, license
     }
-    
+
     var body: some View {
         ZStack {
             VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
             
             VStack(spacing: 20) {
                 // Header
@@ -68,6 +70,18 @@ struct MainView: View {
         .sheet(isPresented: $showScanner) {
             ScannerView(isPresented: $showScanner, mrzResult: $mrz)
                 .frame(width: 500, height: 400)
+        }
+        .onAppear {
+            // Activate the application when the view appears
+            // This ensures keyboard input goes to the app window, not the terminal
+            NSApplication.shared.activate(ignoringOtherApps: true)
+
+            // Also make sure the window becomes key
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if let window = NSApplication.shared.windows.first {
+                    window.makeKey()
+                }
+            }
         }
     }
 }
@@ -132,6 +146,11 @@ struct EntryView: View {
     @Binding var pin2: String
     @Binding var mrz: String
     @Binding var showScanner: Bool
+    @FocusState private var focusedField: Field?
+
+    enum Field: Hashable {
+        case pin, pin2, mrz
+    }
     
     var body: some View {
         VStack(spacing: 20) {
@@ -154,12 +173,24 @@ struct EntryView: View {
                     SecureField("4-digit PIN", text: $pin)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.center)
+                        .focused($focusedField, equals: .pin)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                focusedField = .pin
+                            }
+                        }
                 } else if mode == .passport {
                     HStack {
                         TextField("MRZ (or CAN)", text: $mrz)
                             .textFieldStyle(.roundedBorder)
                             .multilineTextAlignment(.center)
-                        
+                            .focused($focusedField, equals: .mrz)
+                            .onAppear {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                    focusedField = .mrz
+                                }
+                            }
+
                         Button(action: { showScanner = true }) {
                             Image(systemName: "camera.viewfinder")
                                 .font(.title3)
@@ -173,8 +204,15 @@ struct EntryView: View {
                 } else if mode == .license {
                     SecureField("PIN 1 (4 digits)", text: $pin)
                         .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .pin)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                focusedField = .pin
+                            }
+                        }
                     SecureField("PIN 2 (4 digits)", text: $pin2)
                         .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .pin2)
                 }
             }
             .frame(width: 250)

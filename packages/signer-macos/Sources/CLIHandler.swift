@@ -224,13 +224,18 @@ class CLIHandler {
                 exit(1)
             }
             let pin = args[pinIndex + 1]
-            
+
             debugLog("Reading Face Photo from JPKI Card...")
             let manager = SmartCardManager()
             let jpki = JPKIController(manager: manager)
-            
+
             do {
-                let photoData = try await jpki.readFacePhoto(pin: pin)
+                // First read My Number
+                let myNumber = try await jpki.readMyNumber(pin: pin)
+                debugLog("My Number retrieved, reading face photo...")
+
+                // Then read face photo using My Number
+                let photoData = try await jpki.readFacePhoto(myNumber: myNumber)
                 let photoBase64 = photoData.base64EncodedString()
                 print("{\"photo\": \"\(photoBase64)\"}")
                 exit(0)
