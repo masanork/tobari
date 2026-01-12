@@ -200,36 +200,40 @@ class SecureMessaging {
     }
     
     private func calculateMAC(ssc: UInt64, data: Data) throws -> Data {
-        // ICAO Doc 9303: MAC is calculated over SSC || Data
+        // ICAO Doc 9303 / ISO 7816-4: MAC is calculated over SSC || Data
         var mdo = Data()
         var sscValue = ssc.bigEndian
         let sscData = withUnsafeBytes(of: &sscValue) { Data($0) }
         mdo.append(sscData)
         mdo.append(data)
         
-        // Pad MDO for MAC calculation
+        // 1. Pad MDO (0x80 followed by 0x00s)
         let paddedMdo = pad(mdo)
         let mdoCount = paddedMdo.count
         
-        // Basic AES-CBC MAC (simplified CMAC)
+        // 2. Initial Encryption with ksMac using AES-CBC
         let keyData = ksMac.withUnsafeBytes { Data($0) }
         var outLength = Int(0)
         var outData = Data(count: mdoCount + kCCBlockSizeAES128)
         let outCount = outData.count
         
+        // We use CCCrypt with No Padding because we padded manually
         let status = outData.withUnsafeMutableBytes { outBytes in
             paddedMdo.withUnsafeBytes { dataBytes in
                 keyData.withUnsafeBytes { keyBytes in
-                    // Initial IV is null, but we process blocks sequentially
-                    CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding), keyBytes.baseAddress, kCCKeySizeAES128, nil, dataBytes.baseAddress, mdoCount, outBytes.baseAddress, outCount, &outLength)
+                    // Null IV
+                    CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), 0, keyBytes.baseAddress, kCCKeySizeAES128, nil, dataBytes.baseAddress, mdoCount, outBytes.baseAddress, outCount, &outLength)
                 }
             }
         }
         
         guard status == kCCSuccess else { throw SignerError.internalError("MAC calculation failed: \(status)") }
         
-        // For standard SM MAC, we take the last 8 bytes of the final block
-        return outData.subdata(in: outLength - 16..<outLength - 8)
+        // 3. For ISO 7816-4 SM MAC, we take the FIRST 8 bytes of the LAST block
+        // (Note: This matches typical implementation for AES-based SM)
+        let lastBlockOffset = outLength - 16
+        guard lastBlockOffset >= 0 else { throw SignerError.internalError("Invalid MAC output length") }
+        return outData.subdata(in: lastBlockOffset..<lastBlockOffset + 8)
     }
     
     private func pad(_ data: Data) -> Data {

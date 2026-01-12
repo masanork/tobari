@@ -6,6 +6,45 @@ protocol SmartCardInterface {
 }
 
 class SmartCardManager: SmartCardInterface {
+    static let shared = SmartCardManager()
+    
+    // Observer for card state
+    var onCardStateChanged: ((Bool) -> Void)?
+    
+    init() {
+        setupObserver()
+    }
+    
+    private func setupObserver() {
+        // Fallback to a string-based notification which is common for CTK
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("TKSmartCardSlotManagerDidChangeSlots"), object: nil, queue: .main) { [weak self] _ in
+            self?.checkCurrentState()
+        }
+        
+        // Also check periodically as a fallback
+        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.checkCurrentState()
+        }
+    }
+    
+    func checkCurrentState() {
+        guard let manager = TKSmartCardSlotManager.default,
+              let slotName = manager.slotNames.first else {
+            onCardStateChanged?(false)
+            return
+        }
+        
+        manager.getSlot(withName: slotName) { slot in
+            guard let slot = slot else {
+                self.onCardStateChanged?(false)
+                return
+            }
+            let isPresent = slot.state == .validCard
+            DispatchQueue.main.async {
+                self.onCardStateChanged?(isPresent)
+            }
+        }
+    }
     
     // Send a raw APDU command to the first available card
     func transmit(apdu: Data) async throws -> Data {
