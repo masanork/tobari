@@ -85,15 +85,14 @@ struct PassportTests {
             }
             if ins == 0x86 { // General Authenticate
                 if apdu.count == 8 { // Step 1: Get Nonce
-                    // Header (7C 0A 80 08) + Mock Encrypted Nonce (8 bytes) + SW (90 00)
-                    // Note: This must be a multiple of 16 for AES decryption to not crash if it uses padding
-                    // Or we just return 16 bytes.
+                    // Correct TLV: 7C (Wrapper) 12 (Total Len) 80 (Tag) 10 (Len) [16 bytes data]
                     var res = Data([0x7C, 0x12, 0x80, 0x10])
                     res.append(Data(repeating: 0x00, count: 16)) 
                     res.append(contentsOf: [0x90, 0x00])
                     return res
                 } else { // Step 2+
-                    return Data([0x90, 0x00])
+                    // Provide a mock 7C wrapper for GA3 step if needed
+                    return Data([0x7C, 0x02, 0x84, 0x00, 0x90, 0x00])
                 }
             }
             return Data([0x90, 0x00])
