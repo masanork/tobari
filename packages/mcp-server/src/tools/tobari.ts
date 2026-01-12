@@ -55,7 +55,9 @@ export async function handleIssueIdentityDocument(toolArgs: any) {
         for (const [k, v] of Object.entries(args.data)) {
             if (args.isDtc && (k.startsWith("dg") || k === "sod")) {
                 // Keep as binary if it's an ICAO Data Group
-                processedData[k] = new Uint8Array(Buffer.from(v as string, 'base64'));
+                if (v && typeof v === 'string') {
+                    processedData[k] = new Uint8Array(Buffer.from(v, 'base64'));
+                }
             } else {
                 processedData[k] = v;
             }

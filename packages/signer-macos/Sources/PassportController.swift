@@ -14,11 +14,15 @@ struct PassportInfo: Codable {
     var issueDate: String?
     var facePhoto: String? // Base64
     var sod: String? // Base64 EF.SOD
+    var protocolUsed: String = "Unknown"
+    var dg14: String? // Security Infos
+    var dg15: String? // AA Public Key
 }
 
 class PassportController {
     let manager: SmartCardInterface
     private var sm: SecureMessaging?
+    private var currentProtocol: String = "None"
     
     // ICAO 9303 AID
     static let AID_PASSPORT = Data([0xA0, 0x00, 0x00, 0x02, 0x47, 0x10, 0x01])
@@ -38,6 +42,7 @@ class PassportController {
     
     /// Performs PACE (Password Authenticated Connection Establishment)
     func performPACE(password: String, isCan: Bool = false) async throws {
+        self.currentProtocol = "PACE"
         // 1. MSE:Set AT
         // CLA=00, INS=22, P1=C1, P2=A4, Lc=0F (Algorithm: PACE-ECDH-GM-AES-CBC-CMAC-128, etc)
         // Data identifies the password type (MRZ or CAN)
@@ -116,6 +121,7 @@ class PassportController {
     
     /// Performs BAC (Basic Access Control) Mutual Authentication
     func performBAC(mrz: String) async throws {
+        self.currentProtocol = "BAC"
         // 1. Derive Static Keys from MRZ
         let (kEnc, kMac) = try PassportKDF.deriveKeys(mrz: mrz)
         
@@ -199,16 +205,29 @@ class PassportController {
         return try await readEF(fileID: Data([0x01, 0x1D])) // EF.SOD is 01 1D
     }
     
+    func readDG14() async throws -> Data {
+        return try await readEF(fileID: Data([0x01, 0x0E]))
+    }
+    
+    func readDG15() async throws -> Data {
+        return try await readEF(fileID: Data([0x01, 0x0F]))
+    }
+    
     func readFullPassportInfo() async throws -> PassportInfo {
         let dg1 = try await readDG1()
         let dg2 = try await readDG2()
         let dg11 = try? await readDG11()
         let dg12 = try? await readDG12()
+        let dg14 = try? await readDG14()
+        let dg15 = try? await readDG15()
         let sod = try? await readSOD()
         
         var info = parseDG1(dg1)
         info.facePhoto = dg2.base64EncodedString()
         if let sodData = sod { info.sod = sodData.base64EncodedString() }
+        if let dg14Data = dg14 { info.dg14 = dg14Data.base64EncodedString() }
+        if let dg15Data = dg15 { info.dg15 = dg15Data.base64EncodedString() }
+        info.protocolUsed = self.currentProtocol
         
         if let dg11Data = dg11 {
             let dg11Info = parseDG11(dg11Data)
