@@ -5,6 +5,7 @@ import { execSync } from "child_process";
 const CERTS_DIR = "shared/certs";
 const CSCA_DIR = path.join(CERTS_DIR, "csca");
 const JPKI_DIR = path.join(CERTS_DIR, "jpki");
+const OTHER_DIR = path.join(CERTS_DIR, "other");
 
 const GERMAN_ML_URL = "https://www.bsi.bund.de/SharedDocs/Downloads/DE/BSI/ElekAusweise/CSCA/GermanMasterList.zip?__blob=publicationFile&v=102";
 
@@ -17,16 +18,25 @@ const JPKI_CERTS = [
     "https://www.jpki.go.jp/ca/pdf/authca03.cer"
 ];
 
+const OTHER_GOV_CERTS = [
+    { name: "gpki-bridge.cer", url: "https://www.gpki.go.jp/selfcert/selfca2.cer" },
+    { name: "lgpki-application.cer", url: "https://www.lgpki.go.jp/CAInfo/ocar2ver2.cer" },
+    { name: "moj-registry.cer", url: "https://www.moj.go.jp/ONLINE/CERTIFICATION/REGISTRY/registry_ca.cer" }
+];
+
 async function downloadFile(url: string, dest: string) {
     console.log(`Downloading ${url}...`);
-    execSync(`curl -L "${url}" -o "${dest}"`);
+    try {
+        execSync(`curl -L "${url}" -o "${dest}"`, { stdio: 'inherit' });
+    } catch (e) {
+        console.warn(`Failed to download ${url}: ${e}`);
+    }
 }
 
 function extractCertsFromMasterList(mlPath: string, outputDir: string) {
     console.log(`Extracting certificates from ${mlPath}...`);
     const tmpEContent = path.join(CERTS_DIR, "econtent.bin");
     
-    // Use openssl to extract eContent from CMS
     try {
         execSync(`openssl cms -verify -noverify -inform DER -in "${mlPath}" -out "${tmpEContent}"`, { stdio: 'ignore' });
     } catch (e) {
@@ -35,7 +45,7 @@ function extractCertsFromMasterList(mlPath: string, outputDir: string) {
     }
 
     const buffer = fs.readFileSync(tmpEContent);
-    let offset = 13; // Skip SEQUENCE, INTEGER 0, SET header
+    let offset = 13; 
     let count = 0;
 
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
@@ -70,6 +80,7 @@ function extractCertsFromMasterList(mlPath: string, outputDir: string) {
 async function main() {
     if (!fs.existsSync(CERTS_DIR)) fs.mkdirSync(CERTS_DIR, { recursive: true });
     if (!fs.existsSync(JPKI_DIR)) fs.mkdirSync(JPKI_DIR, { recursive: true });
+    if (!fs.existsSync(OTHER_DIR)) fs.mkdirSync(OTHER_DIR, { recursive: true });
 
     // 1. German Master List
     const zipPath = path.join(CERTS_DIR, "GermanMasterList.zip");
@@ -90,8 +101,12 @@ async function main() {
         await downloadFile(url, path.join(JPKI_DIR, name));
     }
 
+    // 3. Other Government CAs
+    for (const item of OTHER_GOV_CERTS) {
+        await downloadFile(item.url, path.join(OTHER_DIR, item.name));
+    }
+
     console.log("\nSetup complete. Certificates are located in shared/certs/");
-    console.log("Note: This directory is ignored by git.");
 }
 
 main().catch(console.error);
