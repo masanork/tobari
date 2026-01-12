@@ -20,11 +20,12 @@ class JPKIController {
     enum FileID {
         static let DF_JPKI = Data([0xD3, 0x92, 0xf0, 0x00, 0x26, 0x01, 0x00, 0x00, 0x00, 0x01])
         static let DF_INPUT_SUPPORT = Data([0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x08])
-        static let DF_FACE_RECOGNITION = Data([0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x02])
+        static let DF_SURFACE = Data([0xD3, 0x92, 0x10, 0x00, 0x31, 0x00, 0x01, 0x01, 0x04, 0x02])
         
         static let EF_AUTH_PIN = Data([0x00, 0x18])
         static let EF_SIGN_PIN = Data([0x00, 0x1B]) // Digital Signature PIN (6-16 chars)
         static let EF_INPUT_SUPPORT_PIN = Data([0x00, 0x11])
+        static let EF_SURFACE_PIN = Data([0x00, 0x13])
         static let EF_MYNUMBER = Data([0x00, 0x01])
         static let EF_ATTRIBUTES = Data([0x00, 0x02])
         static let EF_SURFACE_INFO = Data([0x00, 0x05])
@@ -327,16 +328,19 @@ class JPKIController {
     func readAttributes(pin: String) async throws -> BasicInfo {
         // 1. Select Input Support AP
         try await selectInputSupportAP()
-        
+
         // 2. Verify PIN
         try await verifyPIN(ef: FileID.EF_INPUT_SUPPORT_PIN, pin: pin)
-        
+
         // 3. Read Attributes EF
         let data = try await readEFFull(ef: FileID.EF_ATTRIBUTES)
-        
+        print("DEBUG readAttributes: Retrieved \(data.count) bytes from EF_ATTRIBUTES")
+        print("DEBUG readAttributes: Data hex: \(data.map { String(format: "%02X", $0) }.joined())")
+
         // 4. Parse
         var info = try parseBasicInfo(data: data)
-        
+        print("DEBUG readAttributes: Parsed info - Name: '\(info.name)', Address: '\(info.address)', Birth: '\(info.birthDate)', Gender: '\(info.gender)'")
+
         // 5. Read Certificates
         if let authCert = try? await readCertificate(pin: pin, type: "auth") {
             info.authCert = authCert.base64EncodedString()
@@ -344,7 +348,7 @@ class JPKIController {
         if let signCert = try? await readCertificate(pin: pin, type: "sign") {
             info.signCert = signCert.base64EncodedString()
         }
-        
+
         // 6. Read CA Certificates
         if let authCACert = try? await readEFFull(ef: FileID.EF_AUTH_CA_CERT) {
             info.authCACert = authCACert.base64EncodedString()
@@ -352,42 +356,65 @@ class JPKIController {
         if let signCACert = try? await readEFFull(ef: FileID.EF_SIGN_CA_CERT) {
             info.signCACert = signCACert.base64EncodedString()
         }
-        
+
         return info
     }
 
     // MARK: - Reading Face Photo
     
-    func readFacePhoto(pin: String) async throws -> Data {
-        // 1. Select Face Recognition AP
-        try await selectDF(FileID.DF_FACE_RECOGNITION)
-        
-        // 2. Verify PIN (using the same PIN EF ID 00 11 as Input Support usually works, or it is the specific PIN EF for this AP)
-        // Note: In many implementations, the PIN EF is 00 11 for 4-digit PINs across APs.
-        try await verifyPIN(ef: FileID.EF_INPUT_SUPPORT_PIN, pin: pin)
-        
+    func readFacePhoto(myNumber: String) async throws -> Data {
+        print("DEBUG readFacePhoto: Starting face photo retrieval with My Number")
+
+        // Validate My Number length
+        guard myNumber.count == 12 else {
+            throw NSError(domain: "JPKIController", code: 7, userInfo: [NSLocalizedDescriptionKey: "My Number must be 12 digits"])
+        }
+
+        // 1. Select Surface AP (not Face Recognition AP!)
+        do {
+            try await selectDF(FileID.DF_SURFACE)
+            print("DEBUG readFacePhoto: Selected Surface AP")
+        } catch {
+            print("DEBUG readFacePhoto: Failed to select Surface AP: \(error)")
+            throw error
+        }
+
+        // 2. Verify PIN using My Number as the PIN
+        do {
+            try await verifyPIN(ef: FileID.EF_SURFACE_PIN, pin: myNumber)
+            print("DEBUG readFacePhoto: PIN verified with My Number")
+        } catch {
+            print("DEBUG readFacePhoto: PIN verification failed: \(error)")
+            throw error
+        }
+
         // 3. Read Face Photo EF (00 02)
         let data = try await readEFFull(ef: FileID.EF_FACE_PHOTO)
-        
+        print("DEBUG readFacePhoto: Retrieved \(data.count) bytes from EF_FACE_PHOTO")
+        print("DEBUG readFacePhoto: First 100 bytes hex: \(data.prefix(100).map { String(format: "%02X", $0) }.joined())")
+
         // 4. Parse TLV to find tag DF27
-        return try extractFacePhoto(from: data)
+        let photoData = try extractFacePhoto(from: data)
+        print("DEBUG readFacePhoto: Extracted photo data: \(photoData.count) bytes")
+        return photoData
     }
     
     private func extractFacePhoto(from data: Data) throws -> Data {
+        print("DEBUG extractFacePhoto: Parsing \(data.count) bytes")
         var i = 0
         let len = data.count
-        
+
         while i < len {
             // Tag
             if i + 1 >= len { break }
             let tag = (UInt16(data[i]) << 8) | UInt16(data[i+1])
             i += 2
-            
+
             // Length
             if i >= len { break }
             var valueLen = Int(data[i])
             i += 1
-            
+
             if valueLen == 0x81 {
                 if i >= len { break }
                 valueLen = Int(data[i])
@@ -399,14 +426,17 @@ class JPKIController {
             } else if valueLen > 0x82 {
                 break // Unsupported
             }
-            
+
             if i + valueLen > len { break }
             let valueData = data.subdata(in: i..<i+valueLen)
-            
+
+            print("DEBUG extractFacePhoto: Found tag 0x\(String(format: "%04X", tag)), length \(valueLen)")
+
             if tag == 0xDF27 {
+                print("DEBUG extractFacePhoto: Found DF27 tag with \(valueLen) bytes!")
                 return valueData
             }
-            
+
             // If it's a constructed tag (like DF20 or FF20), strictly we should recurse,
             // but for face photo it is often at top level or inside DF20.
             // Simple approach: if not found, continue.
@@ -416,17 +446,19 @@ class JPKIController {
             // Let's implement a recursive-like search by just scanning the whole buffer for DF 27?
             // No, that's dangerous.
             // Let's assume standard structure: Wrapper -> DF27.
-            
-            if tag == 0xDF20 || tag == 0xFF20 {
+
+            if tag == 0xDF20 || tag == 0xFF20 || tag == 0xDF21 || tag == 0xFF21 {
+                 print("DEBUG extractFacePhoto: Recursing into wrapper tag 0x\(String(format: "%04X", tag))")
                  // Recurse / Dive into this value
                  if let found = try? extractFacePhoto(from: valueData) {
                      return found
                  }
             }
-            
+
             i += valueLen
         }
-        
+
+        print("DEBUG extractFacePhoto: Face photo tag (DF27) not found in data")
         throw NSError(domain: "JPKIController", code: 6, userInfo: [NSLocalizedDescriptionKey: "Face photo tag (DF27) not found"])
     }
     
@@ -499,26 +531,41 @@ class JPKIController {
     private func parseBasicInfo(data: Data) throws -> BasicInfo {
         var info = BasicInfo()
         let tlvs = TLVParser.parse(data: data)
-        
-        // JPKI attributes can be siblings or nested under 0xDF20.
+
+        print("DEBUG parseBasicInfo: Found \(tlvs.count) top-level TLV tags")
+        for tlv in tlvs {
+            print("DEBUG parseBasicInfo: Tag: 0x\(String(format: "%X", tlv.tag)), Length: \(tlv.value.count)")
+        }
+
+        // JPKI attributes can be siblings or nested under 0xDF20 or 0xFF20.
         // We'll flatten the first level of nesting to be sure.
         var allTlvs = tlvs
         for tlv in tlvs {
-            if tlv.tag == 0xDF20 {
-                allTlvs.append(contentsOf: TLVParser.parse(data: tlv.value))
+            if tlv.tag == 0xDF20 || tlv.tag == 0xFF20 {
+                let nested = TLVParser.parse(data: tlv.value)
+                print("DEBUG parseBasicInfo: Found 0x\(String(format: "%X", tlv.tag)) wrapper with \(nested.count) nested tags")
+                for n in nested {
+                    print("DEBUG parseBasicInfo:   Nested Tag: 0x\(String(format: "%X", n.tag)), Length: \(n.value.count)")
+                }
+                allTlvs.append(contentsOf: nested)
             }
         }
-        
+
         func getString(tag: UInt32) -> String? {
-            guard let data = allTlvs.first(where: { $0.tag == tag })?.value else { return nil }
-            return String(data: data, encoding: .utf8)
+            guard let data = allTlvs.first(where: { $0.tag == tag })?.value else {
+                print("DEBUG parseBasicInfo: Tag 0x\(String(format: "%X", tag)) not found")
+                return nil
+            }
+            let str = String(data: data, encoding: .utf8)
+            print("DEBUG parseBasicInfo: Tag 0x\(String(format: "%X", tag)) = '\(str ?? "nil")'")
+            return str
         }
-        
+
         if let name = getString(tag: 0xDF22) { info.name = name }
         if let address = getString(tag: 0xDF23) { info.address = address }
         if let birthDate = getString(tag: 0xDF24) { info.birthDate = birthDate }
         if let gender = getString(tag: 0xDF25) { info.gender = gender }
-        
+
         return info
     }
 }

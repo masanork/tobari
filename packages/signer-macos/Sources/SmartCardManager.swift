@@ -28,41 +28,71 @@ class SmartCardManager: SmartCardInterface {
     }
     
     func checkCurrentState() {
-        guard let manager = TKSmartCardSlotManager.default,
-              let slotName = manager.slotNames.first else {
+        guard let manager = TKSmartCardSlotManager.default else {
             onCardStateChanged?(false)
             return
         }
         
-        manager.getSlot(withName: slotName) { slot in
-            guard let slot = slot else {
-                self.onCardStateChanged?(false)
-                return
-            }
-            let isPresent = slot.state == .validCard
-            DispatchQueue.main.async {
-                self.onCardStateChanged?(isPresent)
+        // If no slots at all
+        if manager.slotNames.isEmpty {
+            onCardStateChanged?(false)
+            return
+        }
+        
+        let slotNames = manager.slotNames
+        var checkedCount = 0
+        var foundCard = false
+        
+        for slotName in slotNames {
+            manager.getSlot(withName: slotName) { slot in
+                DispatchQueue.main.async {
+                    if let slot = slot, slot.state == .validCard {
+                        foundCard = true
+                    }
+                    
+                    checkedCount += 1
+                    // After checking all slots, update state
+                    if checkedCount == slotNames.count {
+                        self.onCardStateChanged?(foundCard)
+                    }
+                }
             }
         }
     }
     
-    // Send a raw APDU command to the first available card
+    // Send a raw APDU command to the first available card in any slot
     func transmit(apdu: Data) async throws -> Data {
         guard let manager = TKSmartCardSlotManager.default else {
             throw NSError(domain: "SmartCardManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "SmartCardSlotManager not available"])
         }
-        
-        // Simple strategy: Use the first slot that has a card
-        guard let slotName = manager.slotNames.first else {
+
+        let slotNames = manager.slotNames
+        if slotNames.isEmpty {
              throw NSError(domain: "SmartCardManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "No card reader found"])
         }
-        
-        guard let slot = await manager.getSlot(withName: slotName) else {
-             throw NSError(domain: "SmartCardManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to access slot: \(slotName)"])
+
+        // Find first slot with a card
+        var targetSlot: TKSmartCardSlot? = nil
+
+        for slotName in slotNames {
+            let slot = await withCheckedContinuation { continuation in
+                manager.getSlot(withName: slotName) { slot in
+                    continuation.resume(returning: slot)
+                }
+            }
+
+            if let slot = slot, slot.state == .validCard {
+                targetSlot = slot
+                break
+            }
+        }
+
+        guard let slot = targetSlot else {
+             throw NSError(domain: "SmartCardManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "No card present in any slot"])
         }
         
         guard let card = slot.makeSmartCard() else {
-             throw NSError(domain: "SmartCardManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "No card present in slot: \(slotName)"])
+             throw NSError(domain: "SmartCardManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to make smart card object"])
         }
         
         // Begin session (connect)
