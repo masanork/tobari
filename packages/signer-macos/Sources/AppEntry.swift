@@ -142,28 +142,35 @@ class AppState: ObservableObject {
     }
     
     @MainActor
-    func readDriverLicense(pin1: String, pin2: String) async {
+    func readDriverLicense(pin1: String, pin2: String?) async {
         isReading = true
         status = "Accessing Driver's License..."
         error = nil
-        
+
         do {
             let controller = DriversLicenseController(manager: SmartCardManager.shared)
-            try await controller.selectDLAP()
-            try await controller.verifyPIN1(pin1)
-            try await controller.verifyPIN2(pin2)
-            
-            let info = try await controller.readCommonData()
-            
-            let fields = [
+            let info = try await controller.readData(pin1: pin1, pin2: pin2)
+
+            var fields = [
                 "Name": info.name,
                 "Address": info.address,
                 "Birth Date": info.birthDate,
                 "License No": info.licenseNumber,
-                "Color": info.colorClass
+                "Color": info.colorClass,
+                "Registered Domicile": info.registeredDomicile ?? "(Restricted)"
             ]
             
-            self.cardData = IdentityData(type: "Driver's License", fields: fields, facePhoto: nil)
+            if let dump = info.debugDump {
+                fields["Debug Dump"] = dump
+            }
+            
+            var photo: NSImage? = nil
+            if let photoBase64 = info.facePhoto, let data = Data(base64Encoded: photoBase64) {
+                // Try initializing NSImage directly (it supports JPEG2000)
+                photo = NSImage(data: data)
+            }
+
+            self.cardData = IdentityData(type: "Driver's License", fields: fields, facePhoto: photo)
             status = "Success"
         } catch {
             self.error = error.localizedDescription

@@ -4,9 +4,9 @@ import CryptoKit
 class PassportKDF {
     /// Derives Kenc and Kmac from MRZ information
     static func deriveKeys(mrz: String) throws -> (kEnc: SymmetricKey, kMac: SymmetricKey) {
+        let info = ensureMRZInfo(mrz)
         // 1. Calculate SHA-1 hash of the MRZ information
-        // Expected MRZ input: PassportNo + CheckDigit + BirthDate + CheckDigit + ExpiryDate + CheckDigit
-        let hash = Insecure.SHA1.hash(data: Data(mrz.utf8))
+        let hash = Insecure.SHA1.hash(data: Data(info.utf8))
         let kSeed = Data(hash).prefix(16)
         
         // 2. Derive Kenc (counter 00000001)
@@ -20,17 +20,33 @@ class PassportKDF {
     
     /// Derives Kpi (Password Key) for PACE from MRZ or CAN
     static func derivePaceKey(password: String, isCan: Bool = false) -> SymmetricKey {
+        let info = isCan ? password : ensureMRZInfo(password)
         // 1. Calculate SHA-1 hash of the password
-        // Password is MRZ (part) or CAN (6 digits)
-        var data = password.data(using: .utf8)!
+        var data = info.data(using: .utf8)!
         
         // 2. Map password to Kpi
-        // For PACE with MRZ/CAN, we use the specific counter 00000003
         var seedData = Data(Insecure.SHA1.hash(data: data))
         seedData = seedData.prefix(16)
         
         let kPace = deriveKey(seed: seedData, counter: [0x00, 0x00, 0x00, 0x03])
         return SymmetricKey(data: kPace)
+    }
+    
+    /// Normalizes MRZ input to the 24-character info string
+    static func ensureMRZInfo(_ input: String) -> String {
+        let clean = input.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\n", with: "").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\t", with: "")
+        if clean.count == 88 {
+            // TD3 (Passport) Line 2
+            let line2 = String(clean.suffix(44))
+            let p = String(line2.prefix(9))
+            let pc = String(line2.prefix(10).suffix(1))
+            let b = String(line2.prefix(19).suffix(6))
+            let bc = String(line2.prefix(20).suffix(1))
+            let e = String(line2.prefix(27).suffix(6))
+            let ec = String(line2.prefix(28).suffix(1))
+            return "\(p)\(pc)\(b)\(bc)\(e)\(ec)"
+        }
+        return clean
     }
     
     private static func deriveKey(seed: Data, counter: [UInt8]) -> Data {

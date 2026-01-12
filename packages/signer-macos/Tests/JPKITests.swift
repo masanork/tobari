@@ -145,7 +145,7 @@ struct JPKITests {
         }
         
         do {
-            let photo = try await controller.readFacePhoto(pin: "1234")
+            let photo = try await controller.readFacePhoto(myNumber: "123456789012")
             assertEqual(photo.count, 4, "Photo data length mismatch")
             assertEqual(photo[0], 0xCA, "Photo data mismatch")
         } catch {

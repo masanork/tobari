@@ -56,6 +56,8 @@ bun run demo:scac
 - `packages/crypto`: P-384 COSE signing/verification core implementation.
 - `packages/mcp-server`: Model Context Protocol interface for AI Agent integration.
 - `packages/signer`: Tauri-based companion app for WebAuthn/FIDO signing using built-in authenticators (Touch ID, Windows Hello).
+- `packages/signer-macos` (Experimental): Native Swift implementation for improved macOS smart card support.
+  - **Note**: Passport reading via BAC/PACE is currently unstable on real devices, often resulting in `Select EF failed: 6988` errors. Use with caution.
 - `examples`: Implementation references (Juminhyo, Ininjo) demonstrating SD-CBOR and nested structures.
 
 ## Documentation

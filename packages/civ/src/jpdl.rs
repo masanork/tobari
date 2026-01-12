@@ -47,6 +47,9 @@ pub mod file_ids {
         0x00,
     ];
 
+    pub const IEF_PIN1: [u8; 2] = [0x00, 0x01];
+    pub const IEF_PIN2: [u8; 2] = [0x00, 0x02];
+
     pub const EF_COMMON_DATA: [u8; 2] = [0x00, 0x01]; // EF01: Main Info
     pub const EF_HONSEKI: [u8; 2] = [0x00, 0x02]; // EF02: Registered Domicile
     pub const EF_GAIJI: [u8; 2] = [0x00, 0x03]; // EF03: External Chars
@@ -68,7 +71,15 @@ impl<R: CardReader> DriversLicenseController<R> {
         }
     }
 
-    /// Select Driver's License Application
+    /// Select MF (Master File)
+    pub async fn select_mf(&mut self) -> Result<()> {
+        let apdu = ApduCommand::new(0x00, 0xA4, 0x00, 0x00); // Select MF by ID (implicit empty)
+        let res = self.reader.transmit(&apdu.to_bytes()).await?;
+        // Ignore SW for MF select as it might be already selected or return 61xx
+        Ok(())
+    }
+
+    /// Select Driver's License Application (DF1)
     pub async fn select_dl_ap(&mut self) -> Result<()> {
         let apdu =
             ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C).with_data(&file_ids::DF_DL);
@@ -86,9 +97,18 @@ impl<R: CardReader> DriversLicenseController<R> {
         Self::check_sw(&res)
     }
 
-    /// Verify PIN (PIN1 or PIN2)
-    /// Uses P2=0x80 (Password for current DF context)
-    pub async fn verify_pin(&mut self, pin: &str) -> Result<()> {
+    /// Verify PIN
+    /// Sequence: Select MF -> Select IEF -> Verify
+    pub async fn verify_pin(&mut self, pin: &str, ief_id: &[u8]) -> Result<()> {
+        // 1. Select MF
+        self.select_mf().await?;
+
+        // 2. Select IEF
+        let sel_ief = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x02, 0x0C).with_data(ief_id);
+        let res_sel = self.reader.transmit(&sel_ief.to_bytes()).await?;
+        Self::check_sw(&res_sel)?;
+
+        // 3. Verify
         let pin_bytes = pin.as_bytes();
         let apdu = ApduCommand::new(CLA_ISO, INS_VERIFY, 0x00, 0x80).with_data(pin_bytes);
 
@@ -98,39 +118,40 @@ impl<R: CardReader> DriversLicenseController<R> {
 
     /// Verify PIN1 (Common Data Access)
     pub async fn verify_pin1(&mut self, pin: &str) -> Result<()> {
-        self.verify_pin(pin).await
+        self.verify_pin(pin, &file_ids::IEF_PIN1).await
     }
 
     /// Verify PIN2 (Sensitive Data Access: Honseki, Photo)
     pub async fn verify_pin2(&mut self, pin: &str) -> Result<()> {
-        self.verify_pin(pin).await
+        self.verify_pin(pin, &file_ids::IEF_PIN2).await
     }
 
     /// Read Common Data (EF01) and Parse
     /// Requires PIN 1 verification beforehand.
     pub async fn read_common_data(&mut self) -> Result<LicenseInfo> {
+        self.select_dl_ap().await?; // Ensure DF1 is selected
         let raw = self.read_file(&file_ids::EF_COMMON_DATA).await?;
         self.parse_common_data(&raw)
     }
 
     // Internal parser
     fn parse_common_data(&self, data: &[u8]) -> Result<LicenseInfo> {
-        use crate::utils::{decode_shift_jis_lossy_gaiji, parse_ber_tlv};
-        let tlvs = parse_ber_tlv(data).unwrap_or_default();
+        use crate::utils::{decode_jis_x0208, parse_jpdl_tlv};
+        let tlvs = parse_jpdl_tlv(data).unwrap_or_default();
         let mut info = LicenseInfo::default();
 
         for tlv in tlvs {
             match tlv.tag {
-                0x11 => info.name = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x12 => info.name_kana = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x13 => info.birth_date = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x14 => info.address = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x15 => info.issue_date = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x17 => info.license_number = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x18 => info.expire_date = decode_shift_jis_lossy_gaiji(&tlv.value),
-                0x1A => info.color_class = decode_shift_jis_lossy_gaiji(&tlv.value),
+                0x12 => info.name = decode_jis_x0208(&tlv.value),
+                0x13 => info.name_kana = decode_jis_x0208(&tlv.value),
+                0x16 => info.birth_date = String::from_utf8_lossy(&tlv.value).to_string(), // Date is ASCII
+                0x17 => info.address = decode_jis_x0208(&tlv.value),
+                0x18 => info.issue_date = String::from_utf8_lossy(&tlv.value).to_string(), // Date is ASCII
+                0x21 => info.license_number = String::from_utf8_lossy(&tlv.value).to_string(), // Number is ASCII
+                0x1B => info.expire_date = String::from_utf8_lossy(&tlv.value).to_string(), // Date is ASCII
+                0x1A => info.color_class = decode_jis_x0208(&tlv.value),
                 0x1C..=0x1F => {
-                    let cond = decode_shift_jis_lossy_gaiji(&tlv.value);
+                    let cond = decode_jis_x0208(&tlv.value);
                     if !cond.trim().is_empty() {
                         info.conditions.push(cond);
                     }
@@ -144,13 +165,14 @@ impl<R: CardReader> DriversLicenseController<R> {
     /// Read Registered Domicile (Honseki) - EF02
     /// Requires PIN 1 & PIN 2 verification.
     pub async fn read_registered_domicile(&mut self) -> Result<String> {
+        self.select_dl_ap().await?; // Ensure DF1 is selected
         let raw = self.read_file(&file_ids::EF_HONSEKI).await?;
         // Parse TLV tag 0x41
-        use crate::utils::{decode_shift_jis_lossy_gaiji, parse_ber_tlv};
-        let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
+        use crate::utils::{decode_jis_x0208, parse_jpdl_tlv};
+        let tlvs = parse_jpdl_tlv(&raw).unwrap_or_default();
         for tlv in tlvs {
             if tlv.tag == 0x41 {
-                return Ok(decode_shift_jis_lossy_gaiji(&tlv.value));
+                return Ok(decode_jis_x0208(&tlv.value));
             }
         }
         Ok("".to_string())
@@ -480,7 +502,7 @@ mod tests {
         assert!(res.is_ok());
         let info = res.unwrap();
 
-        assert_eq!(info.name, "外務 太郎");
+        assert_eq!(info.name, "外民　他蝋");
         assert_eq!(info.color_class, "優良");
         assert_eq!(info.conditions.len(), 1);
         assert_eq!(info.conditions[0], "眼鏡等");
@@ -507,7 +529,7 @@ mod tests {
         let mut controller = DriversLicenseController::new(reader.clone());
         assert!(controller.select_dl_ap().await.is_ok());
 
-        let res = controller.verify_pin("0000").await;
+        let res = controller.verify_pin("0000", &file_ids::IEF_PIN1).await;
         assert!(res.is_err());
     }
 

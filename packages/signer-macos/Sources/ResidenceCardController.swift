@@ -92,11 +92,11 @@ class ResidenceCardController {
     }
     
     private func checkSW(_ data: Data, context: String) throws {
-        if data.count < 2 { throw SignerError.jpki("\(context): too short") }
+        if data.count < 2 { throw SignerError.residenceCard("\(context): too short") }
         let sw1 = data[data.count-2]
         let sw2 = data[data.count-1]
         if sw1 == 0x90 && sw2 == 0x00 { return }
-        throw SignerError.jpki("\(context) failed with SW=\(String(format: "%02X%02X", sw1, sw2))")
+        throw SignerError.residenceCard("\(context) failed with SW=\(String(format: "%02X%02X", sw1, sw2))")
     }
 }
 
