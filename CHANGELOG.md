@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - **Signer (macOS)**:
   - **SwiftUI GUI**: Implemented a modern, native GUI with automatic card detection, secure PIN entry sheets, and identity result views.
   - **Camera MRZ Scanning**: Integrated macOS **Vision framework** for real-time OCR scanning of Passport MRZ (Machine Readable Zone), eliminating manual entry.
+  - **Strict MRZ Parsing**: Implemented ICAO 9303 compliant parsing for TD1, TD2, and TD3 formats with full checksum validation.
   - **PACE Protocol**: Completed the Password Authenticated Connection Establishment (PACE) protocol skeleton, including ECDH key agreement and session key derivation.
   - **Passport Authenticity**: Added support for reading **EF.SOD (Document Security Object)** to enable downstream verification of government signatures.
   - **OS Integration**: Added Touch ID authentication and native secure PIN input dialogs for a seamless macOS experience.

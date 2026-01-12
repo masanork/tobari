@@ -87,18 +87,33 @@ class ScannerViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
             guard let observations = request.results as? [VNRecognizedTextObservation] else { return }
             let strings = observations.compactMap { $0.topCandidates(1).first?.string }
             
-            // Re-use logic from MRZProcessor (simplified for closure)
             let cleaned = strings.map { $0.replacingOccurrences(of: " ", with: "").uppercased() }
-            if let result = cleaned.first(where: { $0.count == 44 || $0.count == 30 }) {
-                // Heuristic: If we find a line, let's try to get more in next frames
-                // For now, if we see a 44 char line, we assume it's part of MRZ
-                // (Complete parsing would need full 2-3 lines)
-                DispatchQueue.main.async {
-                    // Just return the first valid looking line for demo/PoC
-                    // In real use, we wait for full multi-line match
-                    if strings.count >= 2 {
-                        self.detectedMRZ = strings.joined(separator: "\n")
+            
+            var mrz: String? = nil
+            
+            // Try TD3
+            let td3Candidates = cleaned.filter { $0.count == 44 }
+            if td3Candidates.count >= 2 {
+                let lines = Array(td3Candidates.suffix(2))
+                if MRZParser.parse(lines: lines) != nil {
+                    mrz = lines.joined(separator: "\n")
+                }
+            }
+            
+            // Try TD1
+            if mrz == nil {
+                let td1Candidates = cleaned.filter { $0.count == 30 }
+                if td1Candidates.count >= 3 {
+                    let lines = Array(td1Candidates.suffix(3))
+                    if MRZParser.parse(lines: lines) != nil {
+                        mrz = lines.joined(separator: "\n")
                     }
+                }
+            }
+            
+            if let detected = mrz {
+                DispatchQueue.main.async {
+                    self.detectedMRZ = detected
                 }
             }
         }
