@@ -84,3 +84,9 @@ export async function handleDemoListExamples(toolArgs: any) {
         };
     }
 }
+
+import { McpTool } from "../mcp-tool.js";
+export const demoTools: McpTool<any>[] = [
+    { name: "demo_list_examples", description: "Lists example documents.", schema: ListAvailableDocumentsSchema, handler: handleDemoListExamples }
+];
+

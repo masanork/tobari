@@ -3,8 +3,16 @@ import { verifyFormToken } from '@tobari/crypto/cose';
 import { base64url, COSE_ALG, COSE_HEADER_LABELS } from '@tobari/crypto/utils';
 import { mlDsa65Verify } from '@tobari/crypto/pqc';
 import { MSO, revealMdocData } from './sd';
-import { X509Certificate } from 'crypto';
 import * as path from 'path';
+
+// Use dynamic import for X509Certificate to avoid browser build issues
+let X509Certificate: any;
+try {
+    const crypto = await import('node:crypto');
+    X509Certificate = crypto.X509Certificate;
+} catch {
+    // Fallback for browser (where verification might be limited or handled differently)
+}
 
 export interface VerificationResult {
     isValid: boolean;

@@ -128,7 +128,7 @@ export async function generateSignedTobari(
 
     // 4. Optional Encryption (Tobari Custom ECIES)
     if (options.encryptionPublicKey) {
-        console.log("Applying Tobari ECIES Encryption to payload...");
+        console.error("Applying Tobari ECIES Encryption to payload...");
         
         // Ensure key is CryptoKey (P-256)
         let pubKey: CryptoKey;
@@ -148,9 +148,15 @@ export async function generateSignedTobari(
 
         const encrypted = await encryptTobariEcies(pubKey, encoded);
 
-        // Wrap in JSON for signer-macos
-        // It expects { ephemeralPublicKey, ciphertext, iv, tag } as a JSON string
-        return new TextEncoder().encode(JSON.stringify(encrypted));
+        // Wrap in JSON for signer-macos and other readers
+        // All components should be Base64URL
+        return new TextEncoder().encode(JSON.stringify({
+            ephemeralPublicKey: encrypted.ephemeralPublicKey,
+            ciphertext: encrypted.ciphertext,
+            iv: encrypted.iv,
+            tag: encrypted.tag,
+            tobari_enc: true
+        }));
     }
 
     return encoded;

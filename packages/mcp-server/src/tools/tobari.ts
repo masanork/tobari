@@ -376,17 +376,14 @@ export async function handleReadTobariFile(toolArgs: any) {
 
             try {
                 const result = await verifyTobari(fileBuffer, cryptoKey, pqcPublicKey);
-                isValid = result.isValid;
                 
                 if (result.isValid && result.pqcValid !== null) {
-                    if (result.pqcValid) {
-                        isValid = "Valid (Classic + PQC)";
-                    } else {
-                        isValid = "Valid (Classic) but PQC INVALID";
-                    }
+                    isValid = result.pqcValid;
+                } else {
+                    isValid = result.isValid;
                 }
             } catch (e: any) {
-                isValid = `Verification failed: ${e.message}`;
+                isValid = false;
             }
         }
 
@@ -1418,3 +1415,23 @@ export async function handleGeneratePassportZkpInput(toolArgs: any) {
         };
     }
 }
+
+import { McpTool } from "../mcp-tool.js";
+
+export const tobariTools: McpTool<any>[] = [
+    { name: "read_tobari_file", description: "Reads a Tobari file (.cose or .html), extracts the embedded data, and optionally verifies the signature.", schema: ReadTobariFileSchema, handler: handleReadTobariFile },
+    { name: "create_presentation", description: "Creates a Verifiable Presentation (VP) by selectively disclosing fields from one or more Tobari documents and signing with a device key.", schema: CreatePresentationSchema, handler: handleCreatePresentation },
+    { name: "prepare_presentation", description: "Step 1 of external signing: Extracts fields and generates the 'To Be Signed' data for each document.", schema: PreparePresentationSchema, handler: handlePreparePresentation },
+    { name: "assemble_presentation", description: "Step 2 of external signing: Assembles the final Verifiable Presentation using externally generated signatures.", schema: AssemblePresentationSchema, handler: handleAssemblePresentation },
+    { name: "verify_presentation", description: "Verifies a Verifiable Presentation (VP), checking both Issuer and Holder (Device) signatures.", schema: VerifyPresentationSchema, handler: handleVerifyPresentation },
+    { name: "preview_presentation", description: "Decodes a Verifiable Presentation (VP) and returns a summary plus decoded JSON. Optionally verifies signatures.", schema: PreviewPresentationSchema, handler: handlePreviewPresentation },
+    { name: "analyze_service_request", description: "Analyzes an administrative service request document to identify required credentials and user inputs.", schema: AnalyzeServiceRequestSchema, handler: handleAnalyzeServiceRequest },
+    { name: "list_available_documents", description: "Lists available Tobari documents and service requests found in the project's examples or specified directory.", schema: ListAvailableDocumentsSchema, handler: handleListAvailableDocuments },
+    { name: "generate_passport_zkp_input", description: "Generates JSON input for the Passport ZK circuit (age verification + nullifier) from a Tobari Passport document.", schema: GeneratePassportZkpInputSchema, handler: handleGeneratePassportZkpInput },
+    { name: "register_device", description: "Registers the current hardware device as a Tobari holder by exporting its Secure Enclave public keys (Signing & Encryption).", schema: RegisterDeviceSchema, handler: handleRegisterDevice },
+    { name: "issue_local_credential", description: "Creates a hardware-bound, encrypted digital identity document by reading info from a My Number Card.", schema: IssueLocalCredentialSchema, handler: handleIssueLocalCredential },
+    { name: "issue_identity_document", description: "Generates and optionally encrypts an identity document (mdoc) from provided identity data.", schema: IssueIdentityDocumentSchema, handler: handleIssueIdentityDocument },
+    { name: "generate_bbs_key", description: "Generates a new BBS+ key pair for unlinkable credentials.", schema: GenerateBbsKeySchema, handler: handleGenerateBbsKey },
+    { name: "sign_with_bbs", description: "Generates a BBS+ zero-knowledge proof (ZKP) for a selective disclosure presentation.", schema: SignWithBbsSchema, handler: handleSignWithBbs }
+];
+

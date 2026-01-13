@@ -51,3 +51,10 @@ export async function handleRegisterWebAuthn(toolArgs: any) {
         };
     }
 }
+
+import { McpTool } from "../mcp-tool.js";
+export const webauthnTools: McpTool<any>[] = [
+    { name: "sign_with_webauthn", description: "Signs a challenge using WebAuthn.", schema: SignWithWebAuthnSchema, handler: handleSignWithWebAuthn },
+    { name: "register_webauthn", description: "Registers a new WebAuthn credential.", schema: RegisterWebAuthnSchema, handler: handleRegisterWebAuthn }
+];
+
