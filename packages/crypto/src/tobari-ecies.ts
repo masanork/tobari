@@ -98,6 +98,84 @@ export async function encryptTobariEcies(
     };
 }
 
+export async function decryptTobariEcies(
+    recipientPrivateKey: CryptoKey,
+    encrypted: EncryptedMessage
+): Promise<Uint8Array> {
+    // 1. Import Ephemeral Public Key
+    const rawPub = base64UrlToBytes(encrypted.ephemeralPublicKey);
+    if (rawPub[0] !== 0x04 || rawPub.length !== 65) {
+        throw new Error("Invalid ephemeral public key format (expected raw uncompressed)");
+    }
+    const x = rawPub.slice(1, 33);
+    const y = rawPub.slice(33, 65);
+    const jwk = {
+        kty: "EC",
+        crv: "P-256",
+        x: bytesToBase64Url(x),
+        y: bytesToBase64Url(y)
+    };
+    const ephemeralPublicKey = await crypto.subtle.importKey(
+        "jwk",
+        jwk,
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        []
+    );
+
+    // 2. Derive Shared Secret
+    const sharedSecretBits = await crypto.subtle.deriveBits(
+        { name: "ECDH", public: ephemeralPublicKey },
+        recipientPrivateKey,
+        256
+    );
+
+    // 3. HKDF Derivation
+    const hkdfKey = await crypto.subtle.importKey(
+        "raw",
+        sharedSecretBits,
+        { name: "HKDF" },
+        false,
+        ["deriveBits"]
+    );
+
+    const aesKeyBits = await crypto.subtle.deriveBits(
+        {
+            name: "HKDF",
+            hash: "SHA-256",
+            salt: SALT,
+            info: INFO
+        },
+        hkdfKey,
+        256
+    );
+
+    const aesKey = await crypto.subtle.importKey(
+        "raw",
+        aesKeyBits,
+        { name: "AES-GCM" },
+        false,
+        ["decrypt"]
+    );
+
+    // 4. Decrypt with AES-GCM
+    const ciphertext = base64UrlToBytes(encrypted.ciphertext);
+    const iv = base64UrlToBytes(encrypted.iv);
+    const tag = base64UrlToBytes(encrypted.tag);
+
+    const combined = new Uint8Array(ciphertext.length + tag.length);
+    combined.set(ciphertext);
+    combined.set(tag, ciphertext.length);
+
+    const decryptedBuffer = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv, tagLength: 128 },
+        aesKey,
+        combined
+    );
+
+    return new Uint8Array(decryptedBuffer);
+}
+
 // Helpers
 function base64UrlToBytes(str: string): Uint8Array {
     const base64 = str.replace(/-/g, '+').replace(/_/g, '/');

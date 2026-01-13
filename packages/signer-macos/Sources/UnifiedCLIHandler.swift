@@ -62,6 +62,9 @@ class UnifiedCLIHandler {
         case "sign_with_jpki":
             response = await handleSignWithJpki(request)
 
+        case "inspect_document":
+            response = await handleInspectDocument(request)
+
         default:
             response = UnifiedResponse.error(
                 command: request.command,
@@ -580,6 +583,72 @@ class UnifiedCLIHandler {
                 command: request.command,
                 type: .internalError,
                 message: "Failed to sign with JPKI: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private func handleInspectDocument(_ request: UnifiedRequest) async -> UnifiedResponse {
+        do {
+            let params = try decodeParams(InspectDocumentParams.self, from: request.params)
+            
+            let documentData: Data
+            if let path = params.path {
+                documentData = try Data(contentsOf: URL(fileURLWithPath: path))
+            } else if let b64 = params.data {
+                guard let data = Data(base64URLEncoded: b64) else {
+                    return UnifiedResponse.error(command: request.command, type: .invalidRequest, message: "Invalid Base64URL data")
+                }
+                documentData = data
+            } else {
+                return UnifiedResponse.error(command: request.command, type: .invalidRequest, message: "path or data is required")
+            }
+
+            // Simple check for ECIES encryption
+            if let json = try? JSONSerialization.jsonObject(with: documentData) as? [String: Any],
+               json["tobari_enc"] as? Bool == true {
+                return UnifiedResponse.success(
+                    command: request.command,
+                    type: .cardData,
+                    format: .json,
+                    data: ["encrypted": true, "type": "tobari_ecies"],
+                    metadata: ["message": "Document is encrypted and requires decryption."]
+                )
+            }
+
+            // Try to parse as mdoc
+            do {
+                let mdoc = try CoseParser.parseMdoc(data: documentData)
+                var fields: [String: String] = [:]
+                for field in mdoc.getAllFields() {
+                    fields[field] = mdoc.getFieldValue(field)
+                }
+
+                return UnifiedResponse.success(
+                    command: request.command,
+                    type: .cardData,
+                    format: .json,
+                    data: [
+                        "docType": mdoc.docType,
+                        "fields": fields
+                    ],
+                    metadata: [
+                        "format": "mdoc/cose",
+                        "fieldCount": fields.count
+                    ]
+                )
+            } catch {
+                return UnifiedResponse.error(
+                    command: request.command,
+                    type: .invalidRequest,
+                    message: "Failed to parse document: \(error.localizedDescription)"
+                )
+            }
+
+        } catch {
+            return UnifiedResponse.error(
+                command: request.command,
+                type: .internalError,
+                message: "Failed to inspect document: \(error.localizedDescription)"
             )
         }
     }

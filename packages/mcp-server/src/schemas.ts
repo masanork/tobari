@@ -28,6 +28,7 @@ export const CreatePresentationSchema = z.object({
     verifierNonce: z.string().optional().describe("Optional nonce for replay protection"),
     deviceAlg: z.number().optional().describe("COSE algorithm for DeviceAuth (default: -35 / ES384, use -7 for ES256)"),
     decrypt: DecryptOptionsSchema.describe("Optional decryption settings applied to all input documents."),
+    outputPath: z.string().optional().describe("Optional path to save the generated VP. If provided, the tool returns the path instead of full base64 data."),
 });
 
 export const PreparePresentationSchema = z.object({
@@ -56,14 +57,16 @@ export const AssemblePresentationSchema = z.object({
 });
 
 export const VerifyPresentationSchema = z.object({
-    vpBase64: z.string().describe("The base64-encoded DeviceResponse (VP) to verify"),
+    vpBase64: z.string().optional().describe("The base64-encoded DeviceResponse (VP) to verify. Optional if path is provided."),
+    path: z.string().optional().describe("Absolute path to a VP file (.cose) to verify."),
     issuerPublicKeys: z.record(z.string()).describe("Map of docType to absolute path of issuer's public key (JWK)"),
     issuerPqcPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's PQC public key (base64url JSON)"),
     verifierNonce: z.string().optional().describe("Expected nonce to prevent replay attacks"),
 });
 
 export const PreviewPresentationSchema = z.object({
-    vpBase64: z.string().describe("The base64-encoded DeviceResponse (VP) to preview"),
+    vpBase64: z.string().optional().describe("The base64-encoded DeviceResponse (VP) to preview. Optional if path is provided."),
+    path: z.string().optional().describe("Absolute path to a VP file (.cose) to preview."),
     issuerPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's public key (JWK)"),
     issuerPqcPublicKeys: z.record(z.string()).optional().describe("Optional map of docType to absolute path of issuer's PQC public key (base64url JSON)"),
     verifierNonce: z.string().optional().describe("Expected nonce to prevent replay attacks"),
