@@ -162,35 +162,22 @@ export async function handleSignWithBbs(toolArgs: any) {
         const signerPath = getNativeSignerPath();
         if (!signerPath) throw new Error("Native signer not found.");
 
-        const { spawn } = await import("child_process");
-        
-        const signRequest = {
-            challenge: args.nonce,
-            rp_id: "mcp-server-bbs",
-            bbs: {
+        const request = {
+            command: "sign_with_bbs",
+            params: {
                 publicKey: args.publicKey,
                 signature: args.signature,
                 messages: args.messages,
-                revealedIndices: args.revealedIndices
+                revealedIndices: args.revealedIndices,
+                challenge: args.nonce
             }
         };
 
-        const signerProcess = spawn(signerPath, ["--request", JSON.stringify(signRequest)]);
-
-        const resultPromise = new Promise<string>((resolve, reject) => {
-            let stdout = "";
-            let stderr = "";
-            signerProcess.stdout.on("data", (data) => stdout += data);
-            signerProcess.stderr.on("data", (data) => stderr += data);
-            signerProcess.on("close", (code) => {
-                if (code === 0) resolve(stdout);
-                else reject(new Error(`BBS signer failed (code ${code}): ${stderr || stdout}`));
-            });
-        });
-
-        const outputStr = await resultPromise;
+        const outputStr = await runCivCommand(signerPath, ["--request", JSON.stringify(request)]);
+        const response = JSON.parse(outputStr);
+        
         return {
-            content: [{ type: "text", text: outputStr }],
+            content: [{ type: "text", text: JSON.stringify(response.result.data, null, 2) }],
         };
 
     } catch (error: any) {
@@ -295,37 +282,28 @@ fields:
 }
 
 export async function handleRegisterDevice(toolArgs: any) {
-    if (process.platform !== 'darwin') {
-        throw new Error("register_device is currently only supported on macOS via signer-macos.");
-    }
-
     try {
         const args = RegisterDeviceSchema.parse(toolArgs);
-        const signerPath = DEFAULT_SIGNER_MACOS_PATH;
-        await fs.access(signerPath);
+        const signerPath = getNativeSignerPath();
+        if (!signerPath) throw new Error("Native signer not found.");
 
-        const { execFileSync } = await import("child_process");
-        const env = { ...process.env, TOBARI_SIGNER_USE_KEYCHAIN: "1" };
-
-        const signingKeyOutput = execFileSync(signerPath, ["--get-public-key"], { env }).toString();
-        const encryptionKeyOutput = execFileSync(signerPath, ["--get-encryption-public-key"], { env }).toString();
-
-        const signingKey = JSON.parse(signingKeyOutput).publicKey;
-        const encryptionKey = JSON.parse(encryptionKeyOutput).publicKey;
-
-        const result = {
-            signingPublicKey: signingKey,
-            encryptionPublicKey: encryptionKey,
-            platform: "macOS (Secure Enclave)",
-            description: "Registered successfully. Use these keys for Issuance and Holder Binding."
+        const request = {
+            command: "register_device",
+            params: {
+                keyType: args.keyType || "hardware",
+            }
         };
+
+        const output = await runCivCommand(signerPath, ["--request", JSON.stringify(request)]);
+        const response = JSON.parse(output);
+        const result = response.result.data;
 
         if (args.rootPath) {
             const signingPath = path.join(args.rootPath, "device-key.json");
             const encryptionPath = path.join(args.rootPath, "recipient-pubkey.json");
             await fs.mkdir(args.rootPath, { recursive: true });
-            await fs.writeFile(signingPath, JSON.stringify(signingKey, null, 2));
-            await fs.writeFile(encryptionPath, JSON.stringify(encryptionKey, null, 2));
+            await fs.writeFile(signingPath, JSON.stringify(result.signingPublicKey, null, 2));
+            await fs.writeFile(encryptionPath, JSON.stringify(result.encryptionPublicKey, null, 2));
             (result as any).savedTo = args.rootPath;
         }
 
