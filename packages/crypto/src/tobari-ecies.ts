@@ -1,0 +1,114 @@
+
+import { encode } from './utils';
+
+/**
+ * Custom ECIES implementation compatible with Tobari signer-macos
+ * 
+ * Scheme:
+ * 1. Generate Ephemeral Key Pair (P-256)
+ * 2. ECDH(Ephemeral Private, Recipient Public) -> Shared Secret
+ * 3. HKDF-SHA256(Secret, Salt="tobari-ecies-salt", Info="tobari-ecies-info") -> AES Key (32 bytes)
+ * 4. AES-GCM-256(Key, Random IV, Plaintext)
+ */
+
+export interface EncryptedMessage {
+    ephemeralPublicKey: string; // Base64URL
+    ciphertext: string;         // Base64URL
+    iv: string;                 // Base64URL
+    tag: string;                // Base64URL
+}
+
+const SALT = new TextEncoder().encode("tobari-ecies-salt");
+const INFO = new TextEncoder().encode("tobari-ecies-info");
+
+export async function encryptTobariEcies(
+    recipientPublicKey: CryptoKey,
+    plaintext: Uint8Array
+): Promise<EncryptedMessage> {
+    // 1. Generate Ephemeral Key Pair
+    const ephemeralKeyPair = await crypto.subtle.generateKey(
+        { name: "ECDH", namedCurve: "P-256" },
+        true,
+        ["deriveBits"]
+    );
+
+    // 2. Derive Shared Secret
+    const sharedSecretBits = await crypto.subtle.deriveBits(
+        { name: "ECDH", public: recipientPublicKey },
+        ephemeralKeyPair.privateKey,
+        256
+    );
+
+    // 3. HKDF Derivation
+    const hkdfKey = await crypto.subtle.importKey(
+        "raw",
+        sharedSecretBits,
+        { name: "HKDF" },
+        false,
+        ["deriveBits"]
+    );
+
+    const aesKeyBits = await crypto.subtle.deriveBits(
+        {
+            name: "HKDF",
+            hash: "SHA-256",
+            salt: SALT,
+            info: INFO
+        },
+        hkdfKey,
+        256 // 32 bytes for AES-256
+    );
+
+    const aesKey = await crypto.subtle.importKey(
+        "raw",
+        aesKeyBits,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt"]
+    );
+
+    // 4. Encrypt with AES-GCM
+    const iv = crypto.getRandomValues(new Uint8Array(12)); // 96 bits
+    const encryptedBuffer = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv, tagLength: 128 },
+        aesKey,
+        plaintext
+    );
+
+    const encryptedBytes = new Uint8Array(encryptedBuffer);
+    const tagLength = 16;
+    const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - tagLength);
+    const tag = encryptedBytes.slice(encryptedBytes.length - tagLength);
+
+    // 5. Export Ephemeral Public Key
+    const ephemeralPubJwk = await crypto.subtle.exportKey("jwk", ephemeralKeyPair.publicKey);
+    // Convert JWK to Raw uncompressed format (0x04 || x || y)
+    const x = base64UrlToBytes(ephemeralPubJwk.x!);
+    const y = base64UrlToBytes(ephemeralPubJwk.y!);
+    const rawPub = new Uint8Array(65);
+    rawPub[0] = 0x04;
+    rawPub.set(x, 1);
+    rawPub.set(y, 33);
+
+    return {
+        ephemeralPublicKey: bytesToBase64Url(rawPub),
+        ciphertext: bytesToBase64Url(ciphertext),
+        iv: bytesToBase64Url(iv),
+        tag: bytesToBase64Url(tag)
+    };
+}
+
+// Helpers
+function base64UrlToBytes(str: string): Uint8Array {
+    const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    const binString = atob(base64);
+    return Uint8Array.from(binString, c => c.charCodeAt(0));
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+    const binString = String.fromCharCode(...bytes);
+    return btoa(binString)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+}
