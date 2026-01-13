@@ -5,10 +5,29 @@ import { subsetFont, bufferToDataUrl } from './font-engine';
 
 export async function bundleViewer(
     tobariBinary: Uint8Array,
-    templatePath: string = path.resolve('packages/codec/src/viewer-template.html'),
+    templatePath: string = "",
     options: { usePqc?: boolean } = {}
 ): Promise<string> {
     console.log(`Bundling High-Fidelity Tobari Viewer... (PQC: ${options.usePqc ? 'Enabled' : 'Disabled'})`);
+
+    // Resolve template path if not provided
+    if (!templatePath) {
+        const possiblePaths = [
+            path.resolve(process.cwd(), 'packages/codec/src/viewer-template.html'),
+            path.resolve(path.dirname(new URL(import.meta.url).pathname), 'viewer-template.html'),
+            path.resolve(__dirname, 'viewer-template.html') // Fallback for some environments
+        ];
+        for (const p of possiblePaths) {
+            if (fs.existsSync(p)) {
+                templatePath = p;
+                break;
+            }
+        }
+    }
+
+    if (!templatePath || !fs.existsSync(templatePath)) {
+        throw new Error(`Viewer template not found. Tried paths: ${templatePath}`);
+    }
 
     // 1. Extract ALL text for total font subsetting
     console.log("Extracting all possible text characters for subsetting...");
@@ -92,7 +111,8 @@ export async function bundleViewer(
     console.log(`Unique characters (graphemes) to subset: ${uniqueSegments.size}`);
 
     // 2. Subset Font (IPA MJ Mincho)
-    const fontPath = path.resolve('shared/fonts/ipamjm.ttf');
+    const packageRoot = path.dirname(new URL(import.meta.url).pathname);
+    const fontPath = path.resolve(packageRoot, '../../../shared/fonts/ipamjm.ttf');
     let fontCss = "";
     if (fs.existsSync(fontPath) && !skipPlaintextFont) {
         console.log("Subsetting IPA MJ Mincho font...");
@@ -120,7 +140,7 @@ export async function bundleViewer(
 
 
     const buildResult = await Bun.build({
-        entrypoints: [path.resolve('packages/codec/src/viewer-client.ts')],
+        entrypoints: [path.resolve(packageRoot, 'viewer-client.ts')],
         minify: true,
         target: 'browser',
         naming: '[name].[ext]',
@@ -141,7 +161,7 @@ export async function bundleViewer(
     
 
         // Read and Inline WASM binary
-        const wasmDir = path.resolve('packages/crypto-wasm/pkg');
+        const wasmDir = path.resolve(packageRoot, '../../crypto-wasm/pkg');
         let wasmPath = options.usePqc
             ? path.join(wasmDir, 'full/tobari_crypto_wasm_full_bg.wasm')
             : path.join(wasmDir, 'core/tobari_crypto_wasm_core_bg.wasm');
