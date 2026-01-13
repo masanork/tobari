@@ -34,10 +34,10 @@ export function getNativeSignerPath(): string | undefined {
 
     // 3. Fallback to local development paths
     const devPaths = [
-        DEFAULT_SIGNER_MACOS_PATH,
-        path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/release/tobari-signer"),
-        path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
         path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/debug/tobari-signer"),
+        path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/release/tobari-signer"),
+        DEFAULT_SIGNER_MACOS_PATH,
+        path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/release/tobari-signer.exe"),
         path.join(PROJECT_ROOT, "packages/signer/src-tauri/target/debug/tobari-signer.exe")
     ];
 

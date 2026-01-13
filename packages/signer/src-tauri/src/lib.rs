@@ -88,17 +88,285 @@ pub struct CredentialDescriptor {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// JSON string of the sign request
+    /// JSON string of the unified request
     #[arg(long, value_parser)]
     request: Option<String>,
 
-    /// Path to a file containing the sign request JSON
+    /// Path to a file containing the unified request JSON
     #[arg(long, value_parser)]
     file: Option<String>,
 
     /// Generate a BBS+ key pair and exit
     #[arg(long)]
     bbs_generate_key: bool,
+}
+
+// --- Unified Interface (matching signer-macos) ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UnifiedRequest {
+    pub command: String,
+    pub params: serde_json::Value,
+    pub preview: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum ResponseStatus {
+    Success,
+    Error,
+    Preview,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UnifiedResponse {
+    pub status: ResponseStatus,
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<ResponseResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<PreviewInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ErrorInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ResponseResult {
+    #[serde(rename = "type")]
+    pub result_type: String,
+    pub format: String,
+    pub data: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PreviewInfo {
+    pub summary: String,
+    pub fields: Option<Vec<PreviewField>>,
+    #[serde(rename = "requiresApproval")]
+    pub requires_approval: bool,
+    #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PreviewField {
+    pub name: String,
+    pub value: String,
+    pub disclosed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ErrorInfo {
+    #[serde(rename = "type")]
+    pub error_type: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InspectDocumentParams {
+    pub path: Option<String>,
+    pub data: Option<String>,
+}
+
+impl UnifiedResponse {
+    pub fn success(command: &str, result_type: &str, format: &str, data: serde_json::Value, metadata: Option<serde_json::Value>) -> Self {
+        Self {
+            status: ResponseStatus::Success,
+            command: command.to_string(),
+            result: Some(ResponseResult {
+                result_type: result_type.to_string(),
+                format: format.to_string(),
+                data,
+                metadata,
+            }),
+            preview: None,
+            error: None,
+        }
+    }
+
+    pub fn error(command: &str, error_type: &str, message: &str) -> Self {
+        Self {
+            status: ResponseStatus::Error,
+            command: command.to_string(),
+            result: None,
+            preview: None,
+            error: Some(ErrorInfo {
+                error_type: error_type.to_string(),
+                message: message.to_string(),
+                details: None,
+            }),
+        }
+    }
+}
+
+// --- Document Inspection Logic ---
+
+fn cbor_to_json(val: ciborium::value::Value) -> serde_json::Value {
+    match val {
+        ciborium::value::Value::Text(s) => serde_json::Value::String(s),
+        ciborium::value::Value::Integer(i) => {
+            let i_128: i128 = i.into();
+            serde_json::Value::Number(serde_json::Number::from(i_128 as i64))
+        }
+        ciborium::value::Value::Bool(b) => serde_json::Value::Bool(b),
+        ciborium::value::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(cbor_to_json).collect())
+        }
+        ciborium::value::Value::Map(map) => {
+            let mut obj = serde_json::Map::new();
+            for (k, v) in map {
+                if let Some(key_text) = k.as_text() {
+                    obj.insert(key_text.to_string(), cbor_to_json(v));
+                }
+            }
+            serde_json::Value::Object(obj)
+        }
+        ciborium::value::Value::Bytes(b) => serde_json::Value::String(format!("(binary:{}bytes)", b.len())),
+        _ => serde_json::Value::Null,
+    }
+}
+
+// Helper to unwrap Tag 98 or other potential wrappings
+fn unwrap_cbor(val: ciborium::value::Value) -> ciborium::value::Value {
+    match val {
+        ciborium::value::Value::Tag(_tag, box_val) => unwrap_cbor(*box_val),
+        _ => val,
+    }
+}
+
+pub async fn handle_inspect_document(request: &UnifiedRequest) -> UnifiedResponse {
+    let params: InspectDocumentParams = match serde_json::from_value(request.params.clone()) {
+        Ok(p) => p,
+        Err(e) => return UnifiedResponse::error(&request.command, "InvalidRequest", &e.to_string()),
+    };
+
+    let data = if let Some(path) = params.path {
+        match std::fs::read(path) {
+            Ok(d) => d,
+            Err(e) => return UnifiedResponse::error(&request.command, "InternalError", &e.to_string()),
+        }
+    } else if let Some(b64) = params.data {
+        match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(b64) {
+            Ok(d) => d,
+            Err(e) => return UnifiedResponse::error(&request.command, "InvalidRequest", &e.to_string()),
+        }
+    } else {
+        return UnifiedResponse::error(&request.command, "InvalidRequest", "path or data is required");
+    };
+
+    // Check for ECIES
+    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&data) {
+        if json.get("tobari_enc") == Some(&serde_json::Value::Bool(true)) {
+            return UnifiedResponse::success(
+                &request.command,
+                "cardData",
+                "json",
+                serde_json::json!({ "encrypted": true, "type": "tobari_ecies" }),
+                Some(serde_json::json!({ "message": "Document is encrypted." })),
+            );
+        }
+    }
+
+    let root: Result<ciborium::value::Value, _> = ciborium::from_reader(data.as_slice());
+    let doc = match root {
+        Ok(val) => {
+            let unwrapped = unwrap_cbor(val);
+            if let Some(arr) = unwrapped.as_array() {
+                if arr.len() == 4 {
+                    // COSE_Sign1 payload
+                    if let Some(payload_bytes) = arr[2].as_bytes() {
+                        ciborium::from_reader::<ciborium::value::Value, _>(payload_bytes.as_slice()).ok()
+                    } else {
+                        Some(unwrapped)
+                    }
+                } else {
+                    Some(unwrapped)
+                }
+            } else {
+                Some(unwrapped)
+            }
+        }
+        Err(_) => None,
+    };
+
+    if let Some(doc_val) = doc {
+        let unwrapped_doc = unwrap_cbor(doc_val);
+        if let Some(map) = unwrapped_doc.as_map() {
+            let doc_type = map.iter()
+                .find(|(k, _)| k.as_text() == Some("docType"))
+                .and_then(|(_, v)| v.as_text())
+                .unwrap_or("Unknown");
+            
+            let mut fields = serde_json::Map::new();
+            
+            // Extract fields from nameSpaces (mdoc structure) or top-level (if simple map)
+            let ns_map = map.iter()
+                .find(|(k, _)| k.as_text() == Some("issuerSigned"))
+                .and_then(|(_, v)| v.as_map())
+                .and_then(|m| m.iter().find(|(k, _)| k.as_text() == Some("nameSpaces")))
+                .and_then(|(_, v)| v.as_map())
+                .or_else(|| {
+                    map.iter()
+                        .find(|(k, _)| k.as_text() == Some("nameSpaces"))
+                        .and_then(|(_, v)| v.as_map())
+                });
+
+            if let Some(ns_map) = ns_map {
+                for (_, items_val) in ns_map {
+                    if let Some(items_arr) = items_val.as_array() {
+                        for item_bytes_val in items_arr {
+                            if let Some(item_bytes) = item_bytes_val.as_bytes() {
+                                if let Ok(item_val) = ciborium::from_reader::<ciborium::value::Value, _>(item_bytes.as_slice()) {
+                                    let unwrapped_item = unwrap_cbor(item_val);
+                                    let item_to_parse = if let Some(inner_bytes) = unwrapped_item.as_bytes() {
+                                        ciborium::from_reader::<ciborium::value::Value, _>(inner_bytes.as_slice()).unwrap_or(unwrapped_item)
+                                    } else {
+                                        unwrapped_item
+                                    };
+
+                                    if let Some(arr) = item_to_parse.as_array() {
+                                        if arr.len() >= 4 {
+                                            if let Some(k) = arr[2].as_text() {
+                                                fields.insert(k.to_string(), cbor_to_json(arr[3].clone()));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if fields.is_empty() {
+                // Not an mdoc nameSpaces structure, collect top-level fields
+                for (k, v) in map {
+                    if let Some(key_text) = k.as_text() {
+                        if key_text != "issuerSigned" && key_text != "docType" && key_text != "visuals" {
+                            fields.insert(key_text.to_string(), cbor_to_json(v.clone()));
+                        }
+                    }
+                }
+            }
+
+            return UnifiedResponse::success(
+                &request.command,
+                "cardData",
+                "json",
+                serde_json::json!({
+                    "docType": doc_type,
+                    "fields": fields
+                }),
+                Some(serde_json::json!({ "format": "mdoc/cose", "fieldCount": fields.len() })),
+            );
+        }
+    }
+
+    UnifiedResponse::error(&request.command, "InvalidRequest", "Failed to parse document")
 }
 
 struct AppState {
@@ -871,6 +1139,29 @@ pub fn run() {
         }
     }
 
+    // Unified Request handling
+    if let Some(req_str) = args.request.as_ref().cloned().or_else(|| {
+        args.file.as_ref().and_then(|path| std::fs::read_to_string(path).ok())
+    }) {
+        if let Ok(request) = serde_json::from_str::<UnifiedRequest>(&req_str) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            
+            match request.command.as_str() {
+                "inspect_document" => {
+                    let response = rt.block_on(handle_inspect_document(&request));
+                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                    std::process::exit(0);
+                }
+                _ => {
+                    // For other commands like sign_presentation, we might still want to launch the UI
+                    // but we'll convert the UnifiedRequest back to SignRequest for compatibility for now
+                    // if it matches the structure.
+                }
+            }
+        }
+    }
+
+    // Fallback to legacy path for GUI
     let sign_request = if let Some(req_str) = args.request {
         serde_json::from_str::<SignRequest>(&req_str).ok()
     } else if let Some(file_path) = args.file {

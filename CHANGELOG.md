@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.3.16] - 2026-01-14
+
+### Features
+- **Rust Signer**:
+  - **Recursive mdoc Inspection**: Implemented recursive CBOR-to-JSON conversion for `inspect_document` command, enabling full extraction of nested data structures (e.g., family members in Resident Records).
+  - **Enhanced COSE Parsing**: Improved handling of wrapped CBOR structures and Tag 98/24 unwrapping in the native Rust signer.
+- **MCP Server**:
+  - **Advanced Inspection Integration**: Updated `read_tobari_file` tool to prioritize native signer binaries (Rust/Swift) for document analysis, delivering richer JSON output than the standard TypeScript implementation.
+  - **Flexible Platform Support**: Enhanced `getNativeSignerPath` to prioritize local debug/release Rust binaries on macOS/Linux/Windows, ensuring the latest parsing logic is always available.
+  - **Improved Resident Record Support**: Full support for displaying nested lists and objects in mdoc credentials via the MCP interface.
+
 ## [0.3.15] - 2026-01-13
 
 ### Features

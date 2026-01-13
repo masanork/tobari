@@ -349,7 +349,7 @@ export async function handleReadTobariFile(toolArgs: any) {
         // --- NEW: Offload to signer-macos on Darwin if it's not a verification request ---
         // (Signer-macos currently doesn't handle external public key verification in inspect_document)
         const signerPath = getNativeSignerPath();
-        if (process.platform === 'darwin' && signerPath === DEFAULT_SIGNER_MACOS_PATH && !args.issuerPublicKeyPath) {
+        if (signerPath && !args.issuerPublicKeyPath) {
             const inspectRequest = JSON.stringify({
                 command: "inspect_document",
                 params: { path: path.resolve(filePath) }
@@ -362,22 +362,23 @@ export async function handleReadTobariFile(toolArgs: any) {
                 if (response.status === "success" && response.result?.data) {
                     const data = response.result.data;
                     
-                    // If it's encrypted, we still need to decrypt it in TS if decryption options provided,
-                    // OR if it's not encrypted, return the signer's result.
                     if (data.encrypted !== true) {
                         return {
                             content: [{
                                 type: "text",
                                 text: JSON.stringify({
                                     ...data,
-                                    _meta: { source: filePath, engine: "signer-macos" }
+                                    _meta: { 
+                                        source: filePath, 
+                                        engine: signerPath.includes("signer-macos") ? "signer-macos" : "tobari-signer" 
+                                    }
                                 }, null, 2)
                             }]
                         };
                     }
                 }
             } catch (e: any) {
-                console.warn(`Signer-macos inspection failed: ${e.message}. Falling back to JS implementation.`);
+                console.warn(`Native signer inspection failed: ${e.message}. Falling back to JS implementation.`);
             }
         }
 

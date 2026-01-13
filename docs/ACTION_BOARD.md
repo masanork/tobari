@@ -10,12 +10,13 @@
 - [x] **Device-bound Decryption (ECIES)**: Implemented full-stack decryption flow using Secure Enclave Key Agreement via `mcp-server` and `signer-macos`.
 - [x] **Hardware-backed Registration**: Added `register_device` tool to export Secure Enclave public keys for issuance.
 - [x] **Self-Issuance Workflow**: Implemented `issue_local_credential` to create hardware-bound "Master mdocs" from JPKI data, enabling card-less future interactions.
-- [x] **MCP ↔ Tobari Signer (Tauri/FIDO) Coupling**
-  - [x] **Resolve Protocol Mismatch**: Extended Tobari VP format and `@tobari/codec` to natively support WebAuthn assertions (`authData` + `clientDataJSON`).
-  - [x] **Implement in Tauri**: Updated `tobari-signer` (Rust) to return raw WebAuthn assertions for assembly by MCP.
-  - [x] **Extended Identity Support**: Added Passport (BAC/PACE), Driver's License, and Residence Card reading.
-  - [x] **Native macOS UX**: Integrated Touch ID and native PIN prompt dialogs.
-  - [x] Document build/install steps for macOS/Windows and `TOBARI_SIGNER_PATH` configuration.
+- [x] **LLM Communication Optimization**: Added `inspect_document` to `signer-macos` to offload CBOR parsing and minimize binary data transfer to LLM.
+
+### 🔄 Cross-Platform Signer Alignment (Tauri/Rust)
+- [ ] **Unified Interface Porting**: Implement `UnifiedRequest`/`UnifiedResponse` protocol in Tauri signer CLI to match `signer-macos`.
+- [ ] **Rust-based Document Inspector**: Implement `inspect_document` logic in Rust using `ciborium` to support local parsing on Windows/Linux.
+- [ ] **File-based I/O Support**: Update Tauri signer to support `outputPath` for Verifiable Presentations, returning paths instead of large Base64 strings.
+- [ ] **Windows TPM Integration**: Research and implement hardware-bound key support for Windows (NCrypt/TPM) to match Secure Enclave functionality.
 
 ### Performance & PQC
 // ... (omitted) ...
