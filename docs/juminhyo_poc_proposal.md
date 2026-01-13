@@ -91,7 +91,7 @@ embedFonts: true
 | **データ層1** | **ISO 18013-5 mDoc** | 機械用原本 | モバイル運転免許証互換のバイナリ規格（CBOR）。改ざん検知を確認。 |
 | **データ層2** | **IETF SD-JWT** | 機械用原本 | Web親和性の高いJSON形式。システム連携の容易さを確認。 |
 | **配布形式** | **Isolated Web Apps (IWA)**<br/>**HPKE (Hybrid PKE)** | 自己完結実行<br/>経路外暗号化 | 署名済みWeb Bundle形式によるオフライン実行に加え、データ自体を **HPKE (P-256 + AES-GCM)** で暗号化。**Device Key (Passkey)** を持つ本人以外は、たとえ自治体職員であっても中身を閲覧できないEnd-to-Endの秘匿性を実現。 |
-| **検証ロジック** | **Client-Side JS (WASM)**<br/>**Hybrid Signature** | 署名検証 | ブラウザ上で **ECDSA (P-384)** に加え、耐量子署名 **ML-DSA-65** の検証をサポート。将来的な暗号危殆化に備えた **暗号学的敏捷性 (Crypto Agility)** を確保。 |
+| **検証ロジック** | **Client-Side JS (WASM)**<br/>**Hybrid Signature** | 署名検証 | ブラウザ上で **ECDSA (P-384/P-256)** に加え、耐量子署名 **ML-DSA-65** の検証をサポート。将来的な暗号危殆化に備えた **暗号学的敏捷性 (Crypto Agility)** を確保。 |
 
 #### 3.2.1. WASMサイズ（core vs full）
 
@@ -193,7 +193,7 @@ sequenceDiagram
     participant Issuer as 自治体システム<br/>(発行者)
     participant Verifier as 提出先<br/>(企業・銀行)
 
-    Note over Holder: 【鍵生成】<br/>端末内でDevice Key (P-384) 生成<br/>(Passkeyとして厳重保管)
+    Note over Holder: 【鍵生成】<br/>端末内でDevice Key (P-256) 生成<br/>(Passkeyとして厳重保管)
 
     Holder->>Holder: 【交付申請書 作成】<br/>申請内容 + Device公開鍵
     Holder->>JPKI: 署名要求 (Hash)
