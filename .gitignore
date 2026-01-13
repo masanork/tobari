@@ -37,3 +37,5 @@ packages/civ/docs/*.pdf
 docs/.vitepress/dist
 docs/.vitepress/cache
 shared/certs/
+docs/data/blobs/
+packages/mcp-server/test/tmp_*.json
