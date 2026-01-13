@@ -8,14 +8,15 @@ All notable changes to this project will be documented in this file.
 ### Features
 - **Cross-Platform Signer Alignment**:
   - **Unified Protocol Implementation**: Ported the `UnifiedRequest/UnifiedResponse` protocol to the Rust (Tauri) signer, achieving full parity with the Swift implementation.
-  - **Standardized Commands**: Implemented `read_card`, `register_device`, and `sign_with_bbs` as unified commands in Rust.
+  - **Standardized Commands**: Implemented `read_card`, `register_device`, `sign_data`, `sign_with_bbs`, and `bbs_generate_key` as unified commands in Rust.
   - **File-based I/O**: Added `outputPath` support to all major commands in the Rust signer to handle large data transfers (e.g., face photos) efficiently via the filesystem.
 - **Rust Signer**:
   - **Recursive mdoc Inspection**: Implemented recursive CBOR-to-JSON conversion for `inspect_document` command, enabling full extraction of nested data structures (e.g., family members in Resident Records).
   - **Internal Logic Refactoring**: Decoupled core card-reading logic from Tauri commands to support both GUI and headless CLI modes.
 - **MCP Server**:
-  - **Tool Consolidation**: Refactored `jpki` and `tobari` tools to use the standardized `--request` interface, removing platform-specific branching and complex CLI flag management.
+  - **Full Tool Consolidation**: Refactored `jpki` and `tobari` tools to use the standardized `--request` interface, removing platform-specific branching for JPKI, Passport, Driver's License, and BBS+ operations.
   - **Enhanced Error Handling**: Improved `runCivCommand` to natively parse Unified Interface errors (e.g., `IncorrectPin`, `PinLocked`) and provide descriptive feedback to the LLM.
+  - **Optimized Data Transfer**: Leveraged `outputPath` for large binary data (like face photos and identity documents) to minimize stdout overhead and improve reliability.
   - **Cross-Platform Device Registration**: Enabled `register_device` on all platforms by leveraging the unified native signer interface.
 
 ## [0.3.15] - 2026-01-13
