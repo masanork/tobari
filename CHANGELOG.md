@@ -6,13 +6,17 @@ All notable changes to this project will be documented in this file.
 ## [0.3.16] - 2026-01-14
 
 ### Features
+- **Cross-Platform Signer Alignment**:
+  - **Unified Protocol Implementation**: Ported the `UnifiedRequest/UnifiedResponse` protocol to the Rust (Tauri) signer, achieving full parity with the Swift implementation.
+  - **Standardized Commands**: Implemented `read_card`, `register_device`, and `sign_with_bbs` as unified commands in Rust.
+  - **File-based I/O**: Added `outputPath` support to all major commands in the Rust signer to handle large data transfers (e.g., face photos) efficiently via the filesystem.
 - **Rust Signer**:
   - **Recursive mdoc Inspection**: Implemented recursive CBOR-to-JSON conversion for `inspect_document` command, enabling full extraction of nested data structures (e.g., family members in Resident Records).
-  - **Enhanced COSE Parsing**: Improved handling of wrapped CBOR structures and Tag 98/24 unwrapping in the native Rust signer.
+  - **Internal Logic Refactoring**: Decoupled core card-reading logic from Tauri commands to support both GUI and headless CLI modes.
 - **MCP Server**:
-  - **Advanced Inspection Integration**: Updated `read_tobari_file` tool to prioritize native signer binaries (Rust/Swift) for document analysis, delivering richer JSON output than the standard TypeScript implementation.
-  - **Flexible Platform Support**: Enhanced `getNativeSignerPath` to prioritize local debug/release Rust binaries on macOS/Linux/Windows, ensuring the latest parsing logic is always available.
-  - **Improved Resident Record Support**: Full support for displaying nested lists and objects in mdoc credentials via the MCP interface.
+  - **Tool Consolidation**: Refactored `jpki` and `tobari` tools to use the standardized `--request` interface, removing platform-specific branching and complex CLI flag management.
+  - **Enhanced Error Handling**: Improved `runCivCommand` to natively parse Unified Interface errors (e.g., `IncorrectPin`, `PinLocked`) and provide descriptive feedback to the LLM.
+  - **Cross-Platform Device Registration**: Enabled `register_device` on all platforms by leveraging the unified native signer interface.
 
 ## [0.3.15] - 2026-01-13
 

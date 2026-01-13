@@ -1,0 +1,9 @@
+{
+  "platform": "macos",
+  "signingPublicKey": {
+    "crv": "P-256",
+    "kty": "EC",
+    "x": "...",
+    "y": "..."
+  }
+}

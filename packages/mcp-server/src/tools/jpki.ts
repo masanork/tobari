@@ -31,23 +31,33 @@ export async function runCivCommand(exePath: string, args: string[]): Promise<st
             }
         });
         proc.on("close", (code) => {
-            if (code === 0) resolve(stdout.trim());
-            else {
-                const combined = (stderrData + stdout).trim();
+            if (code === 0) {
+                const combined = stdout.trim();
                 try {
-                    const jsonMatch = combined.match(/\{.*"type".*details".*\}/s);
-                    if (jsonMatch) {
-                        const errObj = JSON.parse(jsonMatch[0]);
-                        if (errObj.type === "IncorrectPin") {
-                            reject(new Error(`Incorrect PIN. ${errObj.details.retries} retries remaining.`));
+                    // Try to parse as Unified Response
+                    const response = JSON.parse(combined);
+                    if (response.status === "error") {
+                        const err = response.error;
+                        if (err.type === "IncorrectPin") {
+                            reject(new Error(`Incorrect PIN. ${err.details?.retries ?? "?"} retries remaining.`));
                             return;
                         }
-                        if (errObj.type === "PinLocked") {
+                        if (err.type === "PinLocked") {
                             reject(new Error(`The PIN is locked.`));
                             return;
                         }
+                        reject(new Error(`${err.type}: ${err.message}`));
+                        return;
                     }
-                } catch (e) { }
+                    // If it's a success response, we can just return the raw string or the result part
+                    // For compatibility with existing callers, return the raw string if not a unified success
+                    resolve(combined);
+                } catch (e) {
+                    resolve(combined);
+                }
+            }
+            else {
+                const combined = (stderrData + stdout).trim();
                 reject(new Error(combined || `Signer failed with code ${code}`));
             }
         });
@@ -72,23 +82,19 @@ export async function handleReadPassport(toolArgs: any) {
         const nativeSigner = getNativeSignerPath();
         if (!nativeSigner) throw new Error("Native signer not found.");
 
-        const isMacNative = nativeSigner === DEFAULT_SIGNER_MACOS_PATH;
-        let cmdArgs: string[] = [];
+        const request = {
+            command: "read_card",
+            params: {
+                cardType: "passport",
+                mrz: args.mrz,
+                can: args.can,
+                usePace: args.usePace
+            }
+        };
 
-        if (isMacNative) {
-            cmdArgs = ["--read-passport"];
-            if (args.can) cmdArgs.push("--can", args.can);
-            else if (args.mrz) cmdArgs.push("--mrz", args.mrz);
-            if (args.usePace) cmdArgs.push("--use-pace");
-        } else {
-            const req = {
-                mrz: args.mrz || "",
-            };
-            cmdArgs = ["--read-passport", "--request", JSON.stringify(req)];
-        }
-
-        const output = await runCivCommand(nativeSigner, cmdArgs);
-        const result = JSON.parse(output);
+        const output = await runCivCommand(nativeSigner, ["--request", JSON.stringify(request)]);
+        const response = JSON.parse(output);
+        const result = response.result.data;
 
         return {
             content: [{
@@ -103,7 +109,7 @@ export async function handleReadPassport(toolArgs: any) {
                     dg15: result.dg15,
                     protocolUsed: result.protocolUsed,
                     format: "base64",
-                    description: "Passport data read successfully. sod contains the Document Security Object (signature)."
+                    description: "Passport data read successfully."
                 }, null, 2)
             }],
         };
@@ -118,18 +124,18 @@ export async function handleReadDriverLicense(toolArgs: any) {
         const nativeSigner = getNativeSignerPath();
         if (!nativeSigner) throw new Error("Native signer not found.");
 
-        const isMacNative = nativeSigner === DEFAULT_SIGNER_MACOS_PATH;
-        let cmdArgs: string[] = [];
+        const request = {
+            command: "read_card",
+            params: {
+                cardType: "drivers_license",
+                pin1: args.pin1,
+                pin2: args.pin2
+            }
+        };
 
-        if (isMacNative) {
-            cmdArgs = ["--read-driver-license", "--pin1", args.pin1, "--pin2", args.pin2];
-        } else {
-            const req = { pin1: args.pin1, pin2: args.pin2 };
-            cmdArgs = ["--read-driver-license", "--request", JSON.stringify(req)];
-        }
-
-        const output = await runCivCommand(nativeSigner, cmdArgs);
-        const result = JSON.parse(output);
+        const output = await runCivCommand(nativeSigner, ["--request", JSON.stringify(request)]);
+        const response = JSON.parse(output);
+        const result = response.result.data;
 
         const normalized = {
             ...result,
@@ -149,9 +155,13 @@ export async function handleReadResidenceCard(toolArgs: any) {
         const nativeSigner = getNativeSignerPath();
         if (!nativeSigner) throw new Error("Native signer not found.");
 
-        const cmdArgs = ["--read-residence-card"];
-        const output = await runCivCommand(nativeSigner, cmdArgs);
-        const result = JSON.parse(output);
+        const request = {
+            command: "read_card",
+            params: { cardType: "residence_card" }
+        };
+        const output = await runCivCommand(nativeSigner, ["--request", JSON.stringify(request)]);
+        const response = JSON.parse(output);
+        const result = response.result.data;
 
         return {
             content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -239,10 +249,14 @@ export async function handleReadMyNumber(toolArgs: any) {
         const args = ReadMyNumberSchema.parse(toolArgs);
         const nativeSigner = getNativeSignerPath();
         
-        if (nativeSigner && !args.mynaPath) {
-             const cmdArgs = ["--read-mynumber", "--pin", args.pin];
-             const output = await runCivCommand(nativeSigner, cmdArgs);
-             const result = JSON.parse(output); 
+        if (nativeSigner) {
+             const request = {
+                 command: "read_card",
+                 params: { cardType: "jpki", pin: args.pin, includeMyNumber: true }
+             };
+             const output = await runCivCommand(nativeSigner, ["--request", JSON.stringify(request)]);
+             const response = JSON.parse(output);
+             const result = response.result.data;
              return {
                 content: [{
                     type: "text",
@@ -250,18 +264,7 @@ export async function handleReadMyNumber(toolArgs: any) {
                 }],
             };
         }
-
-        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
-        const cmdArgs = ["jpki", "num", "--pin", args.pin, "--json"];
-        if (args.demo) cmdArgs.unshift("--demo");
-        const jsonOutput = await runCivCommand(civPath, cmdArgs);
-        const parsed = JSON.parse(jsonOutput);
-        return {
-            content: [{
-                type: "text",
-                text: JSON.stringify({ mynumber: parsed.mynumber }, null, 2),
-            }],
-        };
+        throw new Error("Native signer not found. Please build packages/signer or packages/signer-macos.");
     } catch (error: any) {
         return { content: [{ type: "text", text: `Error reading My Number: ${error.message}` }], isError: true };
     }
@@ -272,10 +275,14 @@ export async function handleReadBasicInfo(toolArgs: any) {
         const args = ReadBasicInfoSchema.parse(toolArgs);
         const nativeSigner = getNativeSignerPath();
         
-        if (nativeSigner && !args.mynaPath) {
-             const cmdArgs = ["--read-attributes", "--pin", args.pin];
-             const output = await runCivCommand(nativeSigner, cmdArgs);
-             const result = JSON.parse(output);
+        if (nativeSigner) {
+             const request = {
+                 command: "read_card",
+                 params: { cardType: "jpki", pin: args.pin }
+             };
+             const output = await runCivCommand(nativeSigner, ["--request", JSON.stringify(request)]);
+             const response = JSON.parse(output);
+             const result = response.result.data;
              const normalized = {
                  name: result.name,
                  address: result.address,
@@ -293,15 +300,7 @@ export async function handleReadBasicInfo(toolArgs: any) {
                 }],
             };
         }
-
-        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
-        const cmdArgs = ["jpki", "attr", "--pin", args.pin, "--json"];
-        if (args.demo) cmdArgs.unshift("--demo");
-        const jsonOutput = await runCivCommand(civPath, cmdArgs);
-        const info = JSON.parse(jsonOutput);
-        return {
-            content: [{ type: "text", text: JSON.stringify(info, null, 2) }],
-        };
+        throw new Error("Native signer not found.");
     } catch (error: any) {
         return { content: [{ type: "text", text: `Error reading basic info: ${error.message}` }], isError: true };
     }
@@ -312,10 +311,14 @@ export async function handleReadPhoto(toolArgs: any) {
         const args = ReadPhotoSchema.parse(toolArgs);
         const nativeSigner = getNativeSignerPath();
         
-        if (nativeSigner && !args.mynaPath) {
-             const cmdArgs = ["--read-face-photo", "--pin", args.pin];
-             const output = await runCivCommand(nativeSigner, cmdArgs);
-             const result = JSON.parse(output); 
+        if (nativeSigner) {
+             const request = {
+                 command: "read_card",
+                 params: { cardType: "jpki", pin: args.pin, includeFacePhoto: true }
+             };
+             const output = await runCivCommand(nativeSigner, ["--request", JSON.stringify(request)]);
+             const response = JSON.parse(output);
+             const result = response.result.data;
              return {
                 content: [{
                     type: "text",
@@ -323,20 +326,7 @@ export async function handleReadPhoto(toolArgs: any) {
                 }],
             };
         }
-
-        const civPath = resolveMynaPath(args.mynaPath || DEFAULT_MYNA_PATH);
-        const cmdArgs = ["jpki", "attr", "--pin", args.pin, "--json"];
-        if (args.demo) cmdArgs.unshift("--demo");
-        const jsonOutput = await runCivCommand(civPath, cmdArgs);
-        const info = JSON.parse(jsonOutput);
-        const photoBase64 = info.face_photo;
-        if (!photoBase64) throw new Error("Photo not found in response");
-        return {
-            content: [{
-                type: "text",
-                text: JSON.stringify({ photo: photoBase64, format: "jpeg2000" }, null, 2),
-            }],
-        };
+        throw new Error("Native signer not found.");
     } catch (error: any) {
         return { content: [{ type: "text", text: `Error reading photo: ${error.message}` }], isError: true };
     }
