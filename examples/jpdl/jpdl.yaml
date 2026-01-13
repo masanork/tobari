@@ -1,0 +1,46 @@
+title: "運転免許証 (Japanese Driver License)"
+id: "jp.go.npa.jpdl.v1"
+version: "1.0.0"
+
+# ISO 18013-5 alignment where possible, 
+# but JPDL has specific fields like Gengou dates.
+fields:
+  - id: "family_name"
+    type: "string"
+    selective: true
+    primary: true
+  - id: "given_name"
+    type: "string"
+    selective: true
+  - id: "birth_date"
+    type: "string"
+    selective: true
+  - id: "issue_date"
+    type: "string"
+    selective: true
+  - id: "expiry_date"
+    type: "string"
+    selective: true
+  - id: "issuing_authority"
+    type: "string"
+    selective: true
+  - id: "document_number"
+    type: "string"
+    selective: true
+  - id: "portrait"
+    type: "string"
+    selective: true
+  - id: "driving_privileges"
+    type: "array"
+    items:
+      type: "string"
+    selective: true
+  - id: "registered_domicile"
+    type: "string"
+    selective: true
+  - id: "address"
+    type: "string"
+    selective: true
+  - id: "color_class"
+    type: "string"
+    selective: true

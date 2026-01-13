@@ -4,14 +4,16 @@
     "module": "src/index.ts",
     "type": "module",
     "scripts": {
-        "start": "bun run src/index.ts"
+        "start": "bun run src/index.ts",
+        "test": "bun test"
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.0.1",
         "@tobari/codec": "workspace:*",
         "@tobari/crypto": "workspace:*",
         "cbor-x": "^1.5.0",
-        "zod": "^3.22.4"
+        "zod": "^3.22.4",
+        "zod-to-json-schema": "^3.25.1"
     },
     "devDependencies": {
         "@types/node": "^20.0.0",

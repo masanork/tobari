@@ -110,7 +110,7 @@ export const RegisterWebAuthnSchema = z.object({
 
 export const SignWithJPKISchema = z.object({
     data: z.string().describe("Base64 encoded data to sign"),
-    pin: z.string().describe("JPKI signature PIN code (6-16 digits)"),
+    pin: z.string().optional().describe("JPKI signature PIN code. If omitted, a secure prompt will appear on the device."),
     digest: z.enum(["sha1", "sha256", "sha512"]).optional().describe("Digest algorithm (default: sha256)"),
     detached: z.boolean().optional().describe("Create detached signature (default: true)"),
     format: z.enum(["pem", "der"]).optional().describe("Output format (default: der)"),
@@ -119,19 +119,19 @@ export const SignWithJPKISchema = z.object({
 });
 
 export const ReadMyNumberSchema = z.object({
-    pin: z.string().describe("Card PIN code for text input assistance (4 digits)"),
+    pin: z.string().optional().describe("Card PIN code for text input assistance. If omitted, a secure prompt will appear on the device."),
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
     demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
 
 export const ReadBasicInfoSchema = z.object({
-    pin: z.string().describe("Card PIN code for text input assistance (4 digits)"),
+    pin: z.string().optional().describe("Card PIN code for text input assistance. If omitted, a secure prompt will appear on the device."),
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
     demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
 
 export const ReadPhotoSchema = z.object({
-    pin: z.string().describe("Card PIN code for visual verification (4 digits)"),
+    pin: z.string().optional().describe("Card PIN code for visual verification. If omitted, a secure prompt will appear on the device."),
     mynaPath: z.string().optional().describe(`Path to myna binary (default: ${DEFAULT_MYNA_PATH})`),
     demo: z.boolean().optional().describe("Use demo/mock mode with simulated card reader (default: false)"),
 });
@@ -143,8 +143,14 @@ export const ReadPassportSchema = z.object({
 });
 
 export const ReadDriverLicenseSchema = z.object({
-    pin1: z.string().describe("4-digit PIN1"),
-    pin2: z.string().describe("4-digit PIN2"),
+    pin1: z.string().optional().describe("4-digit PIN1. If omitted, a secure prompt will appear on the device."),
+    pin2: z.string().optional().describe("4-digit PIN2. If omitted, a secure prompt will appear on the device."),
+});
+
+export const ImportDriverLicenseSchema = z.object({
+    pin1: z.string().optional().describe("4-digit PIN1. If omitted, a secure prompt will appear on the device."),
+    pin2: z.string().optional().describe("4-digit PIN2. If omitted, a secure prompt will appear on the device."),
+    outputPath: z.string().describe("Where to save the generated encrypted .cose file (e.g. ./my-dl.cose)"),
 });
 
 export const ReadResidenceCardSchema = z.object({
@@ -156,7 +162,7 @@ export const RegisterDeviceSchema = z.object({
 });
 
 export const IssueLocalCredentialSchema = z.object({
-    pin: z.string().describe("4-digit PIN for My Number Card"),
+    pin: z.string().optional().describe("4-digit PIN for My Number Card. If omitted, a secure prompt will appear on the device."),
     outputPath: z.string().describe("Where to save the generated .cose file (e.g. ./my-identity.cose)"),
     issuerName: z.string().optional().default("My Hardware Device").describe("Label for the issuer in the document"),
 });

@@ -25,6 +25,7 @@ recipient-pubkey.json
 
 # Local keys for development
 *-key.json
+*-key-local.json
 
 
 # Generated VP files

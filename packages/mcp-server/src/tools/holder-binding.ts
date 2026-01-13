@@ -319,3 +319,12 @@ export async function handleCreateOid4vpPresentation(toolArgs: any) {
         };
     }
 }
+
+import { McpTool } from "../mcp-tool.js";
+import { z } from "zod";
+export const holderBindingTools: McpTool<any>[] = [
+    { name: "create_application", description: "Creates an application with holder binding.", schema: z.object({ requestedDocType: z.string(), requestedFields: z.array(z.string()).optional(), jpkiPin: z.string().optional(), outputPath: z.string() }), handler: handleCreateApplication },
+    { name: "issue_with_binding", description: "Issues an mdoc with binding.", schema: z.object({ applicationPath: z.string(), docSchemaPath: z.string(), issuerKeyPath: z.string(), outputPath: z.string() }), handler: handleIssueWithBinding },
+    { name: "create_oid4vp_presentation", description: "Creates an OID4VP presentation.", schema: z.object({ documentPath: z.string(), disclosureFields: z.array(z.string()).optional(), verifierId: z.string(), nonce: z.string(), responseUri: z.string().optional(), outputPath: z.string() }), handler: handleCreateOid4vpPresentation }
+];
+

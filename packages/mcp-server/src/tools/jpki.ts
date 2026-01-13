@@ -14,34 +14,41 @@ import {
 } from "../schemas.js";
 
 // Helper to run spawn and capture output
-async function runCivCommand(exePath: string, args: string[]): Promise<string> {
-    console.error(`Running: ${exePath} ${args.join(" ")}`);
+export async function runCivCommand(exePath: string, args: string[]): Promise<string> {
+    if (process.env.TOBARI_DEBUG === "1") {
+        console.error(`Running: ${exePath} ${args.join(" ")}`);
+    }
     const proc = spawn(exePath, args);
     return new Promise<string>((resolve, reject) => {
         let stdout = "";
-        let stderr = "";
+        let stderrData = "";
         proc.stdout.on("data", (data) => stdout += data.toString());
-        proc.stderr.on("data", (data) => stderr += data.toString());
+        proc.stderr.on("data", (data) => {
+            const str = data.toString();
+            stderrData += str;
+            if (process.env.TOBARI_DEBUG === "1") {
+                process.stderr.write(str);
+            }
+        });
         proc.on("close", (code) => {
             if (code === 0) resolve(stdout.trim());
             else {
-                const combined = (stderr + stdout).trim();
+                const combined = (stderrData + stdout).trim();
                 try {
                     const jsonMatch = combined.match(/\{.*"type".*details".*\}/s);
                     if (jsonMatch) {
                         const errObj = JSON.parse(jsonMatch[0]);
                         if (errObj.type === "IncorrectPin") {
-                            reject(new Error(`Incorrect PIN. ${errObj.details.retries} retries remaining. Please warn the user carefully.`));
+                            reject(new Error(`Incorrect PIN. ${errObj.details.retries} retries remaining.`));
                             return;
                         }
                         if (errObj.type === "PinLocked") {
-                            reject(new Error(`The PIN is locked. The user must visit their local municipal office to reset it.`));
+                            reject(new Error(`The PIN is locked.`));
                             return;
                         }
                     }
-                } catch (e) { /* ignore parse error and use default */ }
-                
-                reject(new Error(`Signer failed (code ${code}): ${combined}`));
+                } catch (e) { }
+                reject(new Error(combined || `Signer failed with code ${code}`));
             }
         });
         proc.on("error", (err) => reject(err));
@@ -334,3 +341,15 @@ export async function handleReadPhoto(toolArgs: any) {
         return { content: [{ type: "text", text: `Error reading photo: ${error.message}` }], isError: true };
     }
 }
+import { McpTool } from "../mcp-tool.js";
+
+export const jpkiTools: McpTool<any>[] = [
+    { name: "sign_with_jpki", description: "Signs data using JPKI via myna CLI.", schema: SignWithJPKISchema, handler: handleSignWithJpki },
+    { name: "read_mynumber", description: "Reads My Number from My Number Card.", schema: ReadMyNumberSchema, handler: handleReadMyNumber },
+    { name: "read_basic_info", description: "Reads basic info from My Number Card.", schema: ReadBasicInfoSchema, handler: handleReadBasicInfo },
+    { name: "read_photo", description: "Reads photo from My Number Card.", schema: ReadPhotoSchema, handler: handleReadPhoto },
+    { name: "read_passport", description: "Reads info from ePassport.", schema: ReadPassportSchema, handler: handleReadPassport },
+    { name: "read_driver_license", description: "Reads info from Driver's License.", schema: ReadDriverLicenseSchema, handler: handleReadDriverLicense },
+    { name: "read_residence_card", description: "Reads info from Residence Card.", schema: ReadResidenceCardSchema, handler: handleReadResidenceCard }
+];
+
