@@ -6,12 +6,13 @@ import { MSO, revealMdocData } from './sd';
 import * as path from 'path';
 
 // Use dynamic import for X509Certificate to avoid browser build issues
-let X509Certificate: any;
-try {
-    const crypto = await import('node:crypto');
-    X509Certificate = crypto.X509Certificate;
-} catch {
-    // Fallback for browser (where verification might be limited or handled differently)
+async function getX509Certificate(buffer: Buffer | Uint8Array): Promise<any> {
+    try {
+        const { X509Certificate } = await import('node:crypto');
+        return new X509Certificate(buffer);
+    } catch {
+        throw new Error("X509Certificate is not supported in this environment");
+    }
 }
 
 export interface VerificationResult {
@@ -80,7 +81,7 @@ export async function verifyIdentityEvidence(data: any): Promise<Record<string, 
             const sodBinary = data.sod instanceof Uint8Array ? data.sod : new Uint8Array(Buffer.from(data.sod as string, 'base64'));
             
             // Extract DS Certificate from SOD
-            const dsCert = extractDsCertificate(sodBinary);
+            const dsCert = await extractDsCertificate(sodBinary);
             let chainVerified = false;
             let country = "Unknown";
 
@@ -160,7 +161,7 @@ export async function verifyIdentityEvidence(data: any): Promise<Record<string, 
     // 3. JPKI Certificate Chain Check
     if (data.auth_cert) {
         try {
-            const userCert = new X509Certificate(data.auth_cert instanceof Uint8Array ? data.auth_cert : Buffer.from(data.auth_cert as string, 'base64'));
+            const userCert = await getX509Certificate(data.auth_cert instanceof Uint8Array ? data.auth_cert : Buffer.from(data.auth_cert as string, 'base64'));
             
             const { TrustStore } = await import('./trust.js');
             const certsBase = path.resolve(process.cwd(), 'shared/certs');
@@ -168,7 +169,7 @@ export async function verifyIdentityEvidence(data: any): Promise<Record<string, 
             
             let chainOk = false;
             if (data.auth_ca_cert) {
-                const caCert = new X509Certificate(data.auth_ca_cert instanceof Uint8Array ? data.auth_ca_cert : Buffer.from(data.auth_ca_cert as string, 'base64'));
+                const caCert = await getX509Certificate(data.auth_ca_cert instanceof Uint8Array ? data.auth_ca_cert : Buffer.from(data.auth_ca_cert as string, 'base64'));
                 chainOk = userCert.verify(caCert.publicKey);
             }
             
@@ -198,12 +199,12 @@ export async function verifyIdentityEvidence(data: any): Promise<Record<string, 
  * Helper to extract the Document Signer certificate from a CMS SignedData (SOD).
  * Uses a heuristic search for X.509 headers.
  */
-function extractDsCertificate(sod: Uint8Array): X509Certificate | null {
+async function extractDsCertificate(sod: Uint8Array): Promise<any | null> {
     let offset = 0;
     while (offset < sod.length - 4) {
         if (sod[offset] === 0x30 && sod[offset+1] === 0x82) {
             try {
-                const cert = new X509Certificate(sod.subarray(offset));
+                const cert = await getX509Certificate(sod.subarray(offset));
                 return cert;
             } catch {
                 // Not a cert, continue searching

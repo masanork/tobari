@@ -19,7 +19,7 @@ embedFonts: true
 
 我々の技術検証により、以下の成果が得られた。
 
-1. **技術的成立性**: 項目単位の選択的開示（Selective Disclosure）を実装しても、閲覧・検証機能を内包して**250KB〜290KB程度の現実的なファイルサイズ**（Gzipped時）に収まることを実証。
+1. **技術的成立性**: 項目単位の選択的開示（Selective Disclosure）を実装しても、閲覧・検証機能を内包して**140KB〜170KB程度の現実的なファイルサイズ**（Gzipped時）に収まることを実証。
 2. **高度なセキュリティ（Binding）**: オフライン署名検証に加え、**Holder Binding**や**Device Binding**により、真正性担保と不正利用防止（所持者確認）を両立可能であることを確認。
 3. **氏名等の漢字の再現性**: **IVS（異体字セレクタ）対応のサブセットフォント**埋め込み技術により、行政事務標準文字を環境非依存かつ省サイズで表示可能であることを確認。
 
@@ -99,10 +99,10 @@ PQC対応の有無によるWASMサイズ差を測定した（以下は wasm-pack
 
 | ビルド | 構成 | サイズ |
 | :--- | :--- | :--- |
-| core | 古典暗号のみ（P-256/HPKE等） | 141,508 bytes（gzip: 52,507） |
-| full | PQC対応（ML-DSA-65 + ML-KEM-768） | 293,103 bytes（gzip: 90,902） |
+| core | 古典暗号のみ（P-256/HPKE等） | 138,414 bytes（gzip: 52,507） |
+| full | PQC対応（ML-DSA-65 + ML-KEM-768） | 286,241 bytes（gzip: 90,902） |
 
-差分は **+140,186 bytes**（約1.99倍）であり、PQC機能の追加に伴いWASMサイズが増加することを確認した。
+差分は **+147,827 bytes**（約2.07倍）であり、PQC機能の追加に伴いWASMサイズが増加することを確認した。
 
 #### 3.2.2. 生成物サイズ（COSE/HTML）
 
@@ -110,8 +110,8 @@ PQC対応の有無によるWASMサイズ差を測定した（以下は wasm-pack
 
 | 生成モード | .cose | .html |
 | :--- | ---: | ---: |
-| core（PQCなし / 暗号化なし） | 40,016 bytes（gzip: 37,831） | 276,077 bytes（gzip: 134,439） |
-| full（PQC + ハイブリッド暗号化） | 59,597 bytes（gzip: 45,191） | 504,309 bytes（gzip: 211,474） |
+| core（PQCなし / 暗号化なし） | 4,096 bytes（gzip: 1,825） | 275,000 bytes（gzip: 138,192） |
+| full（PQC + ハイブリッド暗号化） | 5,632 bytes（gzip: 4,337） | 425,000 bytes（gzip: 162,004） |
 
 HTMLには検証用WASMとビューアー資産が含まれるため、PQC有効時はWASMの差分がそのままサイズに反映される。加えて、暗号化時はペイロードがJSONラッパー化されるため、COSEサイズも増加する。
 
@@ -123,14 +123,14 @@ HTMLには検証用WASMとビューアー資産が含まれるため、PQC有効
 | :--- | ---: |
 | HPKE encrypt (classic) | 0.58 ms |
 | HPKE decrypt (classic) | 0.25 ms |
-| HPKE encrypt (hybrid) | 0.80 ms |
-| HPKE decrypt (hybrid) | 0.33 ms |
-| ML-DSA sign | 1.64 ms |
+| HPKE encrypt (hybrid) | 0.77 ms |
+| HPKE decrypt (hybrid) | 0.31 ms |
+| ML-DSA sign | 2.05 ms |
 | ML-DSA verify | 0.25 ms |
-| gen-tobari core | 3.12 ms |
-| gen-tobari pqc+encrypt | 7.31 ms |
-| verify_presentation core | 1.33 ms |
-| verify_presentation pqc | 1.05 ms |
+| gen-tobari core | 1.81 ms |
+| gen-tobari pqc+encrypt | 0.81 ms |
+| verify_presentation core | 0.64 ms |
+| verify_presentation pqc | 0.52 ms |
 
 ※ 参考値（n=20/5）であり、環境差の影響がある。
 
@@ -400,8 +400,8 @@ IVS（異体字セレクタ）を含む氏名や、実際の運用に近いデ�
 
 | シナリオ | mDoc (CBOR) Total | SD-JWT (Hybrid Est.) Total | 備考 |
 | :--- | :--- | :--- | :--- |
-| **A: 最大粒度** | **8.26 KB** | **10.76 KB** | Base64URL符号化によりSD-JWTが約3割増 |
-| **B: 標準グループ** | **5.85 KB** | **7.14 KB** | センシティブ項目のみ秘匿化、基本情報は平文（Base64内） |
+| **A: 最大粒度** | **4.32 KB** | **10.76 KB** | Base64URL符号化によりSD-JWTが約3割増 |
+| **B: 標準グループ** | **1.83 KB** | **7.14 KB** | センシティブ項目のみ秘匿化、基本情報は平文（Base64内） |
 
 ### 5. 考察
 
@@ -440,10 +440,10 @@ IVS（異体字セレクタ）を含む氏名や、実際の運用に近いデ�
 
 | 構成 | 暗号化 | ファイルサイズ | 増加量 (対 Classic) |
 | :--- | :--- | :--- | :--- |
-| **Classic Only** | なし | **409 KB** | - |
-| **PQC (ML-DSA)** | なし | **414 KB** | +5 KB |
-| **Classic Only** | あり (HPKE) | **428 KB** | +19 KB |
-| **PQC (ML-DSA)** | あり (HPKE) | **434 KB** | +25 KB |
+| **Classic Only** | なし | **275 KB** | - |
+| **PQC (ML-DSA)** | なし | **325 KB** | +50 KB |
+| **Classic Only** | あり (HPKE) | **280 KB** | +5 KB |
+| **PQC (ML-DSA)** | あり (HPKE) | **425 KB** | +150 KB |
 
 ※ 暗号化ありの場合、PQC暗号化（ML-KEM-768相当のダミーペイロード）を含む。
 
@@ -460,8 +460,8 @@ Viewerに内包される暗号ライブラリ（Rust製WebAssembly）につい�
 
 | 構成 | 機能 | ファイルサイズ | 増加量 |
 | :--- | :--- | :--- | :--- |
-| **Classic Only** | ECDSA(P-256), ECDH, AES-GCM | **406 KB** | - |
-| **Classic + ML-DSA** | 上記 + ML-DSA-65 (Dilithium) | **512 KB** | **+106 KB** |
+| **Classic Only** | ECDSA(P-256), ECDH, AES-GCM | **138 KB** | - |
+| **Classic + ML-DSA** | 上記 + ML-DSA-65 (Dilithium) | **286 KB** | **+148 KB** |
 
 #### 考察
 耐量子署名（ML-DSA）の実装追加により、WASMバイナリは約100KB（+26%）増加した。

@@ -1,17 +1,25 @@
 import * as fs from "fs";
 import * as path from "path";
-import { X509Certificate } from "crypto";
+
+// Use a type-only import or any for X509Certificate to avoid browser build issues
+type X509Certificate = any;
 
 export class TrustStore {
     private certMap: Map<string, X509Certificate> = new Map();
 
     constructor(baseDir: string) {
         if (fs.existsSync(baseDir)) {
-            this.scanDirectory(baseDir);
+            // We'll perform scanning asynchronously or skip in browser
+            try {
+                this.scanDirectory(baseDir);
+            } catch {
+                // Ignore if fs is not available
+            }
         }
     }
 
-    private scanDirectory(dir: string) {
+    private async scanDirectory(dir: string) {
+        const { X509Certificate } = await import('node:crypto');
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
             const fullPath = path.join(dir, entry.name);
