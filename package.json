@@ -26,7 +26,8 @@
     "docs:prepare": "bun run scripts/prepare_docs.ts",
     "docs:dev": "bun run docs:prepare && vitepress dev docs",
     "docs:build": "bun run docs:prepare && vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "convert": "cd ../srn && bun run src/bin/weba-convert.ts ../tobari/docs/juminhyo_poc_proposal.md --output ../tobari/docs --site srn"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
