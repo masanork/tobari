@@ -76,12 +76,19 @@ ${fields.map(f => `  - id: ${f.id}\n    title: ${f.title}`).join("\n")}
 
         // 5. Define External Signer for hardware-bound MSO signature
         let externalSigner: ((msoHash: Uint8Array) => Promise<Uint8Array>) | undefined;
-        if (process.platform === 'darwin' && signerPath === DEFAULT_SIGNER_MACOS_PATH) {
+        if (signerPath) {
             externalSigner = async (msoHash: Uint8Array) => {
                 const hashBase64Url = Buffer.from(msoHash).toString('base64url');
-                const output = await runCivCommand(signerPath, ["--sign-mso", "--hash", hashBase64Url]);
-                const result = JSON.parse(output);
-                return new Uint8Array(Buffer.from(result.signature, 'base64url'));
+                const request = {
+                    command: "sign_data",
+                    params: {
+                        data: hashBase64Url,
+                        algorithm: "ES256"
+                    }
+                };
+                const output = await runCivCommand(signerPath, ["--request", JSON.stringify(request)]);
+                const response = JSON.parse(output);
+                return new Uint8Array(Buffer.from(response.result.data.signature, 'base64url'));
             };
         }
 
@@ -142,11 +149,16 @@ export async function handleGenerateBbsKey(toolArgs: any) {
         const signerPath = getNativeSignerPath();
         if (!signerPath) throw new Error("Native signer not found.");
 
-        const { execFileSync } = await import("child_process");
-        const output = execFileSync(signerPath, ["--bbs-generate-key"]).toString();
+        const request = {
+            command: "bbs_generate_key",
+            params: {}
+        };
+
+        const output = await runCivCommand(signerPath, ["--request", JSON.stringify(request)]);
+        const response = JSON.parse(output);
         
         return {
-            content: [{ type: "text", text: output }],
+            content: [{ type: "text", text: JSON.stringify(response.result.data, null, 2) }],
         };
     } catch (error: any) {
         return {

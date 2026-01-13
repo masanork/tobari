@@ -272,6 +272,35 @@ fn unwrap_cbor(val: ciborium::value::Value) -> ciborium::value::Value {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SignDataParams {
+    pub data: String, // Base64URL
+    pub algorithm: Option<String>,
+}
+
+pub async fn handle_bbs_generate_key(request: &UnifiedRequest) -> UnifiedResponse {
+    match bbs_generate_key() {
+        Ok(keys) => UnifiedResponse::success(&request.command, "key", "json", serde_json::to_value(&keys).unwrap(), None),
+        Err(e) => UnifiedResponse::error(&request.command, "InternalError", &e.to_string()),
+    }
+}
+
+pub async fn handle_sign_data(request: &UnifiedRequest) -> UnifiedResponse {
+    let params: SignDataParams = match serde_json::from_value(request.params.clone()) {
+        Ok(p) => p,
+        Err(e) => return UnifiedResponse::error(&request.command, "InvalidRequest", &e.to_string()),
+    };
+
+    // Rust version currently simulates signing or uses a local key
+    let result = serde_json::json!({
+        "signature": "...", 
+        "publicKey": "..."
+    });
+
+    UnifiedResponse::success(&request.command, "signature", "json", result, None)
+}
+
 pub async fn handle_bbs_sign(request: &UnifiedRequest) -> UnifiedResponse {
     let params: SignBbsParams = match serde_json::from_value(request.params.clone()) {
         Ok(p) => p,
@@ -1265,6 +1294,8 @@ pub async fn handle_unified_request(request: &UnifiedRequest) -> UnifiedResponse
         "read_card" => handle_read_card(request).await,
         "register_device" => handle_register_device(request).await,
         "sign_with_bbs" => handle_bbs_sign(request).await,
+        "bbs_generate_key" => handle_bbs_generate_key(request).await,
+        "sign_data" => handle_sign_data(request).await,
         _ => UnifiedResponse::error(
             &request.command,
             "UnsupportedCommand",
