@@ -52,7 +52,7 @@ class CLIHandler {
 
     func run() async {
         let args = ProcessInfo.processInfo.arguments
-        
+
         if args.contains("--scan-card") {
             debugLog("Scanning for Smart Card...")
             let manager = SmartCardManager()

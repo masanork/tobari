@@ -7,92 +7,49 @@ class SecureEnclaveEncryption {
     private let keyTagSoftware = "io.github.masanork.tobari.device-enc-key.v1.sw"
     private let keyService = "io.github.masanork.tobari.signer"
     private let useKeychain = ProcessInfo.processInfo.environment["TOBARI_SIGNER_USE_KEYCHAIN"] == "1"
+    private let forceSoftwareKey = ProcessInfo.processInfo.environment["TOBARI_SIGNER_SOFTWARE_KEY"] == "1"
+    private let keyFilePath = ProcessInfo.processInfo.environment["TOBARI_SIGNER_KEY_FILE"]
 
     private enum DeviceAgreementKey {
         case secureEnclave(SecureEnclave.P256.KeyAgreement.PrivateKey)
         case software(P256.KeyAgreement.PrivateKey)
     }
 
-    // Utility for Base64URL
-    private func toBase64URL(_ data: Data) -> String {
-        return data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-    }
-    
-    private func fromBase64URL(_ string: String) -> Data? {
-        var base64 = string
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        while base64.count % 4 != 0 {
-            base64.append("=")
-        }
-        return Data(base64Encoded: base64)
-    }
-
-    // Decrypt (Key Agreement -> HKDF -> AES-GCM or direct decryption if using sealed box)
-    // For simplicity and standard compliance, we usually use ECIES (Ephemeral-Static ECDH).
-    // Input:
-    // - ephemeralPublicKey: Data (The sender's ephemeral public key)
-    // - ciphertext: Data (The encrypted content)
-    // - salt: Data? (Optional salt for HKDF)
-    // - info: Data? (Optional info for HKDF)
-    // 
-    // However, to keep the CLI simple, we might assume a standard ECIES flow.
-    // Let's implement a standard ECIES decrypt where input is a JSON containing ephemPub, ciphertext, tag, iv.
-    
-    struct EncryptedMessage: Codable {
-        let ephemeralPublicKey: String // Base64URL
-        let ciphertext: String // Base64URL
-        let iv: String // Base64URL
-        let tag: String // Base64URL
-    }
-    
-    func decrypt(jsonString: String) throws -> Data {
-        guard let jsonData = jsonString.data(using: .utf8),
-              let msg = try? JSONDecoder().decode(EncryptedMessage.self, from: jsonData) else {
-            throw NSError(domain: "SecureEnclaveEncryption", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON structure"])
-        }
-        
-        guard let ephemPubData = fromBase64URL(msg.ephemeralPublicKey),
-              let ciphertext = fromBase64URL(msg.ciphertext),
-              let iv = fromBase64URL(msg.iv),
-              let tag = fromBase64URL(msg.tag) else {
+    func decrypt(components: EncryptedComponents) throws -> Data {
+        guard let ephemPubData = Data(base64URLEncoded: components.ephemeralPublicKey),
+              let ciphertext = Data(base64URLEncoded: components.ciphertext),
+              let iv = Data(base64URLEncoded: components.iv),
+              let tag = Data(base64URLEncoded: components.tag) else {
              throw NSError(domain: "SecureEnclaveEncryption", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid Base64URL data"])
         }
         
-        fputs("Debug: Ephemeral Public Key Len: \(ephemPubData.count)\n", stderr)
-        fputs("Debug: Ephemeral Public Key Hex: \(ephemPubData.prefix(8).map { String(format: "%02x", $0) }.joined())\n", stderr)
-
-        // Reconstruct Sender Public Key
-        // x963Representation expects 65 bytes (0x04 + X + Y)
         let senderPubKey: P256.KeyAgreement.PublicKey
-        if ephemPubData.count == 65 {
-            senderPubKey = try P256.KeyAgreement.PublicKey(x963Representation: ephemPubData)
-        } else {
-            senderPubKey = try P256.KeyAgreement.PublicKey(rawRepresentation: ephemPubData)
+        do {
+            if ephemPubData.count == 65 {
+                senderPubKey = try P256.KeyAgreement.PublicKey(x963Representation: ephemPubData)
+            } else {
+                senderPubKey = try P256.KeyAgreement.PublicKey(rawRepresentation: ephemPubData)
+            }
+        } catch {
+            throw error
         }
         
-        // Get Receiver Private Key
         let privKey = try getOrCreatePrivateKey()
-        
-        // Perform Shared Secret Derivation
         let sharedSecret: SharedSecret
-        switch privKey {
-        case .secureEnclave(let k):
-            fputs("Debug: Using Secure Enclave Private Key\n", stderr)
-            sharedSecret = try k.sharedSecretFromKeyAgreement(with: senderPubKey)
-        case .software(let k):
-            fputs("Debug: Using Software Private Key\n", stderr)
-            sharedSecret = try k.sharedSecretFromKeyAgreement(with: senderPubKey)
+        do {
+            switch privKey {
+            case .secureEnclave(let k):
+                sharedSecret = try k.sharedSecretFromKeyAgreement(with: senderPubKey)
+            case .software(let k):
+                sharedSecret = try k.sharedSecretFromKeyAgreement(with: senderPubKey)
+            }
+        } catch {
+            throw error
         }
         
-        // Derive Symmetric Key (HKDF-SHA256)
         let salt = "tobari-ecies-salt".data(using: .utf8)!
         let info = "tobari-ecies-info".data(using: .utf8)!
-        
-        fputs("Debug: Deriving symmetric key with HKDF-SHA256...\n", stderr)
+
         let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
             using: SHA256.self,
             salt: salt,
@@ -100,20 +57,18 @@ class SecureEnclaveEncryption {
             outputByteCount: 32
         )
         
-        // Debug: Print derived key hash
-        let keyHash = SHA256.hash(data: symmetricKey.withUnsafeBytes { Data($0) })
-        fputs("Debug: Derived Key SHA256: \(keyHash.map { String(format: "%02x", $0) }.joined())\n", stderr)
-        
-        // Decrypt using AES-GCM
-        fputs("Debug: Decrypting with AES-GCM (ivLen=\(iv.count), cipherLen=\(ciphertext.count), tagLen=\(tag.count))...\n", stderr)
-        fputs("Debug: IV Hex: \(iv.map { String(format: "%02x", $0) }.joined())\n", stderr)
-        fputs("Debug: Tag Hex: \(tag.map { String(format: "%02x", $0) }.joined())\n", stderr)
+        do {
+            let sealedBox = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: iv), ciphertext: ciphertext, tag: tag)
+            return try AES.GCM.open(sealedBox, using: symmetricKey)
+        } catch {
+            throw error
+        }
+    }
 
-        let sealedBox = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: iv), ciphertext: ciphertext, tag: tag)
-        let decrypted = try AES.GCM.open(sealedBox, using: symmetricKey)
-        
-        fputs("Debug: Decryption successful.\n", stderr)
-        return decrypted
+    func decrypt(jsonString: String) throws -> Data {
+        let jsonData = jsonString.data(using: .utf8)!
+        let msg = try JSONDecoder().decode(EncryptedComponents.self, from: jsonData)
+        return try decrypt(components: msg)
     }
 
     func getPublicKey() throws -> String {
@@ -125,71 +80,113 @@ class SecureEnclaveEncryption {
         case .software(let k):
             rawPub = k.publicKey.rawRepresentation
         }
-        
-        let x = rawPub.subdata(in: 1..<33)
-        let y = rawPub.subdata(in: 33..<65)
-        
+
+        // Use Array slicing instead of subdata to avoid potential crash
+        let rawBytes = [UInt8](rawPub)
+        let xBytes = Array(rawBytes[0..<32])
+        let yBytes = Array(rawBytes[32..<64])
+        let x = Data(xBytes)
+        let y = Data(yBytes)
+
+        let toB64U = { (d: Data) in d.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") }
+
         return """
         {
           "kty": "EC",
           "crv": "P-256",
-          "x": "\(toBase64URL(x))",
-          "y": "\(toBase64URL(y))"
+          "x": "\(toB64U(x))",
+          "y": "\(toB64U(y))"
         }
         """
     }
 
     private func getOrCreatePrivateKey() throws -> DeviceAgreementKey {
-        if useKeychain {
-            fputs("Debug: Attempting to retrieve existing encryption key from Keychain...\n", stderr)
+        // Try to load from file first (for testing/CI environments)
+        if let filePath = keyFilePath, forceSoftwareKey {
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
+               let key = try? P256.KeyAgreement.PrivateKey(rawRepresentation: data) {
+                return .software(key)
+            }
+        }
 
-            // Try Secure Enclave first
+        // Skip Secure Enclave if software key is forced
+        if forceSoftwareKey {
+            if useKeychain {
+                let softQuery: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: keyService,
+                    kSecAttrAccount as String: keyTagSoftware,
+                    kSecReturnData as String: true
+                ]
+
+                var softItem: CFTypeRef?
+                if SecItemCopyMatching(softQuery as CFDictionary, &softItem) == errSecSuccess, let data = softItem as? Data {
+                    if let key = try? P256.KeyAgreement.PrivateKey(rawRepresentation: data) {
+                        return .software(key)
+                    }
+                }
+            }
+
+            let privateKey = P256.KeyAgreement.PrivateKey()
+
+            // Save to file if specified
+            if let filePath = keyFilePath {
+                try? privateKey.rawRepresentation.write(to: URL(fileURLWithPath: filePath))
+            }
+
+            if useKeychain {
+                let query: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: keyService,
+                    kSecAttrAccount as String: keyTagSoftware,
+                    kSecValueData as String: privateKey.rawRepresentation
+                ]
+                SecItemDelete(query as CFDictionary)
+                SecItemAdd(query as CFDictionary, nil)
+            }
+            return .software(privateKey)
+        }
+
+        if useKeychain {
             let secureQuery: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: keyService,
                 kSecAttrAccount as String: keyTagSecure,
                 kSecReturnData as String: true
             ]
-            
+
             var item: CFTypeRef?
-            let status = SecItemCopyMatching(secureQuery as CFDictionary, &item)
-            if status == errSecSuccess, let data = item as? Data {
+            if SecItemCopyMatching(secureQuery as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
                 if let key = try? SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: data) {
-                    fputs("Debug: Loaded Secure Enclave encryption key.\n", stderr)
                     return .secureEnclave(key)
                 }
             }
-            
-            // Try Software
+
             let softQuery: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: keyService,
                 kSecAttrAccount as String: keyTagSoftware,
                 kSecReturnData as String: true
             ]
-            
+
             var softItem: CFTypeRef?
-            let softStatus = SecItemCopyMatching(softQuery as CFDictionary, &softItem)
-            if softStatus == errSecSuccess, let data = softItem as? Data {
+            if SecItemCopyMatching(softQuery as CFDictionary, &softItem) == errSecSuccess, let data = softItem as? Data {
                 if let key = try? P256.KeyAgreement.PrivateKey(rawRepresentation: data) {
-                    fputs("Debug: Loaded software encryption key.\n", stderr)
                     return .software(key)
                 }
             }
         }
-        
-        // Create New
-        fputs("Debug: Creating new encryption key...\n", stderr)
+
         var error: Unmanaged<CFError>?
         guard let accessControl = SecAccessControlCreateWithFlags(
-            nil, 
+            nil,
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            [], 
+            [],
             &error
         ) else {
             throw error!.takeRetainedValue() as Error
         }
-        
+
         do {
             let privateKey = try SecureEnclave.P256.KeyAgreement.PrivateKey(accessControl: accessControl)
             if useKeychain {
@@ -204,7 +201,6 @@ class SecureEnclaveEncryption {
             }
             return .secureEnclave(privateKey)
         } catch {
-            fputs("Debug: Secure Enclave failed, falling back to software.\n", stderr)
             let privateKey = P256.KeyAgreement.PrivateKey()
              if useKeychain {
                 let query: [String: Any] = [

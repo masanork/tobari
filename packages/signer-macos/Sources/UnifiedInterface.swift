@@ -143,14 +143,45 @@ struct SignDataParams: Codable {
 /// Parameters for sign_with_jpki command
 struct SignWithJpkiParams: Codable {
     let data: String                   // Base64URL encoded data to sign
-    let pin: String                    // JPKI PIN (auth or sign)
+    let pin: String?                   // JPKI PIN (auth or sign)
     let signatureType: String?         // "auth" or "sign" (default: "auth")
 }
 
 /// Parameters for decrypt_data command
 struct DecryptDataParams: Codable {
-    let encryptedData: String          // Base64URL encoded HPKE encrypted data
-    let metadata: [String: String]?    // Optional decryption metadata
+    let encryptedData: String?         // Legacy: JSON string
+    let components: EncryptedComponents? // New: Structured components
+    let metadata: [String: String]?
+    
+    enum CodingKeys: String, CodingKey {
+        case encryptedData, components, metadata
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        encryptedData = try container.decodeIfPresent(String.self, forKey: .encryptedData)
+        components = try container.decodeIfPresent(EncryptedComponents.self, forKey: .components)
+        metadata = try container.decodeIfPresent([String: String].self, forKey: .metadata)
+    }
+}
+
+struct EncryptedComponents: Codable {
+    let ephemeralPublicKey: String
+    let ciphertext: String
+    let iv: String
+    let tag: String
+    
+    enum CodingKeys: String, CodingKey {
+        case ephemeralPublicKey, ciphertext, iv, tag
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ephemeralPublicKey = try container.decode(String.self, forKey: .ephemeralPublicKey)
+        ciphertext = try container.decode(String.self, forKey: .ciphertext)
+        iv = try container.decode(String.self, forKey: .iv)
+        tag = try container.decode(String.self, forKey: .tag)
+    }
 }
 
 // MARK: - AnyCodable Helper
@@ -192,8 +223,6 @@ struct AnyCodable: Codable {
         var container = encoder.singleValueContainer()
 
         switch value {
-        case is NSNull:
-            try container.encodeNil()
         case let bool as Bool:
             try container.encode(bool)
         case let int as Int:
@@ -206,14 +235,10 @@ struct AnyCodable: Codable {
             try container.encode(array.map { AnyCodable($0) })
         case let dictionary as [String: Any]:
             try container.encode(dictionary.mapValues { AnyCodable($0) })
+        case is NSNull:
+            try container.encodeNil()
         default:
-            throw EncodingError.invalidValue(
-                value,
-                EncodingError.Context(
-                    codingPath: container.codingPath,
-                    debugDescription: "Cannot encode AnyCodable"
-                )
-            )
+            try container.encodeNil()
         }
     }
 }
