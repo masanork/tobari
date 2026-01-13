@@ -1,6 +1,6 @@
 import { signCoseSign1 } from '@tobari/crypto/cose';
 import { COSE_ALG } from '@tobari/crypto/utils';
-import { HPKE_ALG_CLASSIC, HPKE_ALG_HYBRID, encryptHpkeWithAlg, type HpkeAlg } from '@tobari/crypto/hpke';
+import { encryptTobariEcies } from '@tobari/crypto/tobari-ecies';
 import yaml from 'js-yaml';
 import fs from 'fs';
 import { transformToMdocData } from './sd';
@@ -43,12 +43,12 @@ export async function generateSignedTobari(
             kid?: string;
             alg?: number;
         };
-        encryptionPublicKey?: Uint8Array; // HPKE Public Key
-        encryptionPqcPublicKey?: Uint8Array; // ML-KEM Public Key
+        encryptionPublicKey?: Uint8Array; // EC P-256 Public Key (Raw or CryptoKey)
+        encryptionPqcPublicKey?: Uint8Array; // (Unused in ECIES)
         embeddedFont?: Uint8Array;        // Raw font binary
         devicePqcPublicKey?: Uint8Array;  // PQC Device Key
-        pqcEncrypt?: boolean;             // Simulate PQC Encryption
-        encryptionAlg?: HpkeAlg;          // Explicit alg override
+        pqcEncrypt?: boolean;             // (Unused in ECIES)
+        encryptionAlg?: any;          // (Unused in ECIES)
         externalSigner?: (msoHash: Uint8Array) => Promise<Uint8Array>; // For hardware-bound signing
     } = {}
 ): Promise<Uint8Array> {
@@ -126,32 +126,31 @@ export async function generateSignedTobari(
     const { encodeCanonical } = await import('@tobari/crypto/cbor');
     const encoded = encodeCanonical(doc);
 
-    // 4. Optional Encryption (HPKE)
+    // 4. Optional Encryption (Tobari Custom ECIES)
     if (options.encryptionPublicKey) {
-        console.log("Applying HPKE Encryption to payload...");
-        const info = new TextEncoder().encode("tobari-storage-v1");
-        const alg: HpkeAlg =
-            options.encryptionAlg
-                ?? (options.pqcEncrypt ? HPKE_ALG_HYBRID : HPKE_ALG_CLASSIC);
-        if (alg === HPKE_ALG_HYBRID && !options.encryptionPqcPublicKey) {
-            throw new Error("Hybrid HPKE requires encryptionPqcPublicKey (ML-KEM-768 public key)");
+        console.log("Applying Tobari ECIES Encryption to payload...");
+        
+        // Ensure key is CryptoKey (P-256)
+        let pubKey: CryptoKey;
+        if (options.encryptionPublicKey instanceof Uint8Array) {
+             // Import raw P-256 public key
+             pubKey = await crypto.subtle.importKey(
+                 "raw",
+                 options.encryptionPublicKey,
+                 { name: "ECDH", namedCurve: "P-256" },
+                 true,
+                 []
+             );
+        } else {
+            // Already CryptoKey (assume correct usage)
+             pubKey = options.encryptionPublicKey as unknown as CryptoKey;
         }
 
-        const ciphertext = await encryptHpkeWithAlg({
-            alg,
-            publicKey: options.encryptionPublicKey,
-            pqcPublicKey: options.encryptionPqcPublicKey,
-            plaintext: encoded,
-            info
-        });
+        const encrypted = await encryptTobariEcies(pubKey, encoded);
 
-        // Wrap in a simple JSON for the demo viewer to detect encryption
-        const wrapper = {
-            tobari_enc: true,
-            alg: alg,
-            data: Buffer.from(ciphertext).toString('base64')
-        };
-        return new TextEncoder().encode(JSON.stringify(wrapper));
+        // Wrap in JSON for signer-macos
+        // It expects { ephemeralPublicKey, ciphertext, iv, tag } as a JSON string
+        return new TextEncoder().encode(JSON.stringify(encrypted));
     }
 
     return encoded;
