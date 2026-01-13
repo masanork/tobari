@@ -36,6 +36,28 @@ describe('Crypto Package', () => {
         expect(decoded).toEqual(payload);
     });
 
+    it('should perform ECIES encryption/decryption roundtrip', async () => {
+        const { encryptTobariEcies, decryptTobariEcies } = await import('../src/tobari-ecies');
+
+        // Recipient Key Pair (P-256 for ECDH)
+        const recipientKeyPair = await crypto.subtle.generateKey(
+            { name: "ECDH", namedCurve: "P-256" },
+            true,
+            ["deriveBits"]
+        );
+
+        const plaintext = new TextEncoder().encode("Hello, ECIES!");
+
+        // 1. Encrypt
+        const encrypted = await encryptTobariEcies(recipientKeyPair.publicKey, plaintext);
+        expect(encrypted.ephemeralPublicKey).toBeDefined();
+        expect(encrypted.ciphertext).toBeDefined();
+
+        // 2. Decrypt
+        const decrypted = await decryptTobariEcies(recipientKeyPair.privateKey, encrypted);
+        expect(new TextDecoder().decode(decrypted)).toBe("Hello, ECIES!");
+    });
+
     it('should fail verification with wrong key', async () => {
         const keyPair = await crypto.subtle.generateKey(
             { name: "ECDSA", namedCurve: "P-256" },

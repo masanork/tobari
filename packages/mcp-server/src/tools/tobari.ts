@@ -21,7 +21,7 @@ import {
     GenerateBbsKeySchema,
     SignWithBbsSchema
 } from "../schemas.js";
-import { handleReadBasicInfo } from "./jpki.js";
+import { handleReadBasicInfo, runCivCommand } from "./jpki.js";
 import { generateSignedTobari } from "@tobari/codec/tobari-gen";
 
 export async function handleIssueIdentityDocument(toolArgs: any) {
@@ -345,6 +345,42 @@ export async function handleReadTobariFile(toolArgs: any) {
     try {
         const args = ReadTobariFileSchema.parse(toolArgs);
         const filePath = args.path;
+        
+        // --- NEW: Offload to signer-macos on Darwin if it's not a verification request ---
+        // (Signer-macos currently doesn't handle external public key verification in inspect_document)
+        const signerPath = getNativeSignerPath();
+        if (process.platform === 'darwin' && signerPath === DEFAULT_SIGNER_MACOS_PATH && !args.issuerPublicKeyPath) {
+            const inspectRequest = JSON.stringify({
+                command: "inspect_document",
+                params: { path: path.resolve(filePath) }
+            });
+            
+            try {
+                const output = await runCivCommand(signerPath, ["--request", inspectRequest]);
+                const response = JSON.parse(output);
+                
+                if (response.status === "success" && response.result?.data) {
+                    const data = response.result.data;
+                    
+                    // If it's encrypted, we still need to decrypt it in TS if decryption options provided,
+                    // OR if it's not encrypted, return the signer's result.
+                    if (data.encrypted !== true) {
+                        return {
+                            content: [{
+                                type: "text",
+                                text: JSON.stringify({
+                                    ...data,
+                                    _meta: { source: filePath, engine: "signer-macos" }
+                                }, null, 2)
+                            }]
+                        };
+                    }
+                }
+            } catch (e: any) {
+                console.warn(`Signer-macos inspection failed: ${e.message}. Falling back to JS implementation.`);
+            }
+        }
+
         const fileBuffer = await readTobariFileAsBuffer(filePath, args.decrypt);
 
         let isValid: boolean | string = "Skipped (No public key provided)";
@@ -686,6 +722,22 @@ export async function handleCreatePresentation(toolArgs: any) {
         };
 
         const vpBytes = encode(deviceResponse);
+        
+        if (args.outputPath) {
+            await fs.writeFile(args.outputPath, vpBytes);
+            return {
+                content: [{
+                    type: "text",
+                    text: JSON.stringify({
+                        path: path.resolve(args.outputPath),
+                        document_count: documents.length,
+                        signing_method: signingMethod,
+                        message: `Verifiable Presentation saved to ${args.outputPath}`
+                    }, null, 2)
+                }]
+            };
+        }
+
         const vpBase64 = Buffer.from(vpBytes).toString('base64');
 
         return {
@@ -903,7 +955,16 @@ export async function handleAssemblePresentation(toolArgs: any) {
 export async function handleVerifyPresentation(toolArgs: any) {
     try {
         const args = VerifyPresentationSchema.parse(toolArgs);
-        const vpBytes = new Uint8Array(Buffer.from(args.vpBase64, 'base64'));
+        let vpBytes: Uint8Array;
+        
+        if (args.path) {
+            vpBytes = new Uint8Array(await fs.readFile(args.path));
+        } else if (args.vpBase64) {
+            vpBytes = new Uint8Array(Buffer.from(args.vpBase64, 'base64'));
+        } else {
+            throw new Error("Either path or vpBase64 must be provided.");
+        }
+        
         const presentation = decode(vpBytes);
 
         const issuerKeys = await loadIssuerKeys(args.issuerPublicKeys, args.issuerPqcPublicKeys);
@@ -931,13 +992,28 @@ export async function handleVerifyPresentation(toolArgs: any) {
 export async function handlePreviewPresentation(toolArgs: any) {
     try {
         const args = PreviewPresentationSchema.parse(toolArgs);
-        const vpBytes = decodeBase64Flexible(args.vpBase64);
+        let vpBytes: Uint8Array;
+        let vpSource: string;
+
+        if (args.path) {
+            vpBytes = new Uint8Array(await fs.readFile(args.path));
+            vpSource = args.path;
+        } else if (args.vpBase64) {
+            vpBytes = decodeBase64Flexible(args.vpBase64);
+            vpSource = "base64-input";
+        } else {
+            throw new Error("Either path or vpBase64 must be provided.");
+        }
+
         const presentation = decode(vpBytes);
         const summary = summarizeVp(presentation);
         const format = args.format ?? "readable";
         const redact = !!args.redact;
         const maxStringLength = args.maxStringLength ?? 200;
-        const meta = buildPreviewMeta(args.vpBase64, vpBytes, presentation);
+        const meta = {
+            ...buildPreviewMeta(args.vpBase64 || "", vpBytes, presentation),
+            source: vpSource
+        };
 
         let verification: any = null;
         if (args.issuerPublicKeys) {

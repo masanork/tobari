@@ -147,6 +147,12 @@ struct SignWithJpkiParams: Codable {
     let signatureType: String?         // "auth" or "sign" (default: "auth")
 }
 
+/// Parameters for inspect_document command
+struct InspectDocumentParams: Codable {
+    let path: String?                  // File path to inspect
+    let data: String?                  // Base64URL encoded data to inspect
+}
+
 /// Parameters for decrypt_data command
 struct DecryptDataParams: Codable {
     let encryptedData: String?         // Legacy: JSON string
