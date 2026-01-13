@@ -27,6 +27,10 @@ class UnifiedCLIHandler {
     /// Main entry point for unified request handling
     func handle(request: UnifiedRequest) async {
         debugLog("Processing command: \(request.command)")
+        if let paramsDict = request.params.value as? [String: Any] {
+            let keys = paramsDict.keys.sorted().joined(separator: ", ")
+            debugLog("Params keys: \(keys)")
+        }
 
         let response: UnifiedResponse
 
@@ -204,7 +208,17 @@ class UnifiedCLIHandler {
             debugLog("Creating application for docType: \(params.requestedDocType)")
 
             // Validate JPKI PIN
-            guard let jpkiPin = params.jpkiPin, !jpkiPin.isEmpty else {
+            var jpkiPin = params.jpkiPin
+            if jpkiPin == nil || jpkiPin?.isEmpty == true {
+                jpkiPin = await MainActor.run {
+                    SecurityUtils.promptForPIN(
+                        title: "マイナンバーカード 暗証番号",
+                        message: "券面事項入力補助用の4桁の数字を入力してください。"
+                    )
+                }
+            }
+
+            guard let finalPin = jpkiPin, !finalPin.isEmpty else {
                 return UnifiedResponse.error(
                     command: request.command,
                     type: .invalidRequest,
@@ -226,7 +240,7 @@ class UnifiedCLIHandler {
             let application = try await creator.createApplication(
                 requestedDocType: params.requestedDocType,
                 requestedFields: params.requestedFields,
-                jpkiPin: jpkiPin,
+                jpkiPin: finalPin,
                 jpkiSignatureType: "auth"
             )
 
@@ -368,10 +382,17 @@ class UnifiedCLIHandler {
     private func handleDecryptData(_ request: UnifiedRequest) async -> UnifiedResponse {
         do {
             let params = try decodeParams(DecryptDataParams.self, from: request.params)
-
-            // The encryptedData should be a JSON string containing ephemeralPublicKey, ciphertext, iv, tag
             let encryption = SecureEnclaveEncryption()
-            let decryptedData = try encryption.decrypt(jsonString: params.encryptedData)
+            
+            let decryptedData: Data
+            if let components = params.components {
+                decryptedData = try encryption.decrypt(components: components)
+            } else if let jsonString = params.encryptedData {
+                decryptedData = try encryption.decrypt(jsonString: jsonString)
+            } else {
+                throw NSError(domain: "UnifiedCLIHandler", code: 1, userInfo: [NSLocalizedDescriptionKey: "Either components or encryptedData is required"])
+            }
+            
             let decryptedBase64URL = decryptedData.base64URLEncodedString()
 
             return UnifiedResponse.success(
@@ -414,7 +435,8 @@ class UnifiedCLIHandler {
     private func handleApprovePreview(_ request: UnifiedRequest) async -> UnifiedResponse {
         do {
             // Extract sessionId from params
-            guard let sessionId = (request.params.value as? [String: Any])?["sessionId"] as? String else {
+            guard let paramsDict = request.params.value as? [String: Any],
+                  let sessionId = paramsDict["sessionId"] as? String else {
                 return UnifiedResponse.error(
                     command: request.command,
                     type: .invalidRequest,
@@ -498,13 +520,32 @@ class UnifiedCLIHandler {
             }
 
             let signatureType = params.signatureType ?? "auth"
+            
+            var pin = params.pin
+            if pin == nil || pin?.isEmpty == true {
+                pin = await MainActor.run {
+                    SecurityUtils.promptForPIN(
+                        title: "マイナンバーカード 暗証番号",
+                        message: signatureType == "auth" ? "利用者証明用（4桁）の数字を入力してください。" : "署名用（6〜16桁）の英数字を入力してください。"
+                    )
+                }
+            }
+            
+            guard let finalPin = pin, !finalPin.isEmpty else {
+                return UnifiedResponse.error(
+                    command: request.command,
+                    type: .invalidRequest,
+                    message: "PIN is required for JPKI signing"
+                )
+            }
+
             debugLog("Signing with JPKI (\(signatureType) type)...")
 
             let manager = SmartCardManager()
             let jpki = JPKIController(manager: manager)
 
             let signature = try await jpki.computeSignature(
-                pin: params.pin,
+                pin: finalPin,
                 data: dataToSign,
                 type: signatureType
             )
@@ -512,7 +553,7 @@ class UnifiedCLIHandler {
             let signatureBase64URL = signature.base64URLEncodedString()
 
             // Get certificate
-            let info = try await jpki.readAttributes(pin: params.pin)
+            let info = try await jpki.readAttributes(pin: finalPin)
             let certificate = signatureType == "auth" ? info.authCert : info.signCert
 
             let result: [String: String] = [
@@ -546,7 +587,19 @@ class UnifiedCLIHandler {
     // MARK: - Card Reading Helpers
 
     private func readJPKI(params: ReadCardParams, command: String) async -> UnifiedResponse {
-        guard let pin = params.pin else {
+        var pin = params.pin
+        
+        if pin == nil || pin?.isEmpty == true {
+            debugLog("PIN not provided, prompting user...")
+            pin = await MainActor.run {
+                SecurityUtils.promptForPIN(
+                    title: "マイナンバーカード 暗証番号",
+                    message: "利用者証明用または券面事項入力補助用の4桁の数字を入力してください。"
+                )
+            }
+        }
+
+        guard let finalPin = pin, !finalPin.isEmpty else {
             return UnifiedResponse.error(
                 command: command,
                 type: .invalidRequest,
@@ -558,7 +611,7 @@ class UnifiedCLIHandler {
             let manager = SmartCardManager()
             let jpki = JPKIController(manager: manager)
 
-            let info = try await jpki.readAttributes(pin: pin)
+            let info = try await jpki.readAttributes(pin: finalPin)
 
             var result: [String: Any] = [
                 "name": info.name,
@@ -576,7 +629,7 @@ class UnifiedCLIHandler {
             // Include My Number if requested
             if params.includeMyNumber == true {
                 debugLog("Reading My Number...")
-                let myNumber = try await jpki.readMyNumber(pin: pin)
+                let myNumber = try await jpki.readMyNumber(pin: finalPin)
                 result["myNumber"] = myNumber
             }
 
@@ -588,7 +641,7 @@ class UnifiedCLIHandler {
                 if let mn = result["myNumber"] as? String {
                     myNumber = mn
                 } else {
-                    myNumber = try await jpki.readMyNumber(pin: pin)
+                    myNumber = try await jpki.readMyNumber(pin: finalPin)
                 }
                 let photoData = try await jpki.readFacePhoto(myNumber: myNumber)
                 result["facePhoto"] = photoData.base64EncodedString()
@@ -677,7 +730,17 @@ class UnifiedCLIHandler {
     }
 
     private func readDriversLicense(params: ReadCardParams, command: String) async -> UnifiedResponse {
-        guard let pin1 = params.pin1 else {
+        var pin1 = params.pin1
+        if pin1 == nil || pin1?.isEmpty == true {
+            pin1 = await MainActor.run {
+                SecurityUtils.promptForPIN(
+                    title: "運転免許証 暗証番号1",
+                    message: "暗証番号1（4桁の数字）を入力してください。"
+                )
+            }
+        }
+
+        guard let finalPin1 = pin1, !finalPin1.isEmpty else {
             return UnifiedResponse.error(
                 command: command,
                 type: .invalidRequest,
@@ -685,11 +748,21 @@ class UnifiedCLIHandler {
             )
         }
 
+        var pin2 = params.pin2
+        if pin2 == nil || pin2?.isEmpty == true {
+            pin2 = await MainActor.run {
+                SecurityUtils.promptForPIN(
+                    title: "運転免許証 暗証番号2",
+                    message: "写真や本籍地を読み取る場合は、暗証番号2（4桁の数字）を入力してください。省略する場合はそのままOKを押してください。"
+                )
+            }
+        }
+
         do {
             let manager = SmartCardManager()
             let controller = DriversLicenseController(manager: manager)
 
-            let info = try await controller.readData(pin1: pin1, pin2: params.pin2)
+            let info = try await controller.readData(pin1: finalPin1, pin2: pin2)
 
             // Convert LicenseInfo to dictionary
             let encoder = JSONEncoder()
@@ -781,8 +854,24 @@ class UnifiedCLIHandler {
     // MARK: - Utilities
 
     private func decodeParams<T: Codable>(_ type: T.Type, from params: AnyCodable) throws -> T {
-        let data = try JSONSerialization.data(withJSONObject: params.value)
-        return try JSONDecoder().decode(T.self, from: data)
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(params)
+        } catch {
+            fputs("Debug: Failed to encode params to JSON: \(error)\n", stderr)
+            throw error
+        }
+        
+        if let jsonStr = String(data: data, encoding: .utf8) {
+            fputs("Debug: Decoding \(type) from JSON: \(jsonStr)\n", stderr)
+        }
+        
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            fputs("Debug: Failed to decode \(type) from JSON: \(error)\n", stderr)
+            throw error
+        }
     }
 }
 

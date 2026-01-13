@@ -159,7 +159,7 @@ async function decryptIfNeeded(input: Uint8Array, options: TobariDecryptOptions 
         return input;
     }
 
-    if (!wrapper || wrapper.tobari_enc !== true || typeof wrapper.data !== "string") {
+    if (!wrapper || wrapper.tobari_enc !== true) {
         return input;
     }
 
@@ -169,16 +169,39 @@ async function decryptIfNeeded(input: Uint8Array, options: TobariDecryptOptions 
         const signerPath = DEFAULT_SIGNER_MACOS_PATH;
         try {
             await fs.access(signerPath);
-            const decryptInput = JSON.stringify({
-                ephemeralPublicKey: wrapper.ephemeralPublicKey,
-                ciphertext: wrapper.data,
-                iv: wrapper.iv,
-                tag: wrapper.tag
-            });
 
-            const signerProcess = spawn(signerPath, ["--decrypt", "--input", decryptInput], {
-                env: { ...process.env, TOBARI_SIGNER_USE_KEYCHAIN: process.env.TOBARI_SIGNER_USE_KEYCHAIN || "1" }
+            // Data is already Base64URL encoded from encryptTobariEcies, use as-is
+            const decryptInput = JSON.stringify({
+                command: "decrypt_data",
+                params: {
+                    components: {
+                        ephemeralPublicKey: wrapper.ephemeralPublicKey,
+                        ciphertext: wrapper.ciphertext || wrapper.data,
+                        iv: wrapper.iv,
+                        tag: wrapper.tag
+                    }
+                }
             });
+            
+            
+            
+                        if (process.env.TOBARI_DEBUG === "1") {
+            
+                            console.error("Decrypt Input JSON:", decryptInput);
+            
+                        }
+            
+            
+            
+            const signerProcess = spawn(signerPath, ["--request", decryptInput], {
+                env: {
+                    ...process.env,
+                    TOBARI_SIGNER_USE_KEYCHAIN: process.env.TOBARI_SIGNER_USE_KEYCHAIN || "1",
+                    TOBARI_SIGNER_SOFTWARE_KEY: process.env.TOBARI_SIGNER_SOFTWARE_KEY || "0"
+                }
+            });
+            
+            
             const outputPromise = new Promise<string>((resolve, reject) => {
                 let stdout = "";
                 let stderr = "";
@@ -191,18 +214,21 @@ async function decryptIfNeeded(input: Uint8Array, options: TobariDecryptOptions 
             });
 
             const outputStr = await outputPromise;
-            const output = JSON.parse(outputStr);
-            if (output.plaintext) {
-                return new TextEncoder().encode(output.plaintext);
-            } else if (output.plaintextBase64) {
-                return new Uint8Array(Buffer.from(output.plaintextBase64, 'base64'));
+            const response = JSON.parse(outputStr);
+            if (response.status === "success" && response.result?.data) {
+                const b64 = response.result.data;
+                // signer-macos returns Base64URL
+                const binary = Buffer.from(b64.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+                return new Uint8Array(binary);
             }
         } catch (e: any) {
-            console.warn(`Device-bound decryption failed or signer not found: ${e.message}. Falling back to standard HPKE.`);
+            if (process.env.TOBARI_DEBUG === "1") {
+                console.warn(`Device-bound decryption failed: ${e.message}. Falling back to standard HPKE.`);
+            }
         }
     }
 
-    const ciphertext = new Uint8Array(Buffer.from(wrapper.data, "base64"));
+    const ciphertext = new Uint8Array(Buffer.from(wrapper.ciphertext || wrapper.data, "base64"));
     const infoText = options.hpkeInfo ?? process.env.TOBARI_HPKE_INFO ?? DEMO_HPKE_INFO;
     const secretText = options.hpkeSecret ?? process.env.TOBARI_HPKE_SECRET ?? DEMO_HPKE_SECRET;
     if (!secretText) {
