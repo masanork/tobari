@@ -16089,17 +16089,7 @@
     "event": {
       "type": "KeyRotation",
       "timestamp": "2026-01-14T01:06:56.971Z",
-      "payload": {
-        "timestamp": "2026-01-14T01:06:56.970Z",
-        "buildId": "build-1768352816809",
-        "revoked": false,
-        "ed25519Params": "did:key:z6MkhtzPpATsSMEyEGSEzmXwyrWFvMQj1RNXtx5vht3NLuyw",
-        "pqcParams": {
-          "kty": "PQC",
-          "crv": "ML-DSA-44",
-          "x": "4yx9QLZU_i_6AyXcCCthWN0raG47BKjKAw5vtSgIHrL8c1zALelvUiKKo2myeTQMKs_VdxQ1TrybmIx-FYi4IQdk7jKqz_7ZCDaLazRQ-v7hkZ8RFrZnvtZE6FKFs1wUqs8I6eTiDioTh135VQ5jQ_ul_ZMBWLWi8hsRX5-qL6yBMG4QhJXYeh5MsL_DbNg9Wlk2YZdV5Ly4BIiwUfmMrf6e6nhyNSOnnax1nUfB2TfTxU3z3FO1JLu5puPOCnVuMs1ch0agRoUQU2b81ksV-ajDpjgL1udkhQRKKki8Kbnbp_8-l90Eufxw4ZEI3bkneK2r6aLvl6AAKll0HyDYjQMKsyLeE2PPpvBcNnDvVxH-2_FrExKZ7y97SZr-W6trVOPW7noUAOVP8C-Xkpw7Zu1mkPOxmI6gUhfR8V72N6t74pNJUGlqRJiXvSGfJSqaE7UM_lR3bmaNasFyl1_A-4j1lUiFTtF5UNKgyWepxpYQYBOWI4WcAbXvhTgzDHy3I3_e9zEM-L1gKlmxe7K4faotY-Lsllqo6k4TyNea8MEQixh3YjjWmXzl2c63RA9hD-TLgIIJ6wC2WJBuEq_zVEjszuRH1UEH2KCqcc5KYAzMyYn0KSxuUCFYk73FxqkGhPgCZ9oQOUF63oKZFn0hOjj8f7C0Afi9JTl3st5kCini0ELyFrMCyGODBhE_J06sq4GqSuo2O4F-aiKOITAVA0PH0iNVTCyEiLgvtCI4daGcoXkAMrbL-3ZkA-HosRWisLVBCUixlsQWfKwuq38Q-rOafqo7Wgh0ZZJAwbWMS8r3ObHeDYVhvwn4wBqy25D_oumHF_DVSqN9swnRUQaGp_rT91NA7G1bdIjy7AZC9BihbvlbQDyBSs8cWNy5U8b-1pVa2ZO0tOGPejjJZskOoqk1HIPUjfSTgFhsEem6k2pmf0MwykAjnMQW9g8pvZN9qPOqvu6Ba1j9p1y9dF-tqcyu1tdFz2SWDZownVEPLiA770vxXvTwVIdvheEiPE1Q1kcyJ6GcrFwkUemRy4nJF_LdnmjAyJl-osw1Vr0vI6EZ6xiiK0IjEGPAJcXYiOSQyejMfUGfbvDFFnkTQPsNZ_brh-RCYSVBU3HyRvLnPxiF2i9WPXR6OZ_CHblH_TiUfFoh9qO3ni3Ai1cCK50QCgy-yLyKZNANGtzGimKN86Bn6X5_v5ZvEsU9gK1nPEwPyeqs6X0ChysLEg3AYXBePqCVuLmC6YyaHyl2EhG_V3qoCPykQLXWpNOtVR-gylAhPA3QJuL1pYzMC-ZBmTzAm5ggVayzJ8kbQme14aBvd9SaBGO4kYmHR8BcqWAk9-JxEtq7pbXm6JPCbayBl45m2fRO9_C_qTLUzznFoPPopmY0y9vmR3ab2-p_mY5nZYM73y0zUo3nSEuKlK8aNrg9KGLW4zdFQb6hbOhg9m_v0M3UdEHpF2yH77fTneJ54hn-2tjAki55_64LT7XQ1j9YCFHSBkk79LU-YPwryMGR0iWnsHWGDJVKNHV0I40gVYe6BrI6nlykvs_6I5TeBBBGxzkSXVsJN624rFomPsoUedC2-kjNc1XgVxAouqwZ40iUEeDykfJMM2B3w_PxyA_tKdaU_Bwr1_wkUfNlr35rSjT4ASuJHzCmqj4ePff6KykIachco7OjPeB2N1BhsKc32i3vqoGBvGpY25E72ej-6zc6hwTGVz4XOv_B5DCj_aoHmQmNnfqVhHf_hJSbXrK4nQ"
-        }
-      }
+      "pruned": true
     },
     "eventHash": "67a2cbebafca31b95990219b7f9bbd7608c2508be779039bd9596f3bcf07fe0e",
     "chainHash": "b3190731292abc654b5c0d85359b0ab183f4980db986eb2fca430cc0033ef2bd"
@@ -16109,9 +16099,79 @@
     "event": {
       "type": "KeyRotation",
       "timestamp": "2026-01-14T01:09:32.216Z",
+      "pruned": true
+    },
+    "eventHash": "865150d39e8a2a4f36d7c00378dd5339447fc1db2e17aa2b5eb13e58fae9fb92",
+    "chainHash": "cb0e3eb3cf66886304309cafc32bf9859140122906ab462129afd7d906ddbd0f"
+  },
+  {
+    "prevHash": "cb0e3eb3cf66886304309cafc32bf9859140122906ab462129afd7d906ddbd0f",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:10:52.827Z",
+      "pruned": true
+    },
+    "eventHash": "ca7a94b2c49d3540379bd21f7aa5697a92411a161db379252601e01b01658bff",
+    "chainHash": "6d9df21573b9e9019eae5a52908ac8d33cb286b4f7a67a637201160a6afa1700"
+  },
+  {
+    "prevHash": "6d9df21573b9e9019eae5a52908ac8d33cb286b4f7a67a637201160a6afa1700",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:11:05.099Z",
+      "pruned": true
+    },
+    "eventHash": "ba3776a541ae479599f5400b6dc16150a8e44aeff42b4499a946c43b4f804057",
+    "chainHash": "4ad90519c33adeb2ad64bd8cff2b40c9afb8d7b363b7c288499a4ea1e691bed3"
+  },
+  {
+    "prevHash": "4ad90519c33adeb2ad64bd8cff2b40c9afb8d7b363b7c288499a4ea1e691bed3",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:13:09.576Z",
+      "pruned": true
+    },
+    "eventHash": "30444e7043e810d5f09767a27eaa98d127607f514764ed059ef7db1d065daae2",
+    "chainHash": "0fd5d51a0c39c63ea345fdb108dab119ec3afe06e85977a8b6d0324ed4fb2335"
+  },
+  {
+    "prevHash": "0fd5d51a0c39c63ea345fdb108dab119ec3afe06e85977a8b6d0324ed4fb2335",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:14:32.828Z",
+      "pruned": true
+    },
+    "eventHash": "3d4813861427c8b8ef377fd57984ba274c578d2e3ea0c9a7eb188ea15dd92eff",
+    "chainHash": "d4351c23d3431decbe456805a960fd1b525339ffe9fa6edcdeed72c103c92e46"
+  },
+  {
+    "prevHash": "d4351c23d3431decbe456805a960fd1b525339ffe9fa6edcdeed72c103c92e46",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:16:37.221Z",
+      "pruned": true
+    },
+    "eventHash": "dae3fb6be221506423085d95988be7310b30d74442b0a89b6c4e141a4d90391f",
+    "chainHash": "c9cdcc075c982ef8e6ab409eb4d297ee649834eac9ba3e5b9f6a9025e676bb3c"
+  },
+  {
+    "prevHash": "c9cdcc075c982ef8e6ab409eb4d297ee649834eac9ba3e5b9f6a9025e676bb3c",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:23:51.136Z",
+      "pruned": true
+    },
+    "eventHash": "ede740024b32d004149c2b4453adb604f8557e565bd3686e755eba316e497ddd",
+    "chainHash": "a7dc22296c466b7ad7b9512c21f34e907975ac19b9871352913266f1c76e9c83"
+  },
+  {
+    "prevHash": "a7dc22296c466b7ad7b9512c21f34e907975ac19b9871352913266f1c76e9c83",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:24:27.277Z",
       "payload": {
-        "timestamp": "2026-01-14T01:09:32.215Z",
-        "buildId": "build-1768352972087",
+        "timestamp": "2026-01-14T01:24:27.276Z",
+        "buildId": "build-1768353867199",
         "revoked": false,
         "ed25519Params": "did:key:z6MkhtzPpATsSMEyEGSEzmXwyrWFvMQj1RNXtx5vht3NLuyw",
         "pqcParams": {
@@ -16121,7 +16181,27 @@
         }
       }
     },
-    "eventHash": "865150d39e8a2a4f36d7c00378dd5339447fc1db2e17aa2b5eb13e58fae9fb92",
-    "chainHash": "cb0e3eb3cf66886304309cafc32bf9859140122906ab462129afd7d906ddbd0f"
+    "eventHash": "21dd2dc87a177ad12a9f8ebec37c3876e33b457431219e92ca67dbab367472ae",
+    "chainHash": "86c3518a8b71da3f2b69256781eeb33998473020c984d7325fc746412f2722f7"
+  },
+  {
+    "prevHash": "86c3518a8b71da3f2b69256781eeb33998473020c984d7325fc746412f2722f7",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:56:43.221Z",
+      "payload": {
+        "timestamp": "2026-01-14T01:56:43.220Z",
+        "buildId": "build-1768355803082",
+        "revoked": false,
+        "ed25519Params": "did:key:z6MkhtzPpATsSMEyEGSEzmXwyrWFvMQj1RNXtx5vht3NLuyw",
+        "pqcParams": {
+          "kty": "PQC",
+          "crv": "ML-DSA-44",
+          "x": "4yx9QLZU_i_6AyXcCCthWN0raG47BKjKAw5vtSgIHrL8c1zALelvUiKKo2myeTQMKs_VdxQ1TrybmIx-FYi4IQdk7jKqz_7ZCDaLazRQ-v7hkZ8RFrZnvtZE6FKFs1wUqs8I6eTiDioTh135VQ5jQ_ul_ZMBWLWi8hsRX5-qL6yBMG4QhJXYeh5MsL_DbNg9Wlk2YZdV5Ly4BIiwUfmMrf6e6nhyNSOnnax1nUfB2TfTxU3z3FO1JLu5puPOCnVuMs1ch0agRoUQU2b81ksV-ajDpjgL1udkhQRKKki8Kbnbp_8-l90Eufxw4ZEI3bkneK2r6aLvl6AAKll0HyDYjQMKsyLeE2PPpvBcNnDvVxH-2_FrExKZ7y97SZr-W6trVOPW7noUAOVP8C-Xkpw7Zu1mkPOxmI6gUhfR8V72N6t74pNJUGlqRJiXvSGfJSqaE7UM_lR3bmaNasFyl1_A-4j1lUiFTtF5UNKgyWepxpYQYBOWI4WcAbXvhTgzDHy3I3_e9zEM-L1gKlmxe7K4faotY-Lsllqo6k4TyNea8MEQixh3YjjWmXzl2c63RA9hD-TLgIIJ6wC2WJBuEq_zVEjszuRH1UEH2KCqcc5KYAzMyYn0KSxuUCFYk73FxqkGhPgCZ9oQOUF63oKZFn0hOjj8f7C0Afi9JTl3st5kCini0ELyFrMCyGODBhE_J06sq4GqSuo2O4F-aiKOITAVA0PH0iNVTCyEiLgvtCI4daGcoXkAMrbL-3ZkA-HosRWisLVBCUixlsQWfKwuq38Q-rOafqo7Wgh0ZZJAwbWMS8r3ObHeDYVhvwn4wBqy25D_oumHF_DVSqN9swnRUQaGp_rT91NA7G1bdIjy7AZC9BihbvlbQDyBSs8cWNy5U8b-1pVa2ZO0tOGPejjJZskOoqk1HIPUjfSTgFhsEem6k2pmf0MwykAjnMQW9g8pvZN9qPOqvu6Ba1j9p1y9dF-tqcyu1tdFz2SWDZownVEPLiA770vxXvTwVIdvheEiPE1Q1kcyJ6GcrFwkUemRy4nJF_LdnmjAyJl-osw1Vr0vI6EZ6xiiK0IjEGPAJcXYiOSQyejMfUGfbvDFFnkTQPsNZ_brh-RCYSVBU3HyRvLnPxiF2i9WPXR6OZ_CHblH_TiUfFoh9qO3ni3Ai1cCK50QCgy-yLyKZNANGtzGimKN86Bn6X5_v5ZvEsU9gK1nPEwPyeqs6X0ChysLEg3AYXBePqCVuLmC6YyaHyl2EhG_V3qoCPykQLXWpNOtVR-gylAhPA3QJuL1pYzMC-ZBmTzAm5ggVayzJ8kbQme14aBvd9SaBGO4kYmHR8BcqWAk9-JxEtq7pbXm6JPCbayBl45m2fRO9_C_qTLUzznFoPPopmY0y9vmR3ab2-p_mY5nZYM73y0zUo3nSEuKlK8aNrg9KGLW4zdFQb6hbOhg9m_v0M3UdEHpF2yH77fTneJ54hn-2tjAki55_64LT7XQ1j9YCFHSBkk79LU-YPwryMGR0iWnsHWGDJVKNHV0I40gVYe6BrI6nlykvs_6I5TeBBBGxzkSXVsJN624rFomPsoUedC2-kjNc1XgVxAouqwZ40iUEeDykfJMM2B3w_PxyA_tKdaU_Bwr1_wkUfNlr35rSjT4ASuJHzCmqj4ePff6KykIachco7OjPeB2N1BhsKc32i3vqoGBvGpY25E72ej-6zc6hwTGVz4XOv_B5DCj_aoHmQmNnfqVhHf_hJSbXrK4nQ"
+        }
+      }
+    },
+    "eventHash": "02de5848decebd7bff929d9e5313c60ba81e51f485de7cf94ed0070e2a14f2c8",
+    "chainHash": "516053ec59daf74ebfdf350996558ec66ccc1ecf0f73ad273201b86d892b0391"
   }
 ]
