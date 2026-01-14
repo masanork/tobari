@@ -1,0 +1,1 @@
+{"name": "@tobari/form-runtime", "version": "0.0.1", "main": "src/index.ts", "scripts": {"build": "bun build ./src/index.ts --outdir ./dist --target browser"}, "dependencies": {"@tobari/compiler": "workspace:*"}, "devDependencies": {"typescript": "^5.0.0", "bun-types": "latest"}}
