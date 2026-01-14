@@ -132,8 +132,13 @@ impl<R: CardReader> PassportController<R> {
             .map_err(|_| CivError::Communication("Invalid RND.ICC".to_string()))?;
         let (auth_data, ssc) = bac::build_mutual_auth_data(&k_enc, &k_mac, &rnd_ic)
             .map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
+        
+        // Align with signer-macos: Add 0x28 (Le) at the end of auth_data for EXTERNAL AUTHENTICATE
+        let mut auth_data_with_le = auth_data;
+        auth_data_with_le.push(0x28);
+
         let external_auth =
-            ApduCommand::new(CLA_ISO, INS_EXTERNAL_AUTHENTICATE, 0x00, 0x00).with_data(&auth_data);
+            ApduCommand::new(CLA_ISO, INS_EXTERNAL_AUTHENTICATE, 0x00, 0x00).with_data(&auth_data_with_le);
         let response = self
             .reader
             .transmit(&external_auth.to_bytes())
@@ -147,13 +152,16 @@ impl<R: CardReader> PassportController<R> {
 
     /// Perform PACE (Password Authenticated Connection Establishment)
     pub async fn perform_pace(&mut self, mrz_or_can: &str) -> Result<()> {
+        // Align with signer-macos: OID should be prefixed with 0x04 0x00 if using that specific OID sequence
+        // Actually, the OID in signer-macos for MSE:Set AT is [0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04, 0x02, 0x02]
         let oid_pace_gm_aes = vec![
-            0x06, 0x0A, 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04, 0x02, 0x02,
+            0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04, 0x02, 0x02,
         ];
         let mut mse_val = vec![0x80, oid_pace_gm_aes.len() as u8];
         mse_val.extend_from_slice(&oid_pace_gm_aes);
         mse_val.extend_from_slice(&[0x83, 0x01, 0x01]);
 
+        // Align with signer-macos: CLA=0x00 for MSE:Set AT
         let mse_set = ApduCommand::new(0x00, 0x22, 0xC1, 0xA4).with_data(&mse_val);
         let res = self.transmit(&mse_set).await?;
         Self::check_sw(&res)?;

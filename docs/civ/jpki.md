@@ -24,7 +24,7 @@
 | **SELECT** | `A4` | `02` | `0C` | `[FID]` | - | Select File (EF) |
 | **VERIFY** | `20` | `00` | `80` | `[PIN]` | - | Verify PIN (`80` is JPKI specific) |
 | **READ BIN**| `B0` | `OfsH`| `OfsL`| - | `Len` | Read Binary Data |
-| **COMPUTE** | `2A` | `00` | `80` | `[Data]`| `00` | Compute Dig. Sig. (CLA=`80`) |
+| **COMPUTE** | `2A` | `00` | `80` | `[Data]`| `00` | Compute Dig. Sig. (CLA=`00` or `80`) |
 
 ## 4. JPKI Application (`JPKI-AP`)
 **AID:** `D3 92 F0 00 26 01 00 00 00 01`
@@ -56,8 +56,9 @@
    - Select JPKI-AP.
    - Select Sign PIN IEF (`00 1B`) -> `VERIFY`.
    - Select Sign Key EF (`00 17`).
-4. **Sign**: `80 2A 00 80 [Len] [DigestInfo] 00`
+4. **Sign**: `00 2A 00 80 [Len] [DigestInfo] 00`
    - Returns: 256 bytes RSA signature.
+   - Note: Some documentation uses CLA `80`, but CLA `00` is more widely compatible for My Number Cards.
 
 ## 5. Input Assistance App (`Card-AP`)
 **AID:** `D3 92 10 00 31 00 01 01 04 08`

@@ -162,7 +162,8 @@ impl<R: CardReader> JpkiController<R> {
             0x01, 0x05, 0x00, 0x04, 0x20,
         ];
         digest_info.extend_from_slice(&hash);
-        let cmd = ApduCommand::new(0x80, INS_COMPUTE_DIGITAL_SIGNATURE, 0x00, 0x80)
+        // Align with signer-macos: CLA=0x00, P2=0x80
+        let cmd = ApduCommand::new(0x00, INS_COMPUTE_DIGITAL_SIGNATURE, 0x00, 0x80)
             .with_data(&digest_info)
             .with_le(0x00);
         let res = self.reader.transmit(&cmd.to_bytes()).await?;
