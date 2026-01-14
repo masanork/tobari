@@ -1,6 +1,6 @@
 # Tobari Action Board
 
-**Last Updated:** 2026-01-11
+**Last Updated:** 2026-01-14
 **Scope:** Tobari Project (MCP/Signer/SCAC/Compliance/civ)
 
 ## 🚀 Now (Current Sprint)
@@ -13,12 +13,14 @@
 - [x] **LLM Communication Optimization**: Added `inspect_document` to `signer-macos` to offload CBOR parsing and minimize binary data transfer to LLM.
 
 ### 🔄 Cross-Platform Signer Alignment (Tauri/Rust)
-- [ ] **Unified Interface Porting**: Implement `UnifiedRequest`/`UnifiedResponse` protocol in Tauri signer CLI to match `signer-macos`.
-- [ ] **Rust-based Document Inspector**: Implement `inspect_document` logic in Rust using `ciborium` to support local parsing on Windows/Linux.
-- [ ] **File-based I/O Support**: Update Tauri signer to support `outputPath` for Verifiable Presentations, returning paths instead of large Base64 strings.
+- [x] **Unified Interface Porting**: Ported full `UnifiedRequest`/`UnifiedResponse` protocol to Tauri signer CLI, achieving parity with Swift implementation.
+- [x] **Recursive Document Inspector**: Implemented advanced `inspect_document` logic in Rust with support for nested structures (Resident Records).
+- [x] **File-based I/O Support**: Integrated `outputPath` across all native tools to handle large transfers (face photos, mdocs) efficiently.
 - [ ] **Windows TPM Integration**: Research and implement hardware-bound key support for Windows (NCrypt/TPM) to match Secure Enclave functionality.
 
 ### Performance & PQC
+- [x] **PQC Benchmark Refinement**: Updated whitepaper with exact WASM size breakdowns for ML-DSA and ML-KEM.
+- [x] **AI-Ready Identity**: Implemented mdoc-to-JSON translation to enable LLM agents to process complex identity documents.
 // ... (omitted) ...
 ### Compliance & SCAC
 - [ ] **FATF/SCAC Operations Mapping**
