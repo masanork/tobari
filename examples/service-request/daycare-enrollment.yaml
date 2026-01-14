@@ -1,0 +1,63 @@
+title: "保育園入園申請（教育・保育給付認定）"
+id: "io.github.masanork.tobari.service-request.daycare-v1"
+description: "保育園の入園申請および保育の必要性の認定を申請します。本申請には世帯全員の住民票と、保護者の就労証明書が必要です。"
+eligibility: "当区に住民登録があり、就労等の理由により保育を必要とする世帯。"
+submission_uri: "https://city.example.jp/api/daycare/submit"
+
+fields:
+  - id: "title"
+    label: "手続き名称"
+    type: "string"
+    section: "header"
+    primary: true
+  - id: "description"
+    label: "制度の概要"
+    type: "string"
+  - id: "eligibility"
+    label: "対象となる方"
+    type: "string"
+  - id: "presentation_definition"
+    label: "必要書類（機械可読）"
+    type: "object"
+  - id: "submission_uri"
+    label: "申請データの送信先"
+    type: "string"
+
+presentation_definition:
+  id: "daycare_request_pd"
+  input_descriptors:
+    - id: "resident_record"
+      name: "住民票の写し（世帯全員）"
+      purpose: "家族構成およびお子様の年齢を確認し、選考指数を算定するために使用します。"
+      format:
+        mso_mdoc:
+          alg: ["ES256", "ES384"]
+      constraints:
+        fields:
+          - path: ["$['io.github.masanork.tobari.juminhyo.v1']['世帯員']"]
+            filter:
+              type: "array"
+          - path: ["$['io.github.masanork.tobari.juminhyo.v1']['世帯住所']"]
+    
+    - id: "work_certificate"
+      name: "就労証明書"
+      purpose: "保護者の就労状況を確認し、保育の必要性を判定するために使用します。"
+      format:
+        mso_mdoc:
+          alg: ["ES256", "ES384"]
+      constraints:
+        fields:
+          - path: ["$['io.github.masanork.tobari.work-cert.v1']['本人氏名']"]
+          - path: ["$['io.github.masanork.tobari.work-cert.v1']['雇用形態']"]
+          - path: ["$['io.github.masanork.tobari.work-cert.v1']['就労時間合計']"]
+          - path: ["$['io.github.masanork.tobari.work-cert.v1']['事業所名']"]
+
+    - id: "user_preferences"
+      name: "希望施設等の入力"
+      purpose: "入園を希望する施設や開始時期を選択してください。"
+      constraints:
+        fields:
+          - path: ["$['first_choice']"]
+            label: "第1希望施設名"
+          - path: ["$['start_date']"]
+            label: "入園希望時期（年月）"

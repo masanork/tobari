@@ -113,7 +113,7 @@ HTMLファイルサイズは約275KB（Gzip圧縮時約138KB）であり、一�
 | gen-tobari core | 1.81 ms |
 | verify_presentation core | 0.64 ms |
 
-※ Apple M2環境での参考値（n=20/5）。
+※ Apple M3環境での参考値（n=20/5）。
 
 ### 3.3. 検証結果：選択的開示とプライバシー保護の高度化
 
