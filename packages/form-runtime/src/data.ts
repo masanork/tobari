@@ -32,6 +32,8 @@ export class DataManager {
                 // 電話番号フィールドは数字のみを保存
                 if (input.type === 'tel') {
                     data[key] = input.value.replace(/[^0-9]/g, '');
+                } else if (input.type === 'checkbox') {
+                    data[key] = input.checked;
                 } else {
                     data[key] = input.value;
                 }
