@@ -109,17 +109,7 @@ export function parseMarkdown(text: string): { jsonStructure: any } {
                 inMasterTable = !!currentMasterKey;
 
                 if (currentDynamicTableKey && !isSeparator) {
-                    // Check if this is a new table header after we've already processed the template row
-                    const hasFieldDefs = cells.some(c => c.includes('['));
-                    if (dynamicTableProcessed && !hasFieldDefs) {
-                        // This is a summary/total table after the dynamic table, end dynamic table
-                        currentDynamicTableKey = null;
-                        currentDynamicTableHeaders = [];
-                        dynamicTableProcessed = false;
-                        // Don't return, continue to process as potential static table
-                    } else {
-                        currentDynamicTableHeaders = cells; // Capture headers
-                    }
+                    currentDynamicTableHeaders = cells; // Capture headers
                 }
 
                 if (!currentDynamicTableKey && !inMasterTable && !isSeparator) {
@@ -132,6 +122,27 @@ export function parseMarkdown(text: string): { jsonStructure: any } {
                         rows: []
                     };
                     if (currentSectionTitle) currentSectionTitle = null; // Consume
+                }
+            } else if (inTable && currentDynamicTableKey && dynamicTableProcessed && !isSeparator) {
+                // We're in a dynamic table, template row is processed, and we see a new table header
+                const hasFieldDefs = cells.some(c => c.includes('['));
+                if (!hasFieldDefs) {
+                    // This is a summary/total table after the dynamic table, end dynamic table
+                    currentDynamicTableKey = null;
+                    currentDynamicTableHeaders = [];
+                    dynamicTableProcessed = false;
+                    inTable = false; // Reset to allow new table to start
+                    inMasterTable = false;
+                    // Re-trigger table start logic
+                    inTable = true;
+                    // Start Static Table
+                    currentStaticTable = {
+                        type: 'static_table',
+                        key: 'tbl_' + Math.random().toString(36).substr(2, 5),
+                        label: '', // No section title for summary tables
+                        headers: cells,
+                        rows: []
+                    };
                 }
             }
 

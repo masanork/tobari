@@ -19,11 +19,11 @@ function mapType(v1Type: string): string {
 }
 
 // Simple attribute parser (similar to v1 utils but focused on what we need)
-function extractAttributes(attrStr: string | undefined): { autofill?: string, masterSrc?: string, masterValueIndex?: number, masterLabelIndex?: number } {
+function extractAttributes(attrStr: string | undefined): { autofill?: string, masterSrc?: string, masterValueIndex?: number, masterLabelIndex?: number, formula?: string } {
     if (!attrStr) return {};
-    
-    const result: { autofill?: string, masterSrc?: string, masterValueIndex?: number, masterLabelIndex?: number } = {};
-    
+
+    const result: { autofill?: string, masterSrc?: string, masterValueIndex?: number, masterLabelIndex?: number, formula?: string } = {};
+
     // 1. Quoted attributes: autofill="value"
     const autofillMatch = attrStr.match(/autofill="([^"]+)"/);
     if (autofillMatch) {
@@ -55,7 +55,13 @@ function extractAttributes(attrStr: string | undefined): { autofill?: string, ma
     if (labelMatch) {
         result.masterLabelIndex = parseInt(labelMatch[1], 10);
     }
-    
+
+    // 6. formula="value"
+    const formulaMatch = attrStr.match(/formula="([^"]+)"/);
+    if (formulaMatch) {
+        result.formula = formulaMatch[1];
+    }
+
     return result;
 }
 
@@ -80,6 +86,7 @@ function convertField(f: any): any {
     if (attrs.masterSrc) field.masterSrc = attrs.masterSrc;
     if (attrs.masterValueIndex) field.masterValueIndex = attrs.masterValueIndex;
     if (attrs.masterLabelIndex) field.masterLabelIndex = attrs.masterLabelIndex;
+    if (attrs.formula) field.formula = attrs.formula;
 
     if (field.type === 'select') {
         field.options = []; // Placeholder

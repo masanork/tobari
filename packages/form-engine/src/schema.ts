@@ -15,6 +15,7 @@ const BaseFieldSchema = z.object({
     masterSrc: z.string().optional(), // key of masterData table
     masterValueIndex: z.number().optional(), // 1-based index of value column
     masterLabelIndex: z.number().optional(), // 1-based index of label column
+    formula: z.string().optional(), // formula expression for calculated fields
 });
 
 // --- Specific Field Definitions ---

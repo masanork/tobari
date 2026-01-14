@@ -227,6 +227,8 @@ export class TobariForm extends LitElement {
     setSchema(schema: unknown) {
         try {
             this.definition = FormDefinitionSchema.parse(schema);
+            // Initialize calculated fields
+            this.updateCalculatedFields();
             this.requestUpdate();
         } catch (e) {
             console.error("Invalid Schema:", e);
@@ -307,17 +309,28 @@ export class TobariForm extends LitElement {
     }
 
     private handleInput(e: Event, path: string[]) {
+        console.log('handleInput called, path:', path);
         const target = e.target as HTMLInputElement | HTMLSelectElement;
         let value: any = target.value;
+        console.log('  value:', value, 'type:', target.type);
 
         if (target.type === 'number') {
-            value = value === '' ? undefined : Number(value);
+            // For number inputs, convert empty string to 0 (not undefined)
+            // This ensures formulas can calculate properly
+            value = value === '' ? 0 : Number(value);
+            console.log('  converted to:', value);
         }
 
         // Deep merge value into formData
         // For MVP, we stick to flat-ish keys or simple object structure.
         // Let's implement simple deep set based on path.
         this.updateDataAtPath(this.formData, path, value);
+        console.log('  formData after update:', JSON.stringify(this.formData, null, 2));
+
+        // Update calculated fields
+        console.log('  calling updateCalculatedFields...');
+        this.updateCalculatedFields();
+
         // Clear error for this field if exists
         const pathKey = path.join('.');
         if (this.errors[pathKey]) {
@@ -325,7 +338,7 @@ export class TobariForm extends LitElement {
             delete newErrors[pathKey];
             this.errors = newErrors;
         }
-        this.requestUpdate(); 
+        this.requestUpdate();
     }
 
     private handleAddItem(path: string[], itemSchema: FormElement) {
@@ -334,16 +347,20 @@ export class TobariForm extends LitElement {
         if (!Array.isArray(currentArray)) {
             currentArray = [];
         }
-        
+
         let newItem: any = undefined;
         if (itemSchema.type === 'group') {
             newItem = {};
         } else if (itemSchema.type === 'array') {
             newItem = [];
         }
-        
+
         const newArray = [...currentArray, newItem];
         this.updateDataAtPath(this.formData, path, newArray);
+
+        // Update calculated fields after adding new item
+        this.updateCalculatedFields();
+
         this.requestUpdate();
     }
 
@@ -353,6 +370,8 @@ export class TobariForm extends LitElement {
             const newArray = [...currentArray];
             newArray.splice(index, 1);
             this.updateDataAtPath(this.formData, path, newArray);
+            // Update calculated fields after removing item
+            this.updateCalculatedFields();
             this.requestUpdate();
         }
     }
@@ -374,6 +393,165 @@ export class TobariForm extends LitElement {
             current = current[key];
         }
         return current;
+    }
+
+    private updateCalculatedFields() {
+        console.log('updateCalculatedFields called');
+        if (!this.definition) {
+            console.log('  no definition, returning');
+            return;
+        }
+
+        // Update all formula fields in the schema
+        const updateFieldsInList = (fields: FormElement[], basePath: string[]) => {
+            console.log('  updateFieldsInList, basePath:', basePath, 'fields count:', fields.length);
+            for (const field of fields) {
+                const formula = (field as any).formula;
+                if (formula) {
+                    const fieldPath = [...basePath, field.key];
+                    console.log(`    Found formula field: ${field.key}, formula: ${formula}, path:`, fieldPath);
+                    const result = this.evaluateFormula(formula, fieldPath);
+                    console.log(`    Result: ${result}`);
+                    this.updateDataAtPath(this.formData, fieldPath, result);
+                }
+
+                // Recursively handle group fields
+                if (field.type === 'group') {
+                    updateFieldsInList((field as GroupField).fields, [...basePath, field.key]);
+                }
+
+                // Handle array fields
+                if (field.type === 'array') {
+                    const arrayPath = [...basePath, field.key];
+                    const arrayData = this.getValue(arrayPath);
+                    if (Array.isArray(arrayData)) {
+                        const itemSchema = (field as ArrayField).itemSchema;
+                        if (itemSchema.type === 'group') {
+                            arrayData.forEach((_, index) => {
+                                updateFieldsInList((itemSchema as GroupField).fields, [...arrayPath, index.toString()]);
+                            });
+                        }
+                    }
+                }
+
+                // Handle static table fields
+                if (field.type === 'static_table') {
+                    const tablePath = [...basePath, field.key];
+                    for (const row of (field as StaticTableField).rows) {
+                        for (const cell of row) {
+                            if (typeof cell !== 'string') {
+                                const cellFormula = (cell as any).formula;
+                                if (cellFormula) {
+                                    const cellPath = [...tablePath, cell.key];
+                                    const result = this.evaluateFormula(cellFormula, cellPath);
+                                    this.updateDataAtPath(this.formData, cellPath, result);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        updateFieldsInList(this.definition.fields, []);
+    }
+
+    private evaluateFormula(formula: string, path: string[]): number | string {
+        try {
+            // Handle SUM(fieldKey) function
+            const sumMatch = formula.match(/^SUM\(([^)]+)\)$/);
+            if (sumMatch) {
+                const fieldKey = sumMatch[1];
+                // Determine the array path - SUM can reference current array or a different array
+                let arrayPath: string[];
+
+                // Check if we're in a static_table context (path like ['tbl_xxx', 'fieldKey'])
+                if (path.length === 2 && path[0].startsWith('tbl_')) {
+                    // We're in a static table, need to find the array with the fieldKey
+                    // Look for the array field in the form definition
+                    const arrayField = this.definition?.fields.find(f =>
+                        f.type === 'array' &&
+                        (f as ArrayField).itemSchema.type === 'group' &&
+                        ((f as ArrayField).itemSchema as GroupField).fields.some(gf => gf.key === fieldKey)
+                    ) as ArrayField | undefined;
+
+                    if (arrayField) {
+                        arrayPath = [arrayField.key];
+                    } else {
+                        console.warn('Could not find array for SUM field:', fieldKey);
+                        return 0;
+                    }
+                } else {
+                    // Normal case: parent path is the array
+                    arrayPath = path.slice(0, -1);
+                }
+
+                const arrayData = this.getValue(arrayPath);
+                console.log(`SUM(${fieldKey}) - arrayPath:`, arrayPath, 'arrayData:', arrayData);
+
+                if (Array.isArray(arrayData)) {
+                    let sum = 0;
+                    for (const item of arrayData) {
+                        const value = item?.[fieldKey];
+                        console.log(`  item[${fieldKey}] =`, value, typeof value);
+                        if (typeof value === 'number') {
+                            sum += value;
+                        } else if (typeof value === 'string' && !isNaN(Number(value))) {
+                            sum += Number(value);
+                        } else if (value === undefined || value === null || value === '') {
+                            // Treat as 0
+                            sum += 0;
+                        }
+                    }
+                    console.log(`  sum = ${sum}`);
+                    return sum;
+                }
+                console.log('  not an array, returning 0');
+                return 0;
+            }
+
+            // Handle simple arithmetic expressions like "a + b - c"
+            // Extract variable names
+            const variables = formula.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+
+            // Get parent context path (remove last element which is the calc field key)
+            const contextPath = path.slice(0, -1);
+            console.log(`Formula: ${formula}, path:`, path, 'contextPath:', contextPath);
+
+            // Replace variables with their values
+            let expression = formula;
+            for (const varName of variables) {
+                const varPath = [...contextPath, varName];
+                let value = this.getValue(varPath);
+                console.log(`  ${varName} (${varPath.join('/')}) =`, value);
+
+                // Convert to number, default to 0 if undefined/null
+                if (value === undefined || value === null || value === '') {
+                    value = 0;
+                } else if (typeof value === 'string') {
+                    value = Number(value) || 0;
+                }
+
+                // Replace all occurrences of the variable
+                expression = expression.replace(new RegExp(`\\b${varName}\\b`, 'g'), String(value));
+            }
+
+            console.log(`  expression: ${expression}`);
+
+            // Evaluate the expression safely
+            // Only allow numbers, operators, and parentheses
+            if (!/^[\d\s+\-*/().]+$/.test(expression)) {
+                console.error('Invalid expression:', expression);
+                return 'Error: Invalid formula';
+            }
+
+            const result = eval(expression);
+            console.log(`  result: ${result}`);
+            return typeof result === 'number' ? result : 0;
+        } catch (e) {
+            console.error('Formula evaluation error:', e, 'Formula:', formula);
+            return 'Error';
+        }
     }
 
     private buildDataSchema(definition: FormDefinition): z.ZodType<any> {
@@ -485,6 +663,8 @@ export class TobariForm extends LitElement {
     }
 
     private renderTextField(field: TextField, path: string[], options: { noLabel?: boolean, rowIndex?: number } = {}) {
+        // If field has a formula, get the calculated value from formData
+        // (calculated values are updated by updateCalculatedFields)
         const val = this.getValue(path) || '';
         const pathStr = path.join('.');
         const hasSuggestions = this.suggestions && this.suggestions.path === pathStr && this.suggestions.items.length > 0;
@@ -496,13 +676,13 @@ export class TobariForm extends LitElement {
           ${field.label || field.key} 
           ${field.required ? '*' : ''}
         </label>`}
-        <input 
-          type="text" 
+        <input
+          type="text"
           .value=${val}
           @input=${(e: Event) => field.masterSrc ? this.handleSearchInput(e, path, field.masterSrc) : this.handleInput(e, path)}
           placeholder=${field.placeholder || ''}
           ?required=${field.required}
-          ?readonly=${field.readonly}
+          ?readonly=${field.readonly || !!(field as any).formula}
           minlength=${field.minLength || nothing}
           maxlength=${field.maxLength || nothing}
           pattern=${field.pattern || nothing}
@@ -553,9 +733,15 @@ export class TobariForm extends LitElement {
     private renderIntegerField(field: IntegerField, path: string[], options: { noLabel?: boolean, rowIndex?: number } = {}) {
         // For autonum fields, use rowIndex + 1 as the value
         const isAutonum = (field as any).autonum === true;
+        const hasFormula = !!(field as any).formula;
+        // If field has a formula, get the calculated value from formData
+        // For autonum, use row index
         const val = isAutonum && options.rowIndex !== undefined
             ? options.rowIndex + 1
             : this.getValue(path) ?? '';
+
+        const isReadonly = field.readonly || isAutonum || hasFormula;
+        console.log(`renderIntegerField: ${field.key}, path: ${path.join('/')}, val: ${val}, readonly: ${isReadonly}, formula: ${hasFormula}, autonum: ${isAutonum}`);
 
         return html`
       <div class="field-group">
@@ -567,12 +753,14 @@ export class TobariForm extends LitElement {
         <input
           type="number"
           .value=${val}
-          @input=${(e: Event) => this.handleInput(e, path)}
+          @input=${(e: Event) => { console.log('input event fired!', path); this.handleInput(e, path); }}
+          @change=${(e: Event) => { console.log('change event fired!', path); this.handleInput(e, path); }}
           min=${field.min || nothing}
           max=${field.max || nothing}
           step=${field.step}
           ?required=${field.required}
-          ?readonly=${field.readonly || isAutonum}
+          ?readonly=${isReadonly}
+          data-field-key=${field.key}
         >
         ${this.renderError(path)}
       </div>
