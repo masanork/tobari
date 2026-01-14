@@ -8,6 +8,16 @@ const Renderers = {
     setMasterData: (d: any) => {},
 };
 
+// Helper to convert heading text to snake_case key
+function headingToKey(heading: string): string {
+    return heading
+        .toLowerCase()
+        .replace(/[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAFa-z0-9]+/g, '_') // Replace non-alphanumeric (except Japanese) with _
+        .replace(/^_+|_+$/g, '') // Remove leading/trailing underscores
+        .replace(/_+/g, '_') // Collapse multiple underscores
+        .substring(0, 50); // Limit length
+}
+
 export function parseMarkdown(text: string): { jsonStructure: any } {
     const lines = text.split('\n');
 
@@ -114,9 +124,12 @@ export function parseMarkdown(text: string): { jsonStructure: any } {
 
                 if (!currentDynamicTableKey && !inMasterTable && !isSeparator) {
                     // Start Static Table
+                    const tableKey = currentSectionTitle
+                        ? headingToKey(currentSectionTitle)
+                        : 'tbl_' + Math.random().toString(36).substr(2, 5);
                     currentStaticTable = {
                         type: 'static_table',
-                        key: 'tbl_' + Math.random().toString(36).substr(2, 5),
+                        key: tableKey,
                         label: currentSectionTitle || '', // Use section title as label
                         headers: cells,
                         rows: []
@@ -135,10 +148,10 @@ export function parseMarkdown(text: string): { jsonStructure: any } {
                     inMasterTable = false;
                     // Re-trigger table start logic
                     inTable = true;
-                    // Start Static Table
+                    // Start Static Table (summary table after dynamic table)
                     currentStaticTable = {
                         type: 'static_table',
-                        key: 'tbl_' + Math.random().toString(36).substr(2, 5),
+                        key: 'tbl_' + Math.random().toString(36).substr(2, 5), // Keep random for summary tables
                         label: '', // No section title for summary tables
                         headers: cells,
                         rows: []

@@ -7,6 +7,8 @@
         "build": "bun build ./src/index.ts --outdir ./dist --target browser",
         "dev": "bun build ./src/index.ts --outdir ./dist --target browser --watch",
         "mkform": "bun run ./scripts/mkform.ts",
+        "mkform:lgplan": "bun run ./scripts/mkform.ts test-forms/lgplan.md > test-forms/lgplan.html",
+        "gen": "bun run build && bun run mkform:lgplan",
         "test": "bun test"
     },
     "peerDependencies": {

@@ -1,0 +1,54 @@
+meta:
+  title: "児童手当認定請求書 (Web/A v2)"
+  version: "2.0"
+  security: "standard"
+
+fields:
+  - key: applicant_section
+    type: group
+    label: "申請者情報"
+    fields:
+      - key: name
+        type: text
+        label: "氏名"
+        required: true
+        autofill: "jpki:name"
+      - key: address
+        type: text
+        label: "住所"
+        required: true
+        autofill: "jpki:address"
+      - key: birthday
+        type: date
+        label: "生年月日"
+        autofill: "jpki:birthDate"
+
+  - key: children
+    type: array
+    label: "対象児童"
+    itemSchema:
+      type: group
+      key: child
+      fields:
+        - key: child_name
+          type: text
+          label: "児童氏名"
+          required: true
+        - key: child_birthday
+          type: date
+          label: "生年月日"
+          required: true
+
+  - key: payment_info
+    type: group
+    label: "振込先口座"
+    fields:
+      - key: bank_name
+        type: text
+        label: "銀行名"
+      - key: branch_name
+        type: text
+        label: "支店名"
+      - key: account_number
+        type: text
+        label: "口座番号"
