@@ -5,7 +5,7 @@ protocol SmartCardInterface {
     func transmit(apdu: Data) async throws -> Data
 }
 
-class SmartCardManager: SmartCardInterface {
+class SmartCardManager: SmartCardInterface, @unchecked Sendable {
     static let shared = SmartCardManager()
     private static let apduDebugEnabled = ProcessInfo.processInfo.environment["TOBARI_APDU_DEBUG"] == "1"
     private static let apduLogPath: String? = {
@@ -24,7 +24,7 @@ class SmartCardManager: SmartCardInterface {
         guard let handle = FileHandle(forWritingAtPath: path) else { return }
         defer { try? handle.close() }
         if let data = (line + "\n").data(using: .utf8) {
-            try? handle.seekToEnd()
+            _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: data)
         }
     }
@@ -73,7 +73,6 @@ class SmartCardManager: SmartCardInterface {
         let slotNames = manager.slotNames
         var checkedCount = 0
         var foundCard = false
-        var detectedType: CardType = .unknown
         
         for slotName in slotNames {
             manager.getSlot(withName: slotName) { [weak self] slot in

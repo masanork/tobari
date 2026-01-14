@@ -107,7 +107,7 @@ class AppState: ObservableObject {
             let myNumber = try await jpki.readMyNumber(pin: pin)
             print("DEBUG: My Number: '\(myNumber)'")
 
-            var fields = [
+            let fields = [
                 "Name": info.name,
                 "Address": info.address,
                 "Birth Date": info.birthDate,

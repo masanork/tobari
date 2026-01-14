@@ -50,6 +50,7 @@ class CLIHandler {
         return Data(base64Encoded: base64)
     }
 
+    @MainActor
     func run() async {
         let args = ProcessInfo.processInfo.arguments
 

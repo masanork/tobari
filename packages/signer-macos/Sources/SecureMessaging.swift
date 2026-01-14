@@ -126,7 +126,9 @@ class SecureMessaging {
         var wrapped = Data([cla | 0x0C, ins, p1, p2])
         let lcPrime = dataField.count + 10 // 8E + 08 + 8 bytes MAC
         
-        if lcPrime > 255 {
+        let useExtended = lcPrime > 255 || (shouldAppendLe && leIsExtended)
+        
+        if useExtended {
             wrapped.append(0x00)
             wrapped.append(UInt8((lcPrime >> 8) & 0xFF))
             wrapped.append(UInt8(lcPrime & 0xFF))
@@ -138,8 +140,12 @@ class SecureMessaging {
         wrapped.append(0x8E)
         wrapped.append(0x08)
         wrapped.append(mac)
-        if shouldAppendLe {
-            wrapped.append(contentsOf: leIsExtended ? [0x00, 0x00] : [0x00])
+        
+        // Always append Le' for MRTD SM as a response (at least SW/MAC) is always expected
+        if useExtended {
+            wrapped.append(contentsOf: [0x00, 0x00])
+        } else {
+            wrapped.append(0x00)
         }
         
         return wrapped
@@ -228,7 +234,8 @@ class SecureMessaging {
     private func encrypt(data: Data) throws -> Data {
         let padded = pad(data)
         if proto == .bac {
-            let iv = try deriveIV(ssc: ssc)
+            // ICAO 9303-11: For BAC, 3DES CBC uses IV=0
+            let iv = Data(count: 8)
             return try crypt3DES(operation: CCOperation(kCCEncrypt), data: padded, key: ksEnc, iv: iv)
         } else {
             return try aesEncrypt(data: padded)
@@ -238,7 +245,8 @@ class SecureMessaging {
     private func decrypt(data: Data) throws -> Data {
         let decrypted: Data
         if proto == .bac {
-            let iv = try deriveIV(ssc: ssc)
+            // ICAO 9303-11: For BAC, 3DES CBC uses IV=0
+            let iv = Data(count: 8)
             decrypted = try crypt3DES(operation: CCOperation(kCCDecrypt), data: data, key: ksEnc, iv: iv)
         } else {
             decrypted = try aesDecrypt(data: data)
@@ -351,7 +359,7 @@ class SecureMessaging {
     private func calculateRetailMAC(data: Data, key: SymmetricKey) throws -> Data {
         let keyData = key.withUnsafeBytes { Data($0) }
         let k1 = keyData.prefix(8)
-        let k2 = keyData.suffix(8)
+        let k2 = keyData.subdata(in: 8..<16)
         var currentIV = Data(count: 8)
         for i in 0..<(data.count / 8) {
             let block = data.subdata(in: (i*8)..<(i*8+8))
