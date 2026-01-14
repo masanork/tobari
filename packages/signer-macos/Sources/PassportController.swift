@@ -17,15 +17,41 @@ struct PassportInfo: Codable {
     var protocolUsed: String = "Unknown"
     var dg14: String? // Security Infos
     var dg15: String? // AA Public Key
+    var debugLog: String? // Debug information
 }
 
 class PassportController {
     let manager: SmartCardInterface
     private var sm: SecureMessaging?
     private var currentProtocol: String = "None"
-    
+    private var debugLog: [String] = []
+
     // ICAO 9303 AID
     static let AID_PASSPORT = Data([0xA0, 0x00, 0x00, 0x02, 0x47, 0x10, 0x01])
+
+    private func log(_ message: String) {
+        debugLog.append(message)
+        print(message)
+        NSLog("PassportController: %@", message)
+        // Write to /tmp which is not sandboxed
+        let logPath = "/tmp/passport_debug.log"
+        let entry = "\(Date()): \(message)\n"
+        if let data = entry.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logPath) {
+                if let handle = FileHandle(forWritingAtPath: logPath) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            } else {
+                FileManager.default.createFile(atPath: logPath, contents: data)
+            }
+        }
+    }
+
+    func getDebugLog() -> String {
+        return debugLog.joined(separator: "\n")
+    }
     
     init(manager: SmartCardInterface) {
         self.manager = manager
@@ -172,7 +198,7 @@ class PassportController {
         if decryptedRndIc != rndIc {
              let expected = rndIc.map { String(format: "%02X", $0) }.joined()
              let got = decryptedRndIc.map { String(format: "%02X", $0) }.joined()
-             print("DEBUG: RND.IC mismatch! Expected: \(expected), Got: \(got)")
+             log("DEBUG: RND.IC mismatch! Expected: \(expected), Got: \(got)")
              throw SignerError.passport("Mutual Auth: RND.IC mismatch")
         }
         
@@ -180,7 +206,7 @@ class PassportController {
         if decryptedRndIf != rndIf {
              let expected = rndIf.map { String(format: "%02X", $0) }.joined()
              let got = decryptedRndIf.map { String(format: "%02X", $0) }.joined()
-             print("DEBUG: RND.IF mismatch! Expected: \(expected), Got: \(got)")
+             log("DEBUG: RND.IF mismatch! Expected: \(expected), Got: \(got)")
              throw SignerError.passport("Mutual Auth: RND.IF mismatch")
         }
 
@@ -208,9 +234,9 @@ class PassportController {
         let ssc = sscData.withUnsafeBytes { $0.load(as: UInt64.self).byteSwapped }
         
         self.sm = SecureMessaging(ksEnc: SymmetricKey(data: ksEncFull), ksMac: SymmetricKey(data: ksMacFull), ssc: ssc, proto: .bac)
-        print("DEBUG: KS.Enc: \(ksEncFull.map { String(format: "%02X", $0) }.joined())")
-        print("DEBUG: KS.Mac: \(ksMacFull.map { String(format: "%02X", $0) }.joined())")
-        print("DEBUG: SSC: \(String(format: "%016llX", ssc))")
+        log("DEBUG: KS.Enc: \(ksEncFull.map { String(format: "%02X", $0) }.joined())")
+        log("DEBUG: KS.Mac: \(ksMacFull.map { String(format: "%02X", $0) }.joined())")
+        log("DEBUG: SSC: \(String(format: "%016llX", ssc))")
         debugPrint("Secure Messaging Established.")
     }
     
@@ -252,7 +278,11 @@ class PassportController {
         let sod = try? await readSOD()
         
         var info = parseDG1(dg1)
-        info.facePhoto = dg2.base64EncodedString()
+        
+        if let photoData = parseDG2(dg2) {
+            info.facePhoto = photoData.base64EncodedString()
+        }
+        
         if let sodData = sod { info.sod = sodData.base64EncodedString() }
         if let dg14Data = dg14 { info.dg14 = dg14Data.base64EncodedString() }
         if let dg15Data = dg15 { info.dg15 = dg15Data.base64EncodedString() }
@@ -269,8 +299,22 @@ class PassportController {
             info.issuingAuthority = dg12Info.authority
             info.issueDate = dg12Info.issueDate
         }
-        
+
+        info.debugLog = getDebugLog()
         return info
+    }
+    
+    private func parseDG2(_ data: Data) -> Data? {
+        // Search for JPEG or JPEG 2000 signatures in DG2
+        let jpegSig = Data([0xFF, 0xD8, 0xFF])
+        if let range = data.range(of: jpegSig) {
+            return data.subdata(in: range.lowerBound..<data.count)
+        }
+        let jp2Sig = Data([0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20])
+        if let range = data.range(of: jp2Sig) {
+            return data.subdata(in: range.lowerBound..<data.count)
+        }
+        return nil
     }
     
     private func parseDG1(_ data: Data) -> PassportInfo {
@@ -356,28 +400,65 @@ class PassportController {
         let selApdu = Data([0x00, 0xA4, 0x02, 0x0C, 0x02, fileID[0], fileID[1]])
         let resSel = try await transmit(apdu: selApdu)
         try checkSW(resSel, context: "Select EF")
-        
-        // Read in chunks. Some readers/cards don't support extended length (64KB),
-        // so we use a standard short Le (0x00 = 256 bytes) and loop.
+
+        // Read in chunks. First read to get TLV header and determine total file size.
         var result = Data()
         var offset = 0
-        
+        var expectedFileSize: Int? = nil
+
         while true {
             let p1 = UInt8((offset >> 8) & 0xFF)
             let p2 = UInt8(offset & 0xFF)
-            // Short Le: 00 B0 P1 P2 00 (requests 256 bytes)
-            let readApdu = Data([0x00, 0xB0, p1, p2, 0x00])
-            let res = try await transmit(apdu: readApdu)
             
+            // Default to Short APDU for maximum compatibility, especially with SM
+            var readApdu = Data([0x00, 0xB0, p1, p2, 0x00])
+            
+            // Only try Extended Length for large files (like DG2) and if NOT using BAC SM
+            // BAC SM (3DES) often has issues with Extended Length on many cards
+            if expectedFileSize ?? 0 > 1000 && self.currentProtocol != "BAC" {
+                // Extended Length: 00 B0 P1 P2 00 00 00
+                readApdu = Data([0x00, 0xB0, p1, p2, 0x00, 0x00, 0x00])
+            }
+            
+            let res: Data
+            do {
+                res = try await transmit(apdu: readApdu)
+            } catch {
+                // Fallback to Short APDU
+                let shortApdu = Data([0x00, 0xB0, p1, p2, 0x00])
+                res = try await transmit(apdu: shortApdu)
+            }
+
             if res.count < 2 { break }
             let sw = (UInt16(res[res.count-2]) << 8) | UInt16(res[res.count-1])
             let chunk = res.prefix(res.count-2)
-            
+
             if sw == 0x9000 {
                 result.append(chunk)
                 offset += chunk.count
-                if chunk.count < 256 { break }
-            } else if sw == 0x6B00 { // Offset out of range (EOF)
+
+                // After first chunk, parse TLV header to get expected file size
+                if expectedFileSize == nil && result.count >= 4 {
+                    expectedFileSize = parseTLVFileSize(result)
+                    if let size = expectedFileSize {
+                        log("DEBUG: EF file size from TLV header: \(size) bytes")
+                    }
+                }
+
+                log("DEBUG: Read \(chunk.count) bytes at offset \(offset - chunk.count), total: \(result.count)")
+
+                if chunk.count == 0 { break }
+
+                // Check if we've read the entire file based on TLV header
+                if let size = expectedFileSize, result.count >= size {
+                    log("DEBUG: Reached expected file size \(size)")
+                    break
+                }
+            } else if sw == 0x6B00 || sw == 0x6A82 || sw == 0x6982 {
+                // 6B00: Offset out of range (EOF)
+                // 6A82: File not found
+                // 6982: Security status not satisfied - terminate but keep data
+                log("DEBUG: Read terminated with SW \(String(format: "%04X", sw)) at offset \(offset), total bytes: \(result.count)")
                 break
             } else if sw == 0x6C00 || (sw & 0xFF00) == 0x6100 {
                 // Wrong length, the card tells us the correct length in the last byte
@@ -387,12 +468,77 @@ class PassportController {
                 try checkSW(retryRes, context: "Read Binary (retry)")
                 let retryChunk = retryRes.prefix(retryRes.count-2)
                 result.append(retryChunk)
-                break
+                offset += retryChunk.count
+
+                // Parse TLV header if not yet done
+                if expectedFileSize == nil && result.count >= 4 {
+                    expectedFileSize = parseTLVFileSize(result)
+                }
+
+                // Check if we've read the entire file
+                if let size = expectedFileSize, result.count >= size {
+                    break
+                }
             } else {
+                log("DEBUG: Unexpected SW \(String(format: "%04X", sw)) at offset \(offset)")
                 try checkSW(res, context: "Read Binary at \(offset)")
             }
         }
         return result
+    }
+
+    /// Parses TLV header to calculate total file size (header + content)
+    private func parseTLVFileSize(_ data: Data) -> Int? {
+        guard data.count >= 2 else { return nil }
+        let bytes = [UInt8](data)
+        var offset = 0
+
+        // Parse tag
+        let firstByte = bytes[0]
+        offset += 1
+
+        // Check if multi-byte tag (bits 5-1 all set to 1)
+        if (firstByte & 0x1F) == 0x1F {
+            // Multi-byte tag, skip subsequent bytes (high bit set means more bytes follow)
+            while offset < bytes.count && (bytes[offset] & 0x80) != 0 {
+                offset += 1
+            }
+            if offset < bytes.count {
+                offset += 1 // Last byte of tag (high bit not set)
+            }
+        }
+
+        // Parse length
+        guard offset < bytes.count else { return nil }
+        let lenByte = bytes[offset]
+        offset += 1
+
+        var contentLength: Int
+        if lenByte <= 0x7F {
+            // Short form: length is the byte itself
+            contentLength = Int(lenByte)
+        } else if lenByte == 0x81 {
+            // Long form: 1 byte length
+            guard offset < bytes.count else { return nil }
+            contentLength = Int(bytes[offset])
+            offset += 1
+        } else if lenByte == 0x82 {
+            // Long form: 2 byte length
+            guard offset + 1 < bytes.count else { return nil }
+            contentLength = (Int(bytes[offset]) << 8) | Int(bytes[offset + 1])
+            offset += 2
+        } else if lenByte == 0x83 {
+            // Long form: 3 byte length
+            guard offset + 2 < bytes.count else { return nil }
+            contentLength = (Int(bytes[offset]) << 16) | (Int(bytes[offset + 1]) << 8) | Int(bytes[offset + 2])
+            offset += 3
+        } else {
+            // Unsupported length encoding
+            return nil
+        }
+
+        // Total file size = header size + content length
+        return offset + contentLength
     }
     
     private func transmit(apdu: Data) async throws -> Data {

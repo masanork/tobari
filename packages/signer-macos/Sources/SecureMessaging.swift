@@ -154,14 +154,14 @@ class SecureMessaging {
     /// Unwraps a Secure Messaging response
     func unwrap(response: Data) throws -> (data: Data, sw1: UInt8, sw2: UInt8) {
         guard response.count >= 2 else { throw SignerError.passport("SM response too short") }
-        
+
         let transportSw1 = response[response.count - 2]
         let transportSw2 = response[response.count - 1]
-        
+
         if transportSw1 != 0x90 || transportSw2 != 0x00 {
             return (Data(), transportSw1, transportSw2)
         }
-        
+
         incrementSSC()
         
         let raw = response.prefix(response.count - 2)

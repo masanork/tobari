@@ -33,6 +33,98 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
     var onCardStateChanged: ((Bool) -> Void)?
     var onCardTypeDetected: ((CardType) -> Void)?
 
+    // Semaphore to serialize all card operations
+    private let transmitSemaphore = DispatchSemaphore(value: 1)
+
+    // Flag to prevent card detection during operations
+    private var isOperationInProgress = false
+    private var operationCount = 0
+    private let operationLock = NSLock()
+    private var activeSessionCard: TKSmartCard? = nil
+
+    func beginOperation() {
+        operationLock.lock()
+        operationCount += 1
+        if operationCount == 1 {
+            isOperationInProgress = true
+            pollingTimer?.invalidate()
+            pollingTimer = nil
+        }
+        operationLock.unlock()
+    }
+
+    func endOperation() {
+        operationLock.lock()
+        operationCount -= 1
+        if operationCount <= 0 {
+            operationCount = 0
+            isOperationInProgress = false
+            activeSessionCard?.endSession()
+            activeSessionCard = nil
+        }
+        let shouldRestart = (operationCount == 0)
+        operationLock.unlock()
+
+        if shouldRestart {
+            // Restart polling timer
+            DispatchQueue.main.async { [weak self] in
+                self?.operationLock.lock()
+                guard self?.operationCount == 0 else {
+                    self?.operationLock.unlock()
+                    return
+                }
+                self?.pollingTimer?.invalidate()
+                self?.pollingTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+                    guard self?.isOperationActive() != true else { return }
+                    self?.checkCurrentState()
+                }
+                self?.operationLock.unlock()
+            }
+        }
+    }
+    
+    /// Pre-establish a session for faster consecutive operations
+    func establishSession() async throws {
+        operationLock.lock()
+        if activeSessionCard != nil {
+            operationLock.unlock()
+            return
+        }
+        operationLock.unlock()
+        
+        guard let manager = TKSmartCardSlotManager.default else {
+            throw NSError(domain: "SmartCardManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "SmartCardSlotManager not available"])
+        }
+
+        let slotNames = manager.slotNames
+        for slotName in slotNames {
+            let slot = await withCheckedContinuation { continuation in
+                manager.getSlot(withName: slotName) { slot in
+                    continuation.resume(returning: slot)
+                }
+            }
+
+            if let slot = slot, slot.state == .validCard, let card = slot.makeSmartCard() {
+                let success = await withCheckedContinuation { continuation in
+                    card.beginSession { success, _ in continuation.resume(returning: success) }
+                }
+                if success {
+                    operationLock.lock()
+                    activeSessionCard = card
+                    operationLock.unlock()
+                    return
+                }
+            }
+        }
+        throw NSError(domain: "SmartCardManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "No card found to establish session"])
+    }
+
+    private func isOperationActive() -> Bool {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        return isOperationInProgress
+    }
+
     enum CardType: String {
         case unknown
         case jpki
@@ -40,23 +132,30 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
         case driversLicense
     }
     
+    private var pollingTimer: Timer?
+
     init() {
         setupObserver()
     }
-    
+
     private func setupObserver() {
         // Fallback to a string-based notification which is common for CTK
         NotificationCenter.default.addObserver(forName: NSNotification.Name("TKSmartCardSlotManagerDidChangeSlots"), object: nil, queue: .main) { [weak self] _ in
+            guard self?.isOperationActive() != true else { return }
             self?.checkCurrentState()
         }
-        
+
         // Also check periodically as a fallback
-        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard self?.isOperationActive() != true else { return }
             self?.checkCurrentState()
         }
     }
-    
+
     func checkCurrentState() {
+        // Skip entirely if operation is in progress
+        guard !isOperationActive() else { return }
+
         guard let manager = TKSmartCardSlotManager.default else {
             onCardStateChanged?(false)
             onCardTypeDetected?(.unknown)
@@ -79,10 +178,18 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
                 DispatchQueue.main.async {
                     if let slot = slot, slot.state == .validCard {
                         foundCard = true
-                        
+
+                        // Skip card type detection if operation is in progress
+                        guard self?.isOperationActive() != true else { return }
+
                         // Try to detect card type asynchronously
                         Task {
+                            // double check
+                            guard self?.isOperationActive() != true else { return }
                             let type = await self?.detectCardType() ?? .unknown
+                            
+                            // Only report if still not in operation
+                            guard self?.isOperationActive() != true else { return }
                             DispatchQueue.main.async {
                                 self?.onCardTypeDetected?(type)
                             }
@@ -103,6 +210,9 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
     }
 
     private func detectCardType() async -> CardType {
+        // Skip if operation is in progress
+        guard !isOperationActive() else { return .unknown }
+
         // We try to select various AIDs to identify the card
         let aids: [(CardType, Data)] = [
             (.jpki, Data([0xD3, 0x92, 0xf0, 0x00, 0x26, 0x01, 0x00, 0x00, 0x00, 0x01])),
@@ -111,6 +221,8 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
         ]
 
         for (type, aid) in aids {
+            // Check again before each SELECT
+            guard !isOperationActive() else { return .unknown }
             do {
                 var apdu = Data([0x00, 0xA4, 0x04, 0x0C])
                 apdu.append(UInt8(aid.count))
@@ -128,10 +240,40 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
     
     // Send a raw APDU command to the first available card in any slot
     func transmit(apdu: Data) async throws -> Data {
+        // Check if this is a SELECT APDU for JPKI (used by card detection)
+        let jpkiSelectPrefix = Data([0x00, 0xA4, 0x04, 0x0C, 0x0A, 0xD3, 0x92, 0xF0, 0x00, 0x26])
+        let isDetectionApdu = apdu.count >= jpkiSelectPrefix.count && apdu.prefix(jpkiSelectPrefix.count) == jpkiSelectPrefix
+
+        // Block card detection APDUs during operations
+        if isOperationActive() && isDetectionApdu {
+            throw NSError(domain: "SmartCardManager", code: 100, userInfo: [NSLocalizedDescriptionKey: "Operation in progress"])
+        }
+
+        // Serialize all card operations
+        transmitSemaphore.wait()
+        defer { transmitSemaphore.signal() }
+
+        // RE-CHECK: Block card detection APDUs if an operation started while we were waiting
+        if isOperationActive() && isDetectionApdu {
+            throw NSError(domain: "SmartCardManager", code: 100, userInfo: [NSLocalizedDescriptionKey: "Operation in progress"])
+        }
+
         if Self.apduDebugEnabled {
             fputs("APDU> \(apdu.hexString)\n", stderr)
         }
         Self.appendApduLog("APDU> \(apdu.hexString)")
+        
+        // Use active session if available
+        operationLock.lock()
+        if let card = activeSessionCard {
+            operationLock.unlock()
+            let response = try await card.transmit(apdu)
+            if Self.apduDebugEnabled { fputs("APDU< \(response.hexString)\n", stderr) }
+            Self.appendApduLog("APDU< \(response.hexString)")
+            return response
+        }
+        operationLock.unlock()
+
         guard let manager = TKSmartCardSlotManager.default else {
             throw NSError(domain: "SmartCardManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "SmartCardSlotManager not available"])
         }
