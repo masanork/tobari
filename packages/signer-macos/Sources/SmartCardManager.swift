@@ -227,7 +227,7 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
                 var apdu = Data([0x00, 0xA4, 0x04, 0x0C])
                 apdu.append(UInt8(aid.count))
                 apdu.append(aid)
-                let res = try await transmit(apdu: apdu)
+                let res = try await transmit(apdu: apdu, isDetection: true)
                 if res.count >= 2 && res[res.count-2] == 0x90 && res[res.count-1] == 0x00 {
                     return type
                 }
@@ -240,12 +240,11 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
     
     // Send a raw APDU command to the first available card in any slot
     func transmit(apdu: Data) async throws -> Data {
-        // Check if this is a SELECT APDU for JPKI (used by card detection)
-        let jpkiSelectPrefix = Data([0x00, 0xA4, 0x04, 0x0C, 0x0A, 0xD3, 0x92, 0xF0, 0x00, 0x26])
-        let isDetectionApdu = apdu.count >= jpkiSelectPrefix.count && apdu.prefix(jpkiSelectPrefix.count) == jpkiSelectPrefix
+        return try await transmit(apdu: apdu, isDetection: false)
+    }
 
-        // Block card detection APDUs during operations
-        if isOperationActive() && isDetectionApdu {
+    private func transmit(apdu: Data, isDetection: Bool) async throws -> Data {
+        if isDetection && isOperationActive() {
             throw NSError(domain: "SmartCardManager", code: 100, userInfo: [NSLocalizedDescriptionKey: "Operation in progress"])
         }
 
@@ -253,8 +252,7 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
         transmitSemaphore.wait()
         defer { transmitSemaphore.signal() }
 
-        // RE-CHECK: Block card detection APDUs if an operation started while we were waiting
-        if isOperationActive() && isDetectionApdu {
+        if isDetection && isOperationActive() {
             throw NSError(domain: "SmartCardManager", code: 100, userInfo: [NSLocalizedDescriptionKey: "Operation in progress"])
         }
 
@@ -263,16 +261,25 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
         }
         Self.appendApduLog("APDU> \(apdu.hexString)")
         
-        // Use active session if available
-        operationLock.lock()
-        if let card = activeSessionCard {
+        if !isDetection {
+            // Use active session if available
+            operationLock.lock()
+            if let card = activeSessionCard {
+                operationLock.unlock()
+                let response = try await card.transmit(apdu)
+                if Self.apduDebugEnabled { fputs("APDU< \(response.hexString)\n", stderr) }
+                Self.appendApduLog("APDU< \(response.hexString)")
+                return response
+            }
             operationLock.unlock()
-            let response = try await card.transmit(apdu)
-            if Self.apduDebugEnabled { fputs("APDU< \(response.hexString)\n", stderr) }
-            Self.appendApduLog("APDU< \(response.hexString)")
-            return response
+        } else {
+            operationLock.lock()
+            let hasActiveSession = activeSessionCard != nil
+            operationLock.unlock()
+            if hasActiveSession {
+                throw NSError(domain: "SmartCardManager", code: 101, userInfo: [NSLocalizedDescriptionKey: "Card session busy"])
+            }
         }
-        operationLock.unlock()
 
         guard let manager = TKSmartCardSlotManager.default else {
             throw NSError(domain: "SmartCardManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "SmartCardSlotManager not available"])
@@ -346,7 +353,7 @@ class SmartCardManager: SmartCardInterface, @unchecked Sendable {
             apdu.append(jpkiAid)
             
             fputs("Debug: Sending SELECT JPKI AP...\n", stderr)
-            let response = try await transmit(apdu: apdu)
+            let response = try await transmit(apdu: apdu, isDetection: true)
             
             let sw1 = response[response.count - 2]
             let sw2 = response[response.count - 1]
