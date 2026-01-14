@@ -1,5 +1,6 @@
 import { parseMarkdown } from '../src/v1-parser/parser';
 import { file, write } from 'bun';
+import { gzipSync } from 'bun';
 
 // Helper to map v1 types to v2
 function mapType(v1Type: string): string {
@@ -9,7 +10,7 @@ function mapType(v1Type: string): string {
         case 'select': return 'select';
         case 'radio': return 'select';
         case 'search': return 'text'; // Search becomes text with autofill
-        case 'date': return 'text'; // v2 date not yet specialized, use text
+        case 'date': return 'date';
         case 'calc': return 'text'; // calc is read-only text usually
         case 'textarea': return 'textarea';
         case 'autonum': return 'integer';
@@ -19,10 +20,10 @@ function mapType(v1Type: string): string {
 }
 
 // Simple attribute parser (similar to v1 utils but focused on what we need)
-function extractAttributes(attrStr: string | undefined): { autofill?: string, masterSrc?: string, masterValueIndex?: number, masterLabelIndex?: number, formula?: string } {
+function extractAttributes(attrStr: string | undefined): { autofill?: string, masterSrc?: string, masterValueIndex?: number, masterLabelIndex?: number, formula?: string, size?: 'S' | 'M' | 'L', hint?: string } {
     if (!attrStr) return {};
 
-    const result: { autofill?: string, masterSrc?: string, masterValueIndex?: number, masterLabelIndex?: number, formula?: string } = {};
+    const result: { autofill?: string, masterSrc?: string, masterValueIndex?: number, masterLabelIndex?: number, formula?: string, size?: 'S' | 'M' | 'L', hint?: string } = {};
 
     // 1. Quoted attributes: autofill="value"
     const autofillMatch = attrStr.match(/autofill="([^"]+)"/);
@@ -62,6 +63,18 @@ function extractAttributes(attrStr: string | undefined): { autofill?: string, ma
         result.formula = formulaMatch[1];
     }
 
+    // 7. size:S or size:M or size:L
+    const sizeMatch = attrStr.match(/size:([SML])/);
+    if (sizeMatch && (sizeMatch[1] === 'S' || sizeMatch[1] === 'M' || sizeMatch[1] === 'L')) {
+        result.size = sizeMatch[1] as 'S' | 'M' | 'L';
+    }
+
+    // 8. hint="value"
+    const hintMatch = attrStr.match(/hint="([^"]+)"/);
+    if (hintMatch) {
+        result.hint = hintMatch[1];
+    }
+
     return result;
 }
 
@@ -87,6 +100,8 @@ function convertField(f: any): any {
     if (attrs.masterValueIndex) field.masterValueIndex = attrs.masterValueIndex;
     if (attrs.masterLabelIndex) field.masterLabelIndex = attrs.masterLabelIndex;
     if (attrs.formula) field.formula = attrs.formula;
+    if (attrs.size) field.size = attrs.size;
+    if (attrs.hint) field.hint = attrs.hint;
 
     if (field.type === 'select') {
         field.options = []; // Placeholder
@@ -161,9 +176,21 @@ async function convert(filePath: string, mode: 'json' | 'html') {
     } else {
         // Standalone HTML mode
         const engineScriptPath = new URL('../dist/index.js', import.meta.url);
-        let engineScript = "";
+        let engineScriptCompressed = "";
+        let originalSize = 0;
+        let compressedSize = 0;
         try {
-            engineScript = await file(engineScriptPath).text();
+            const scriptBuffer = await file(engineScriptPath).arrayBuffer();
+            originalSize = scriptBuffer.byteLength;
+
+            // Compress with gzip
+            const compressed = gzipSync(new Uint8Array(scriptBuffer));
+            compressedSize = compressed.byteLength;
+
+            // Encode to base64
+            engineScriptCompressed = btoa(String.fromCharCode(...compressed));
+
+            console.error(`Compressed: ${originalSize} -> ${compressedSize} bytes (${(compressedSize/originalSize*100).toFixed(1)}%)`);
         } catch (e) {
             console.error("Could not load form-engine script. Please run 'bun run build' in packages/form-engine first.");
             process.exit(1);
@@ -178,12 +205,12 @@ async function convert(filePath: string, mode: 'json' | 'html') {
     <style>
         body {
             background: #f0f2f5;
-            padding: 2rem;
+            padding: 1rem;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
         }
         .container {
-            max-width: 900px;
-            margin: 0 auto;
+            width: 100%;
         }
     </style>
 </head>
@@ -193,22 +220,59 @@ async function convert(filePath: string, mode: 'json' | 'html') {
     </div>
 
     <script type="module">
-        // Embedded Form Engine
-        ${engineScript}
+        // Decompress and execute form engine
+        (async () => {
+            const compressedData = '${engineScriptCompressed}';
+            const binaryString = atob(compressedData);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const decompressedStream = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip'));
+            const decompressed = await new Response(decompressedStream).arrayBuffer();
+            const code = new TextDecoder().decode(decompressed);
+            const blob = new Blob([code], { type: 'text/javascript' });
+            const url = URL.createObjectURL(blob);
+            await import(url);
+            URL.revokeObjectURL(url);
+        })();
     </script>
 
     <script>
         const schema = ${JSON.stringify(v2Schema, null, 2)};
 
-        customElements.whenDefined('tobari-form').then(() => {
-            const form = document.getElementById('myForm');
-            form.setSchema(schema);
-            
-            form.addEventListener('tobari-submit', (e) => {
-                console.log("Form Submitted:", e.detail.data);
-                alert("送信完了！コンソールにデータを出力しました。");
+        // Wait for form engine to be decompressed and loaded
+        const initForm = () => {
+            customElements.whenDefined('tobari-form').then(() => {
+                const form = document.getElementById('myForm');
+
+                // Check for embedded form data
+                const embeddedDataElement = document.getElementById('embedded-form-data');
+                let initialData = null;
+                if (embeddedDataElement) {
+                    try {
+                        initialData = JSON.parse(embeddedDataElement.textContent);
+                        console.log('Found embedded form data');
+                    } catch (e) {
+                        console.error('Failed to parse embedded data:', e);
+                    }
+                }
+
+                form.setSchema(schema, initialData);
+
+                form.addEventListener('tobari-submit', (e) => {
+                    console.log("Form Submitted:", e.detail.data);
+                    alert("送信完了！コンソールにデータを出力しました。");
+                });
+            }).catch((err) => {
+                console.error('Failed to load form:', err);
+                // Retry after a short delay
+                setTimeout(initForm, 100);
             });
-        });
+        };
+
+        // Start initialization after a short delay to allow decompression
+        setTimeout(initForm, 50);
     </script>
 </body>
 </html>`;

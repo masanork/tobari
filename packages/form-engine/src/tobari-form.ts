@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { z } from 'zod';
 import {
     FormDefinitionSchema,
@@ -8,6 +9,7 @@ import {
     type TextField,
     type TextareaField,
     type IntegerField,
+    type DateField,
     type SelectField,
     type GroupField,
     type ArrayField,
@@ -20,23 +22,47 @@ export class TobariForm extends LitElement {
     :host {
       display: block;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      max-width: 800px;
-      margin: 0 auto;
       padding: 1rem;
       background: #fff;
       color: #333;
     }
     h1 { margin-bottom: 0.5rem; }
     .meta-info { color: #666; font-size: 0.9rem; margin-bottom: 2rem; }
-    
+
+    /* 2-column grid layout for form fields */
+    .form-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem 2rem;
+    }
+
     .field-group {
-      margin-bottom: 1.5rem;
+      margin-bottom: 1rem;
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 0.5rem;
+      align-items: center;
     }
-    label {
+    .field-group label {
       display: block;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0;
       font-weight: 500;
+      text-align: right;
+      padding-right: 0.5rem;
+      white-space: nowrap;
     }
+
+    /* Full-width fields (textarea, array, static_table, group) */
+    .field-group.full-width {
+      grid-column: 1 / -1;
+      grid-template-columns: 1fr;
+    }
+    .field-group.full-width label {
+      text-align: left;
+      padding-right: 0;
+      margin-bottom: 0.5rem;
+    }
+
     input, select {
       width: 100%;
       padding: 0.75rem;
@@ -44,6 +70,16 @@ export class TobariForm extends LitElement {
       border-radius: 4px;
       font-size: 1rem;
       box-sizing: border-box;
+    }
+
+    /* Hide number input spinners */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"] {
+      -moz-appearance: textfield;
     }
     input:focus, select:focus {
       border-color: #007bff;
@@ -54,6 +90,23 @@ export class TobariForm extends LitElement {
       color: #d32f2f;
       font-size: 0.875rem;
       margin-top: 0.25rem;
+    }
+    .hint-text {
+      color: #666;
+      font-size: 0.875rem;
+      margin-top: 0.25rem;
+      font-style: italic;
+    }
+
+    /* Size classes for inputs */
+    .field-size-S input, .field-size-S select {
+      max-width: 150px;
+    }
+    .field-size-M input, .field-size-M select {
+      max-width: 300px;
+    }
+    .field-size-L input, .field-size-L select {
+      max-width: 600px;
     }
     .group-container {
       border: 1px solid #eee;
@@ -68,15 +121,43 @@ export class TobariForm extends LitElement {
       padding-bottom: 0.5rem;
     }
     
-    button.submit-btn {
-      background: #007bff;
-      color: white;
-      border: none;
-      padding: 1rem 2rem;
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    .form-actions button {
+      padding: 0.75rem 1.5rem;
       border-radius: 4px;
       font-size: 1rem;
       cursor: pointer;
-      width: 100%;
+      border: none;
+      font-weight: 500;
+    }
+    button.clear-btn {
+      background: #6c757d;
+      color: white;
+    }
+    button.clear-btn:hover { background: #5a6268; }
+    button.withdraw-btn {
+      background: #6c757d;
+      color: white;
+    }
+    button.withdraw-btn:hover { background: #5a6268; }
+    button.reject-btn {
+      background: #fd7e14;
+      color: white;
+    }
+    button.reject-btn:hover { background: #e8590c; }
+    button.save-btn {
+      background: #28a745;
+      color: white;
+    }
+    button.save-btn:hover { background: #218838; }
+    button.submit-btn {
+      background: #007bff;
+      color: white;
     }
     button.submit-btn:hover { background: #0056b3; }
 
@@ -135,6 +216,11 @@ export class TobariForm extends LitElement {
         color: #333;
         white-space: nowrap;
     }
+    /* First column in table body should not wrap (labels) */
+    table.array-table tbody td:first-child {
+        white-space: nowrap;
+        padding: 10px;
+    }
     table.array-table tr:nth-child(even) {
         background-color: #fafafa;
     }
@@ -154,6 +240,14 @@ export class TobariForm extends LitElement {
         height: 100%;
         box-shadow: none;
     }
+    /* Number inputs should be narrower */
+    table.array-table input[type="number"]:not([readonly]) {
+        max-width: 120px;
+    }
+    /* Read-only number inputs (autonum, calculated) - compact width */
+    table.array-table input[type="number"][readonly] {
+        width: 80px;
+    }
     table.array-table input:focus,
     table.array-table select:focus,
     table.array-table textarea:focus {
@@ -171,8 +265,12 @@ export class TobariForm extends LitElement {
     }
     
     table.array-table .field-group {
-        margin-bottom: 0;
+        margin: 0;
+        padding: 0;
         height: 100%;
+        display: block;
+        grid-template-columns: none;
+        gap: 0;
     }
     table.array-table .field-group label {
         display: none !important;
@@ -209,6 +307,108 @@ export class TobariForm extends LitElement {
     .suggestion-item:hover {
         background: #f0f8ff;
     }
+
+    .action-history {
+      margin-top: 2rem;
+      border-top: 2px solid #ddd;
+      padding-top: 1rem;
+    }
+    .action-history h3 {
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+    }
+    .history-item {
+      padding: 0.75rem;
+      margin-bottom: 0.5rem;
+      border-left: 4px solid #007bff;
+      background: #f8f9fa;
+      border-radius: 4px;
+    }
+    .history-item.withdrawn {
+      border-left-color: #6c757d;
+    }
+    .history-item.rejected {
+      border-left-color: #fd7e14;
+    }
+    .history-timestamp {
+      font-size: 0.875rem;
+      color: #666;
+      margin-bottom: 0.25rem;
+    }
+    .history-action {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .history-user {
+      color: #333;
+      margin-bottom: 0.25rem;
+    }
+    .history-reason {
+      color: #555;
+      font-style: italic;
+    }
+
+    .dialog-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+    .dialog-box {
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      max-width: 500px;
+      width: 90%;
+    }
+    .dialog-box h3 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+    .dialog-box .field-group {
+      margin-bottom: 1rem;
+      display: block;
+    }
+    .dialog-box label {
+      display: block;
+      margin-bottom: 0.5rem;
+      text-align: left;
+    }
+    .dialog-box input,
+    .dialog-box textarea {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+    .dialog-actions button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .dialog-cancel {
+      background: #6c757d;
+      color: white;
+    }
+    .dialog-confirm {
+      background: #007bff;
+      color: white;
+    }
   `;
 
     @property({ type: Object })
@@ -223,10 +423,43 @@ export class TobariForm extends LitElement {
     @state()
     private suggestions: { path: string, items: any[] } | null = null;
 
+    @state()
+    private isSubmitted: boolean = false;
+
+    @state()
+    private actionHistory: Array<{
+        timestamp: string;
+        action: 'submitted' | 'withdrawn' | 'rejected';
+        user: string;
+        reason?: string;
+    }> = [];
+
+    @state()
+    private showActionDialog: boolean = false;
+
+    @state()
+    private pendingAction: 'withdrawn' | 'rejected' | null = null;
+
     // Load definition from JSON object
-    setSchema(schema: unknown) {
+    setSchema(schema: unknown, initialData?: any) {
         try {
             this.definition = FormDefinitionSchema.parse(schema);
+            // Load initial data if provided (from embedded data in HTML)
+            if (initialData) {
+                if (initialData.formData) {
+                    // New format with history
+                    this.formData = initialData.formData;
+                    this.isSubmitted = initialData.isSubmitted || false;
+                    this.actionHistory = initialData.actionHistory || [];
+                } else {
+                    // Old format (just formData)
+                    this.formData = initialData;
+                }
+                console.log('Loaded initial data from HTML');
+            } else {
+                // Try to restore from localStorage
+                this.loadFromLocalStorage();
+            }
             // Initialize calculated fields
             this.updateCalculatedFields();
             this.requestUpdate();
@@ -234,6 +467,174 @@ export class TobariForm extends LitElement {
             console.error("Invalid Schema:", e);
             this.errors['global'] = "Invalid Form Schema";
         }
+    }
+
+    private getStorageKey(): string {
+        return `tobari-form-${this.definition?.meta.title || 'default'}`;
+    }
+
+    private loadFromLocalStorage() {
+        if (!this.definition) return;
+        try {
+            const key = this.getStorageKey();
+            const saved = localStorage.getItem(key);
+            if (saved) {
+                const data = JSON.parse(saved);
+                this.formData = data.formData || data; // Support old format
+                this.isSubmitted = data.isSubmitted || false;
+                this.actionHistory = data.actionHistory || [];
+                console.log('Restored form data from localStorage');
+            }
+        } catch (e) {
+            console.error('Failed to load from localStorage:', e);
+        }
+    }
+
+    private saveToLocalStorage() {
+        if (!this.definition) return;
+        try {
+            const key = this.getStorageKey();
+            const data = {
+                formData: this.formData,
+                isSubmitted: this.isSubmitted,
+                actionHistory: this.actionHistory
+            };
+            localStorage.setItem(key, JSON.stringify(data));
+        } catch (e) {
+            console.error('Failed to save to localStorage:', e);
+        }
+    }
+
+    private clearForm() {
+        if (confirm('入力内容と履歴をすべてクリアしてよろしいですか？')) {
+            this.formData = {};
+            this.errors = {};
+            this.isSubmitted = false;
+            this.actionHistory = [];
+            if (this.definition) {
+                const key = this.getStorageKey();
+                localStorage.removeItem(key);
+            }
+            this.requestUpdate();
+        }
+    }
+
+    private confirmSubmit() {
+        const user = prompt('担当者名を入力してください:');
+        if (!user) return;
+
+        if (confirm('確定します。よろしいですか？\n確定後は編集できなくなります。')) {
+            this.isSubmitted = true;
+            this.actionHistory.push({
+                timestamp: new Date().toISOString(),
+                action: 'submitted',
+                user: user
+            });
+            this.saveToLocalStorage();
+            this.requestUpdate();
+        }
+    }
+
+    private withdrawSubmission() {
+        this.pendingAction = 'withdrawn';
+        this.showActionDialog = true;
+        this.requestUpdate();
+    }
+
+    private rejectSubmission() {
+        this.pendingAction = 'rejected';
+        this.showActionDialog = true;
+        this.requestUpdate();
+    }
+
+    private handleActionSubmit(e: Event) {
+        e.preventDefault();
+        const form = e.target as HTMLFormElement;
+        const formData = new FormData(form);
+        const user = formData.get('user') as string;
+        const reason = formData.get('reason') as string;
+
+        if (!user || !reason) {
+            alert('担当者名と理由を入力してください');
+            return;
+        }
+
+        this.isSubmitted = false;
+        this.actionHistory.push({
+            timestamp: new Date().toISOString(),
+            action: this.pendingAction!,
+            user: user,
+            reason: reason
+        });
+
+        this.showActionDialog = false;
+        this.pendingAction = null;
+        this.saveToLocalStorage();
+        this.requestUpdate();
+    }
+
+    private cancelActionDialog() {
+        this.showActionDialog = false;
+        this.pendingAction = null;
+        this.requestUpdate();
+    }
+
+    private downloadFormHTML() {
+        // Clone current document and embed formData with history
+        const htmlDoc = document.documentElement.outerHTML;
+
+        const embeddedData = {
+            formData: this.formData,
+            isSubmitted: this.isSubmitted,
+            actionHistory: this.actionHistory
+        };
+
+        // Build script tags using array join to avoid template literal issues
+        const parts = [
+            '\n    <script id="embedded-form-data" type="application/json">\n',
+            JSON.stringify(embeddedData, null, 2),
+            '\n    <',
+            '/script>\n',
+            '    <',
+            'script>\n',
+            '        window.addEventListener(\'DOMContentLoaded\', () => {\n',
+            '            const embeddedDataElement = document.getElementById(\'embedded-form-data\');\n',
+            '            if (embeddedDataElement) {\n',
+            '                const data = JSON.parse(embeddedDataElement.textContent);\n',
+            '                customElements.whenDefined(\'tobari-form\').then(() => {\n',
+            '                    const form = document.querySelector(\'tobari-form\');\n',
+            '                    if (form) {\n',
+            '                        if (data.formData) {\n',
+            '                            Object.assign(form.formData, data.formData);\n',
+            '                        }\n',
+            '                        if (data.isSubmitted !== undefined) {\n',
+            '                            form.isSubmitted = data.isSubmitted;\n',
+            '                        }\n',
+            '                        if (data.actionHistory) {\n',
+            '                            form.actionHistory = data.actionHistory;\n',
+            '                        }\n',
+            '                        form.requestUpdate();\n',
+            '                    }\n',
+            '                });\n',
+            '            }\n',
+            '        });\n',
+            '    <',
+            '/script>\n',
+            '</body>'
+        ];
+        const formDataScript = parts.join('');
+
+        const modifiedHTML = htmlDoc.replace('</body>', formDataScript);
+
+        const blob = new Blob([modifiedHTML], { type: 'text/html; charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const filename = [this.definition?.meta.title || 'form', '-作業中-', timestamp, '.html'].join('');
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
     }
 
     private normalize(val: string): string {
@@ -338,6 +739,8 @@ export class TobariForm extends LitElement {
             delete newErrors[pathKey];
             this.errors = newErrors;
         }
+        // Save to localStorage
+        this.saveToLocalStorage();
         this.requestUpdate();
     }
 
@@ -360,6 +763,8 @@ export class TobariForm extends LitElement {
 
         // Update calculated fields after adding new item
         this.updateCalculatedFields();
+        // Save to localStorage
+        this.saveToLocalStorage();
 
         this.requestUpdate();
     }
@@ -372,6 +777,8 @@ export class TobariForm extends LitElement {
             this.updateDataAtPath(this.formData, path, newArray);
             // Update calculated fields after removing item
             this.updateCalculatedFields();
+            // Save to localStorage
+            this.saveToLocalStorage();
             this.requestUpdate();
         }
     }
@@ -562,6 +969,68 @@ export class TobariForm extends LitElement {
         return z.object(shape);
     }
 
+    private async performSignAndDownload() {
+        if (!this.definition) return;
+        
+        try {
+            // 1. Validate
+            const schema = this.buildDataSchema(this.definition);
+            const validData = schema.parse(this.formData);
+
+            // 2. Generate temporary key for signing (Demo purposes)
+            // In real world, this would use a key from a wallet or secure storage
+            const keyPair = await window.crypto.subtle.generateKey(
+                { name: "ECDSA", namedCurve: "P-256" },
+                true,
+                ["sign", "verify"]
+            );
+
+            // 3. Serialize Data (Simple JSON for now, can be CBOR)
+            const payload = JSON.stringify({
+                data: validData,
+                meta: this.definition.meta,
+                timestamp: new Date().toISOString()
+            });
+            const encoder = new TextEncoder();
+            const payloadBytes = encoder.encode(payload);
+
+            // 4. Sign
+            const signature = await window.crypto.subtle.sign(
+                { name: "ECDSA", hash: { name: "SHA-256" } },
+                keyPair.privateKey,
+                payloadBytes
+            );
+
+            // 5. Package as a "Tobari Submission" file
+            const submission = {
+                payload: validData,
+                signature: btoa(String.fromCharCode(...new Uint8Array(signature))),
+                publicKey: await window.crypto.subtle.exportKey("jwk", keyPair.publicKey)
+            };
+
+            const blob = new Blob([JSON.stringify(submission, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${this.definition.meta.title}-submission.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            alert("署名が完了し、申請ファイルがダウンロードされました。");
+        } catch (e) {
+            console.error("Signing failed:", e);
+            alert("署名に失敗しました。バリデーションエラーがないか確認してください。");
+        }
+    }
+
+    private buildDataSchema(definition: FormDefinition): z.ZodType<any> {
+        const shape: Record<string, z.ZodType<any>> = {};
+        for (const field of definition.fields) {
+            shape[field.key] = this.buildFieldSchema(field);
+        }
+        return z.object(shape);
+    }
+
     private buildFieldSchema(field: FormElement): z.ZodType<any> {
         let s: z.ZodType<any>;
         
@@ -662,6 +1131,13 @@ export class TobariForm extends LitElement {
         return error ? html`<div class="error-msg">${error}</div>` : nothing;
     }
 
+    private renderHint(field: any, options?: { noLabel?: boolean }) {
+        // Don't show hints in table cells (when noLabel is true)
+        if (options?.noLabel) return nothing;
+        const hint = field.hint;
+        return hint ? html`<div class="hint-text">${unsafeHTML(hint)}</div>` : nothing;
+    }
+
     private renderTextField(field: TextField, path: string[], options: { noLabel?: boolean, rowIndex?: number } = {}) {
         // If field has a formula, get the calculated value from formData
         // (calculated values are updated by updateCalculatedFields)
@@ -669,11 +1145,12 @@ export class TobariForm extends LitElement {
         const pathStr = path.join('.');
         const hasSuggestions = this.suggestions && this.suggestions.path === pathStr && this.suggestions.items.length > 0;
 
+        const sizeClass = (field as any).size ? `field-size-${(field as any).size}` : '';
         return html`
-      <div class="field-group" style="position:relative;">
+      <div class="field-group ${sizeClass}" style="position:relative;">
         ${options.noLabel ? nothing : html`
         <label>
-          ${field.label || field.key} 
+          ${field.label || field.key}
           ${field.required ? '*' : ''}
         </label>`}
         <input
@@ -682,7 +1159,7 @@ export class TobariForm extends LitElement {
           @input=${(e: Event) => field.masterSrc ? this.handleSearchInput(e, path, field.masterSrc) : this.handleInput(e, path)}
           placeholder=${field.placeholder || ''}
           ?required=${field.required}
-          ?readonly=${field.readonly || !!(field as any).formula}
+          ?readonly=${field.readonly || !!(field as any).formula || this.isSubmitted}
           minlength=${field.minLength || nothing}
           maxlength=${field.maxLength || nothing}
           pattern=${field.pattern || nothing}
@@ -703,6 +1180,7 @@ export class TobariForm extends LitElement {
             </div>
         ` : nothing}
         ${this.renderError(path)}
+        ${this.renderHint(field, options)}
       </div>
     `;
     }
@@ -710,22 +1188,23 @@ export class TobariForm extends LitElement {
     private renderTextareaField(field: TextareaField, path: string[], options: { noLabel?: boolean, rowIndex?: number } = {}) {
         const val = this.getValue(path) || '';
         return html`
-      <div class="field-group">
+      <div class="field-group full-width">
         ${options.noLabel ? nothing : html`
         <label>
-          ${field.label || field.key} 
+          ${field.label || field.key}
           ${field.required ? '*' : ''}
         </label>`}
-        <textarea 
+        <textarea
           .value=${val}
           @input=${(e: Event) => this.handleInput(e, path)}
           placeholder=${field.placeholder || ''}
           ?required=${field.required}
-          ?readonly=${field.readonly}
+          ?readonly=${field.readonly || this.isSubmitted}
           rows=${field.rows || 3}
           style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; box-sizing: border-box;"
         ></textarea>
         ${this.renderError(path)}
+        ${this.renderHint(field, options)}
       </div>
     `;
     }
@@ -740,11 +1219,12 @@ export class TobariForm extends LitElement {
             ? options.rowIndex + 1
             : this.getValue(path) ?? '';
 
-        const isReadonly = field.readonly || isAutonum || hasFormula;
+        const isReadonly = field.readonly || isAutonum || hasFormula || this.isSubmitted;
         console.log(`renderIntegerField: ${field.key}, path: ${path.join('/')}, val: ${val}, readonly: ${isReadonly}, formula: ${hasFormula}, autonum: ${isAutonum}`);
 
+        const sizeClass = (field as any).size ? `field-size-${(field as any).size}` : '';
         return html`
-      <div class="field-group">
+      <div class="field-group ${sizeClass}">
         ${options.noLabel ? nothing : html`
         <label>
           ${field.label || field.key}
@@ -763,6 +1243,32 @@ export class TobariForm extends LitElement {
           data-field-key=${field.key}
         >
         ${this.renderError(path)}
+        ${this.renderHint(field, options)}
+      </div>
+    `;
+    }
+
+    private renderDateField(field: DateField, path: string[], options: { noLabel?: boolean, rowIndex?: number } = {}) {
+        const val = this.getValue(path) || '';
+        const sizeClass = (field as any).size ? `field-size-${(field as any).size}` : '';
+        return html`
+      <div class="field-group ${sizeClass}">
+        ${options.noLabel ? nothing : html`
+        <label>
+          ${field.label || field.key}
+          ${field.required ? '*' : ''}
+        </label>`}
+        <input
+          type="date"
+          .value=${val}
+          @input=${(e: Event) => this.handleInput(e, path)}
+          min=${field.min || nothing}
+          max=${field.max || nothing}
+          ?required=${field.required}
+          ?readonly=${field.readonly || this.isSubmitted}
+        >
+        ${this.renderError(path)}
+        ${this.renderHint(field, options)}
       </div>
     `;
     }
@@ -772,7 +1278,7 @@ export class TobariForm extends LitElement {
         return html`
       <div class="field-group">
         ${options.noLabel ? nothing : html`<label>${field.label || field.key}</label>`}
-        <select @change=${(e: Event) => this.handleInput(e, path)} .value=${val}>
+        <select @change=${(e: Event) => this.handleInput(e, path)} .value=${val} ?disabled=${this.isSubmitted}>
           <option value="" disabled ?selected=${!val}>Select...</option>
           ${field.options.map(([optVal, optLabel]) => html`
             <option value=${optVal} ?selected=${val === optVal}>${optLabel}</option>
@@ -785,7 +1291,7 @@ export class TobariForm extends LitElement {
 
     private renderGroupField(field: GroupField, path: string[], options: { noLabel?: boolean, rowIndex?: number } = {}) {
         return html`
-      <div class="field-group">
+      <div class="field-group full-width">
         <div class="group-container">
           ${options.noLabel ? nothing : html`<span class="group-label">${field.label || field.key}</span>`}
           ${field.fields.map(child => this.renderField(child, [...path, child.key], { rowIndex: options.rowIndex }))}
@@ -802,7 +1308,7 @@ export class TobariForm extends LitElement {
         const columns = isGroup ? (field.itemSchema as GroupField).fields : [field.itemSchema];
 
         return html`
-        <div class="field-group">
+        <div class="field-group full-width">
             <label>${field.label || field.key}</label>
             <div class="array-container" style="padding:0; border:none; background:transparent;">
                 <table class="array-table">
@@ -821,7 +1327,7 @@ export class TobariForm extends LitElement {
                                     </td>
                                 `)}
                                 <td class="table-actions">
-                                    <button type="button" class="remove-btn" style="margin-top:0;" @click=${() => this.handleRemoveItem(path, index)}>
+                                    <button type="button" class="remove-btn" style="margin-top:0;" @click=${() => this.handleRemoveItem(path, index)} ?disabled=${this.isSubmitted}>
                                         ×
                                     </button>
                                 </td>
@@ -830,7 +1336,7 @@ export class TobariForm extends LitElement {
                     </tbody>
                 </table>
                 <div class="array-actions">
-                    <button type="button" class="add-btn" @click=${() => this.handleAddItem(path, field.itemSchema)}>
+                    <button type="button" class="add-btn" @click=${() => this.handleAddItem(path, field.itemSchema)} ?disabled=${this.isSubmitted}>
                         + Add Item
                     </button>
                 </div>
@@ -842,7 +1348,7 @@ export class TobariForm extends LitElement {
 
     private renderStaticTableField(field: StaticTableField, path: string[]) {
         return html`
-        <div class="field-group">
+        <div class="field-group full-width">
             <label>${field.label || field.key}</label>
             <div class="array-container" style="padding:0; border:none; background:transparent;">
                 <table class="array-table">
@@ -870,12 +1376,68 @@ export class TobariForm extends LitElement {
         `;
     }
 
+    private renderActionDialog() {
+        if (!this.showActionDialog || !this.pendingAction) return nothing;
+
+        const actionLabel = this.pendingAction === 'withdrawn' ? '取下' : '差戻';
+
+        return html`
+            <div class="dialog-overlay">
+                <div class="dialog-box">
+                    <h3>${actionLabel}</h3>
+                    <form @submit=${this.handleActionSubmit}>
+                        <div class="field-group">
+                            <label>担当者名 *</label>
+                            <input type="text" name="user" required />
+                        </div>
+                        <div class="field-group">
+                            <label>理由 *</label>
+                            <textarea name="reason" rows="4" required></textarea>
+                        </div>
+                        <div class="dialog-actions">
+                            <button type="button" class="dialog-cancel" @click=${() => this.cancelActionDialog()}>キャンセル</button>
+                            <button type="submit" class="dialog-confirm">${actionLabel}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+    }
+
+    private renderActionHistory() {
+        if (this.actionHistory.length === 0) return nothing;
+
+        const getActionLabel = (action: string) => {
+            switch (action) {
+                case 'submitted': return '確定';
+                case 'withdrawn': return '取下';
+                case 'rejected': return '差戻';
+                default: return action;
+            }
+        };
+
+        return html`
+            <div class="action-history">
+                <h3>操作履歴</h3>
+                ${this.actionHistory.map(item => html`
+                    <div class="history-item ${item.action}">
+                        <div class="history-timestamp">${new Date(item.timestamp).toLocaleString('ja-JP')}</div>
+                        <div class="history-action">${getActionLabel(item.action)}</div>
+                        <div class="history-user">担当者: ${item.user}</div>
+                        ${item.reason ? html`<div class="history-reason">理由: ${item.reason}</div>` : nothing}
+                    </div>
+                `)}
+            </div>
+        `;
+    }
+
     private renderField(field: FormElement, path: string[], options: { noLabel?: boolean, rowIndex?: number } = {}): any {
         // console.log(`renderField ${field.key} noLabel=${options.noLabel}`);
         switch (field.type) {
             case 'text': return this.renderTextField(field, path, options);
             case 'textarea': return this.renderTextareaField(field, path, options);
             case 'integer': return this.renderIntegerField(field, path, options);
+            case 'date': return this.renderDateField(field, path, options);
             case 'select': return this.renderSelectField(field, path, options);
             case 'group': return this.renderGroupField(field, path, options);
             case 'array': return this.renderArrayField(field, path); // array doesn't use noLabel usually
@@ -895,19 +1457,37 @@ export class TobariForm extends LitElement {
         <header>
           <h1>${this.definition.meta.title}</h1>
           <div class="meta-info">
-            Version: ${this.definition.meta.version} | 
+            Version: ${this.definition.meta.version} |
             Security: ${this.definition.meta.security}
           </div>
         </header>
 
-        <form @submit=${(e: Event) => { e.preventDefault(); this.submit(); }}>
-          ${this.definition.fields.map(field => this.renderField(field, [field.key]))}
-          
-          <button type="submit" class="submit-btn">Submit</button>
+        <form @submit=${(e: Event) => { e.preventDefault(); this.confirmSubmit(); }}>
+          <div class="form-fields">
+            ${this.definition.fields.map(field => this.renderField(field, [field.key]))}
+          </div>
+
+          ${this.isSubmitted ? html`
+            <div class="form-actions">
+              <button type="button" class="withdraw-btn" @click=${() => this.withdrawSubmission()}>取下</button>
+              <button type="button" class="reject-btn" @click=${() => this.rejectSubmission()}>差戻</button>
+            </div>
+          ` : html`
+            <div class="form-actions">
+              <button type="button" class="clear-btn" @click=${() => this.clearForm()}>クリア</button>
+              <button type="button" class="save-btn" @click=${() => this.downloadFormHTML()}>作業を保存</button>
+              <button type="button" class="submit-btn" style="background:#28a745" @click=${() => this.performSignAndDownload()}>署名して提出</button>
+              <button type="submit" class="submit-btn">確定(審査用)</button>
+            </div>
+          `}
         </form>
+
+        ${this.renderActionHistory()}
 
         ${this.errors['global'] ? html`<div class="error-msg">${this.errors['global']}</div>` : ''}
       </div>
+
+      ${this.renderActionDialog()}
     `;
     }
 }

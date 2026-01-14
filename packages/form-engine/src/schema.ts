@@ -1,11 +1,11 @@
 import { z } from 'zod';
 
 // Core Field Types
-export const FieldTypeSchema = z.enum(['text', 'integer', 'group', 'select', 'array', 'textarea', 'static_table']);
+export const FieldTypeSchema = z.enum(['text', 'integer', 'date', 'group', 'select', 'array', 'textarea', 'static_table']);
 
 // Base attributes common to all fields
 const BaseFieldSchema = z.object({
-    key: z.string().regex(/^[a-z0-9_]+$/, "Key must be snake_case"),
+    key: z.string().regex(/^[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAFa-z0-9_]+$/, "Key must be valid identifier (alphanumeric, underscore, or Japanese)"),
     label: z.string().optional(),
     required: z.boolean().default(false),
     description: z.string().optional(),
@@ -16,6 +16,8 @@ const BaseFieldSchema = z.object({
     masterValueIndex: z.number().optional(), // 1-based index of value column
     masterLabelIndex: z.number().optional(), // 1-based index of label column
     formula: z.string().optional(), // formula expression for calculated fields
+    size: z.enum(['S', 'M', 'L']).optional(), // field size hint
+    hint: z.string().optional(), // hint text displayed below the input
 });
 
 // --- Specific Field Definitions ---
@@ -40,6 +42,12 @@ export const IntegerFieldSchema = BaseFieldSchema.extend({
     max: z.number().optional(),
     step: z.number().default(1),
     autonum: z.boolean().optional(),
+});
+
+export const DateFieldSchema = BaseFieldSchema.extend({
+    type: z.literal('date'),
+    min: z.string().optional(), // ISO date string
+    max: z.string().optional(), // ISO date string
 });
 
 export const SelectFieldSchema = BaseFieldSchema.extend({
@@ -75,6 +83,7 @@ export const FormElementSchema = z.discriminatedUnion('type', [
     TextFieldSchema,
     TextareaFieldSchema,
     IntegerFieldSchema,
+    DateFieldSchema,
     SelectFieldSchema,
     GroupFieldSchema,
     ArrayFieldSchema,
@@ -98,6 +107,7 @@ export type FormElement = z.infer<typeof FormElementSchema>;
 export type TextField = z.infer<typeof TextFieldSchema>;
 export type TextareaField = z.infer<typeof TextareaFieldSchema>;
 export type IntegerField = z.infer<typeof IntegerFieldSchema>;
+export type DateField = z.infer<typeof DateFieldSchema>;
 export type SelectField = z.infer<typeof SelectFieldSchema>;
 export type GroupField = z.infer<typeof GroupFieldSchema>;
 export type ArrayField = z.infer<typeof ArrayFieldSchema>;
