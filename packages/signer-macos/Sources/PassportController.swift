@@ -196,6 +196,10 @@ class PassportController {
         let ksEncBytes = deriveSessionKey(seed: kSeed, counter: [0x00, 0x00, 0x00, 0x01])
         let ksMacBytes = deriveSessionKey(seed: kSeed, counter: [0x00, 0x00, 0x00, 0x02])
         
+        // Expansion: 16 bytes (K1, K2) -> 24 bytes (K1, K2, K1) for Triple DES
+        let ksEncFull = ksEncBytes + ksEncBytes.prefix(8)
+        let ksMacFull = ksMacBytes + ksMacBytes.prefix(8)
+        
         // 6. Initialize Secure Messaging
         // SSC = RND.IC(4-8) || RND.IF(4-8)
         var sscData = Data()
@@ -203,9 +207,9 @@ class PassportController {
         sscData.append(rndIf.suffix(4))
         let ssc = sscData.withUnsafeBytes { $0.load(as: UInt64.self).byteSwapped }
         
-        self.sm = SecureMessaging(ksEnc: SymmetricKey(data: ksEncBytes), ksMac: SymmetricKey(data: ksMacBytes), ssc: ssc, proto: .bac)
-        print("DEBUG: KS.Enc: \(ksEncBytes.map { String(format: "%02X", $0) }.joined())")
-        print("DEBUG: KS.Mac: \(ksMacBytes.map { String(format: "%02X", $0) }.joined())")
+        self.sm = SecureMessaging(ksEnc: SymmetricKey(data: ksEncFull), ksMac: SymmetricKey(data: ksMacFull), ssc: ssc, proto: .bac)
+        print("DEBUG: KS.Enc: \(ksEncFull.map { String(format: "%02X", $0) }.joined())")
+        print("DEBUG: KS.Mac: \(ksMacFull.map { String(format: "%02X", $0) }.joined())")
         print("DEBUG: SSC: \(String(format: "%016llX", ssc))")
         debugPrint("Secure Messaging Established.")
     }
@@ -270,34 +274,57 @@ class PassportController {
     }
     
     private func parseDG1(_ data: Data) -> PassportInfo {
-        // DG1 is Tag 61 -> L -> MRZ (TD3 is 88 bytes, TD1 is 90)
+        // DG1 (Tag 61) contains MRZ (Tag 5F1F)
         let tlvs = TLVParser.parse(data: data)
-        guard let mrzData = tlvs.first?.value,
+        guard let dg1 = tlvs.first(where: { $0.tag == 0x61 }) else { return PassportInfo() }
+        guard let mrzData = dg1.findValue(tag: 0x5F1F),
               let mrz = String(data: mrzData, encoding: .ascii) else {
             return PassportInfo()
         }
         
-        // Simple TD3 (Passport) MRZ parsing
-        // Line 1: P<JPNKYOKUYA<<TARO<<<<<<<<<<<<<<<<<<<<<<<<
-        // Line 2: TR77777770JPN8501019M2512311<<<<<<<<<<<<<<06
-        let lines = mrz.split(separator: "\n").map(String.init)
-        if lines.count < 2 { return PassportInfo() }
-        
-        let line1 = lines[0]
-        let line2 = lines[1]
-        
-        var info = PassportInfo()
-        if line1.count >= 44 {
-            info.nationality = String(line1.prefix(5).suffix(3))
-            let namePart = String(line1.suffix(39))
-            info.name = namePart.replacingOccurrences(of: "<", with: " ").trimmingCharacters(in: .whitespaces)
+        // MRZ might not have newlines. TD3 is 2 lines of 44 chars. TD1 is 3 lines of 30 chars.
+        var lines = [String]()
+        if mrz.count == 88 {
+            lines.append(String(mrz.prefix(44)))
+            lines.append(String(mrz.suffix(44)))
+        } else if mrz.count == 90 {
+            lines.append(String(mrz.prefix(30)))
+            let start = mrz.index(mrz.startIndex, offsetBy: 30)
+            let end = mrz.index(mrz.startIndex, offsetBy: 60)
+            lines.append(String(mrz[start..<end]))
+            lines.append(String(mrz.suffix(30)))
+        } else {
+            lines = mrz.components(separatedBy: .newlines).filter { !$0.isEmpty }
         }
         
-        if line2.count >= 44 {
-            info.passportNumber = String(line2.prefix(9))
+        if lines.isEmpty { return PassportInfo() }
+        
+        var info = PassportInfo()
+        if lines.count == 2 && lines[0].count >= 44 {
+            // TD3 (Passport)
+            let line1 = lines[0]
+            let line2 = lines[1]
+            
+            info.nationality = String(line1.prefix(5).suffix(3))
+            let namePart = String(line1.suffix(39))
+            info.name = namePart.replacingOccurrences(of: "<<", with: "  ").replacingOccurrences(of: "<", with: " ").trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "  ", with: ", ")
+            
+            info.passportNumber = String(line2.prefix(9)).replacingOccurrences(of: "<", with: "")
             info.birthDate = String(line2.prefix(19).suffix(6))
             info.gender = String(line2.prefix(21).suffix(1))
             info.expiryDate = String(line2.prefix(27).suffix(6))
+        } else if lines.count == 3 && lines[0].count >= 30 {
+            // TD1 (ID Card)
+            let line1 = lines[0]
+            let line2 = lines[1]
+            let line3 = lines[2]
+            
+            info.passportNumber = String(line1.prefix(14).suffix(9)).replacingOccurrences(of: "<", with: "")
+            info.nationality = String(line2.prefix(18).suffix(3))
+            info.birthDate = String(line2.prefix(6))
+            info.gender = String(line2.prefix(8).suffix(1))
+            info.expiryDate = String(line2.prefix(14).suffix(6))
+            info.name = line3.replacingOccurrences(of: "<<", with: "  ").replacingOccurrences(of: "<", with: " ").trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "  ", with: ", ")
         }
         
         return info
@@ -448,7 +475,7 @@ class PassportController {
     private func calculateRetailMAC(data: Data, key: SymmetricKey) throws -> Data {
         let keyData = key.withUnsafeBytes { Data($0) }
         let k1 = keyData.prefix(8)
-        let k2 = keyData.suffix(8)
+        let k2 = keyData.subdata(in: 8..<16)
         let padded = padRetailMAC(data)
         var currentIV = Data(count: 8)
         for i in 0..<(padded.count / 8) {

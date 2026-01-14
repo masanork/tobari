@@ -227,24 +227,18 @@ class DriversLicenseController {
         guard let year = Int(yearStr) else { return dateStr }
         
         var eraName = ""
-        var adYear = 0
         
         switch eraChar {
         case "1": // Meiji (1868-1912)
             eraName = "明治"
-            adYear = 1867 + year
         case "2": // Taisho (1912-1926)
             eraName = "大正"
-            adYear = 1911 + year
         case "3": // Showa (1926-1989)
             eraName = "昭和"
-            adYear = 1925 + year
         case "4": // Heisei (1989-2019)
             eraName = "平成"
-            adYear = 1988 + year
         case "5": // Reiwa (2019-)
             eraName = "令和"
-            adYear = 2018 + year
         default:
             return dateStr
         }

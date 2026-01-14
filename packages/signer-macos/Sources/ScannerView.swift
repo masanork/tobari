@@ -41,7 +41,7 @@ struct ScannerView: View {
         }
         .onAppear { scanner.start() }
         .onDisappear { scanner.stop() }
-        .onChange(of: scanner.detectedMRZ) { newValue in
+        .onChange(of: scanner.detectedMRZ) { old, newValue in
             if let result = newValue {
                 mrzResult = result
                 isPresented = false

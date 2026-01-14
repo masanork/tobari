@@ -22,7 +22,7 @@ class PassportKDF {
     static func derivePaceKey(password: String, isCan: Bool = false) -> SymmetricKey {
         let info = isCan ? password : ensureMRZInfo(password)
         // 1. Calculate SHA-1 hash of the password
-        var data = info.data(using: .utf8)!
+        let data = info.data(using: .utf8)!
         
         // 2. Map password to Kpi
         var seedData = Data(Insecure.SHA1.hash(data: data))
