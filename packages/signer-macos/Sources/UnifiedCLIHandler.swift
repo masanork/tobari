@@ -544,7 +544,10 @@ class UnifiedCLIHandler {
 
             debugLog("Signing with JPKI (\(signatureType) type)...")
 
-            let manager = SmartCardManager()
+            let manager = SmartCardManager.shared
+            manager.beginOperation()
+            defer { manager.endOperation() }
+            
             let jpki = JPKIController(manager: manager)
 
             let signature = try await jpki.computeSignature(
@@ -677,7 +680,12 @@ class UnifiedCLIHandler {
         }
 
         do {
-            let manager = SmartCardManager()
+            let manager = SmartCardManager.shared
+            manager.beginOperation()
+            defer { manager.endOperation() }
+            
+            try await manager.establishSession()
+            
             let jpki = JPKIController(manager: manager)
 
             let info = try await jpki.readAttributes(pin: finalPin)
@@ -745,7 +753,13 @@ class UnifiedCLIHandler {
 
     private func readPassport(params: ReadCardParams, command: String) async -> UnifiedResponse {
         do {
-            let manager = SmartCardManager()
+            let manager = SmartCardManager.shared
+            manager.beginOperation()
+            defer { manager.endOperation() }
+            
+            // Establish a persistent session before any APDU is sent
+            try await manager.establishSession()
+            
             let controller = PassportController(manager: manager)
 
             try await controller.selectPassportAP()
@@ -852,7 +866,10 @@ class UnifiedCLIHandler {
         }
 
         do {
-            let manager = SmartCardManager()
+            let manager = SmartCardManager.shared
+            manager.beginOperation()
+            defer { manager.endOperation() }
+            
             let controller = DriversLicenseController(manager: manager)
 
             let info = try await controller.readData(pin1: finalPin1, pin2: pin2)
@@ -885,7 +902,10 @@ class UnifiedCLIHandler {
 
     private func readResidenceCard(command: String) async -> UnifiedResponse {
         do {
-            let manager = SmartCardManager()
+            let manager = SmartCardManager.shared
+            manager.beginOperation()
+            defer { manager.endOperation() }
+            
             let controller = ResidenceCardController(manager: manager)
 
             let info = try await controller.readDF2Info()

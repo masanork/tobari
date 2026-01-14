@@ -99,8 +99,13 @@ class AppState: ObservableObject {
         status = "Accessing My Number Card..."
         error = nil
         
+        let scm = SmartCardManager.shared
+        scm.beginOperation()
+        defer { scm.endOperation() }
+
         do {
-            let jpki = JPKIController(manager: SmartCardManager.shared)
+            try await scm.establishSession()
+            let jpki = JPKIController(manager: scm)
             let info = try await jpki.readAttributes(pin: pin)
             print("DEBUG: Attributes retrieved - Name: '\(info.name)', Address: '\(info.address)', Birth: '\(info.birthDate)', Gender: '\(info.gender)'")
 
@@ -144,8 +149,13 @@ class AppState: ObservableObject {
         status = "Accessing Passport..."
         error = nil
         
+        let scm = SmartCardManager.shared
+        scm.beginOperation()
+        defer { scm.endOperation() }
+
         do {
-            let controller = PassportController(manager: SmartCardManager.shared)
+            try await scm.establishSession()
+            let controller = PassportController(manager: scm)
             try await controller.selectPassportAP()
             
             if let can = can {
@@ -184,8 +194,13 @@ class AppState: ObservableObject {
         status = "Accessing Driver's License..."
         error = nil
 
+        let scm = SmartCardManager.shared
+        scm.beginOperation()
+        defer { scm.endOperation() }
+
         do {
-            let controller = DriversLicenseController(manager: SmartCardManager.shared)
+            try await scm.establishSession()
+            let controller = DriversLicenseController(manager: scm)
             let info = try await controller.readData(pin1: pin1, pin2: pin2)
 
             var fields = [
