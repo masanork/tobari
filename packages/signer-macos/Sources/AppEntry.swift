@@ -59,6 +59,7 @@ class AppState: ObservableObject {
     @Published var error: String? = nil
     @Published var isReading: Bool = false
     @Published var isCardPresent: Bool = false
+    @Published var detectedCardType: SmartCardManager.CardType = .unknown
     @Published var showPinEntry: Bool = false
     @Published var pinPrompt: String = ""
     
@@ -74,8 +75,20 @@ class AppState: ObservableObject {
     init() {
         SmartCardManager.shared.onCardStateChanged = { [weak self] isPresent in
             self?.isCardPresent = isPresent
-            self?.status = isPresent ? "Card detected! Ready to read." : "Waiting for card..."
-            if !isPresent { self?.cardData = nil; self?.error = nil }
+            if !isPresent {
+                self?.status = "Waiting for card..."
+                self?.cardData = nil
+                self?.error = nil
+                self?.detectedCardType = .unknown
+            } else if self?.detectedCardType == .unknown {
+                 self?.status = "Card detected! Identifying..."
+            }
+        }
+        SmartCardManager.shared.onCardTypeDetected = { [weak self] type in
+            self?.detectedCardType = type
+            if type != .unknown {
+                self?.status = "Detected: \(type.rawValue.capitalized). Ready to read."
+            }
         }
         SmartCardManager.shared.checkCurrentState()
     }

@@ -478,29 +478,32 @@ class JPKIController {
         while true {
             let p1 = UInt8((offset >> 8) & 0xFF)
             let p2 = UInt8(offset & 0xFF)
-            // READ BINARY with Extended Le: CLA=00, INS=B0, P1, P2, Le=00 00 00 (65536 bytes)
-            let readApdu = Data([APDU.CLA_ISO, APDU.INS_READ_BINARY, p1, p2, 0x00, 0x00, 0x00])
+            // Short Le: 00 B0 P1 P2 00 (requests 256 bytes)
+            let readApdu = Data([APDU.CLA_ISO, APDU.INS_READ_BINARY, p1, p2, 0x00])
             
             let res = try await manager.transmit(apdu: readApdu)
-            // Last 2 bytes are SW
             if res.count < 2 { break }
-            let chunk = res.subdata(in: 0..<res.count-2)
+            let sw = (UInt16(res[res.count-2]) << 8) | UInt16(res[res.count-1])
+            let chunk = res.prefix(res.count-2)
             
-            if chunk.isEmpty { break }
-            resultData.append(chunk)
-            offset += UInt16(chunk.count)
-            
-            // If less than requested (and not exactly 256 or multiple of block), likely EOF
-            // With Extended Le, if we get anything, we check if it's the end.
-            // If we got some data, but the status is 9000, we check if more is needed.
-            // For now, if we get any data, we append. If SW is 9000 and chunk is not empty, 
-            // we continue until we get an error or empty chunk.
-            if chunk.isEmpty { break }
-            
-            // To be safe with some readers, if we get less than a "typical" extended chunk
-            // but still got data, we might want to continue or stop.
-            // Most cards will just return what's available up to Le.
-            break // If we used Extended Le and got data, we likely got the whole EF or a large chunk.
+            if sw == 0x9000 {
+                resultData.append(chunk)
+                offset += UInt16(chunk.count)
+                if chunk.count < 256 { break }
+            } else if sw == 0x6B00 { // Offset out of range (EOF)
+                break
+            } else if sw == 0x6C00 || (sw & 0xFF00) == 0x6100 {
+                // Wrong length, the card tells us the correct length in the last byte
+                let correctLe = res[res.count-1]
+                let retryApdu = Data([APDU.CLA_ISO, APDU.INS_READ_BINARY, p1, p2, correctLe])
+                let retryRes = try await manager.transmit(apdu: retryApdu)
+                try checkSW(retryRes, context: "Read Binary (retry)")
+                let retryChunk = retryRes.prefix(retryRes.count-2)
+                resultData.append(retryChunk)
+                break
+            } else {
+                try checkSW(res, context: "Read Binary at \(offset)")
+            }
         }
         
         return resultData

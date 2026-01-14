@@ -41,14 +41,10 @@ struct MainView: View {
                         entryMode = .none
                     }
                     .buttonStyle(.bordered)
-                } else if state.isCardPresent {
-                    if entryMode == .none {
-                        CardMenuView(entryMode: $entryMode)
-                    } else {
-                        EntryView(mode: $entryMode, pin: $pin, pin2: $pin2, mrz: $mrz, showScanner: $showScanner)
-                    }
+                } else if entryMode != .none {
+                    EntryView(mode: $entryMode, pin: $pin, pin2: $pin2, mrz: $mrz, showScanner: $showScanner)
                 } else {
-                    CardInteractionView()
+                    CardMenuView(entryMode: $entryMode)
                 }
                 
                 Spacer()
@@ -118,21 +114,53 @@ struct CardMenuView: View {
     @Binding var entryMode: MainView.EntryMode
     
     var body: some View {
-        VStack(spacing: 15) {
-            Text("Select Card Type")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            ActionBtn(title: "My Number Card", icon: "person.badge.shield.fill") {
-                entryMode = .jpki
+        VStack(spacing: 20) {
+            if !state.isCardPresent {
+                VStack(spacing: 12) {
+                    Image(systemName: "contact.sensor.pass")
+                        .font(.system(size: 40))
+                        .symbolEffect(.pulse, options: .repeating)
+                        .foregroundColor(.secondary)
+                    Text("Insert card or select type for OCR")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.bottom, 10)
+            } else if state.detectedCardType == .unknown {
+                HStack {
+                    ProgressView().scaleEffect(0.5)
+                    Text("Identifying card...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
-            
-            ActionBtn(title: "Passport", icon: "globe.europe.africa.fill", color: .green) {
-                entryMode = .passport
-            }
-            
-            ActionBtn(title: "Driver's License", icon: "car.fill", color: .orange) {
-                entryMode = .license
+
+            VStack(spacing: 15) {
+                ActionBtn(
+                    title: "My Number Card", 
+                    icon: "person.badge.shield.fill",
+                    isHighlighted: state.detectedCardType == .jpki
+                ) {
+                    entryMode = .jpki
+                }
+                
+                ActionBtn(
+                    title: "Passport", 
+                    icon: "globe.europe.africa.fill", 
+                    color: .green,
+                    isHighlighted: state.detectedCardType == .passport
+                ) {
+                    entryMode = .passport
+                }
+                
+                ActionBtn(
+                    title: "Driver's License", 
+                    icon: "car.fill", 
+                    color: .orange,
+                    isHighlighted: state.detectedCardType == .driversLicense
+                ) {
+                    entryMode = .license
+                }
             }
         }
         .padding()
@@ -162,6 +190,16 @@ struct EntryView: View {
                 .buttonStyle(.plain)
                 .foregroundColor(.blue)
                 Spacer()
+                
+                // Card Presence Indicator in Entry View
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(state.isCardPresent ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                    Text(state.isCardPresent ? "Card Ready" : "Card Disconnected")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
             .padding(.horizontal)
             
@@ -222,17 +260,30 @@ struct EntryView: View {
             }
             .frame(width: 250)
             
-            Button("Read Card") {
-                executeRead()
+            VStack(spacing: 8) {
+                Button("Read Card") {
+                    executeRead()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canRead || state.isReading || !state.isCardPresent)
+                
+                if !state.isCardPresent {
+                    Text("Please connect the card to read")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(!canRead || state.isReading)
             
             if let error = state.error {
                 Text(error)
-                    .font(.caption2)
+                    .font(.body)
                     .foregroundColor(.red)
                     .multilineTextAlignment(.center)
+                    .textSelection(.enabled)
+                    .onTapGesture {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(error, forType: .string)
+                    }
                     .padding(.top, 10)
             }
         }
@@ -275,6 +326,7 @@ struct ActionBtn: View {
     let title: String
     let icon: String
     var color: Color = .blue
+    var isHighlighted: Bool = false
     let action: () -> Void
     
     var body: some View {
@@ -283,14 +335,23 @@ struct ActionBtn: View {
                 Image(systemName: icon)
                 Text(title)
                 Spacer()
+                if isHighlighted {
+                    Text("Detected")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(color))
+                        .foregroundColor(.white)
+                }
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .opacity(0.5)
             }
             .frame(maxWidth: 250)
             .padding()
-            .background(RoundedRectangle(cornerRadius: 12).fill(color.opacity(0.15)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.3), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 12).fill(isHighlighted ? color.opacity(0.25) : color.opacity(0.15)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(isHighlighted ? color : color.opacity(0.3), lineWidth: isHighlighted ? 2 : 1))
         }
         .buttonStyle(.plain)
     }

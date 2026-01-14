@@ -317,16 +317,32 @@ class DriversLicenseController {
         while true {
             let p1 = UInt8((offset >> 8) & 0xFF)
             let p2 = UInt8(offset & 0xFF)
-            let readApdu = Data([0x00, 0xB0, p1, p2, 0x00, 0x00, 0x00])
+            // Short Le: 00 B0 P1 P2 00 (requests 256 bytes)
+            let readApdu = Data([0x00, 0xB0, p1, p2, 0x00])
             let res = try await manager.transmit(apdu: readApdu)
             
             if res.count < 2 { break }
+            let sw = (UInt16(res[res.count-2]) << 8) | UInt16(res[res.count-1])
             let chunk = res.prefix(res.count-2)
-            if chunk.isEmpty { break }
-            result.append(chunk)
-            offset += chunk.count
-            if chunk.count < 256 { break }
-            break 
+            
+            if sw == 0x9000 {
+                result.append(chunk)
+                offset += chunk.count
+                if chunk.count < 256 { break }
+            } else if sw == 0x6B00 { // Offset out of range (EOF)
+                break
+            } else if sw == 0x6C00 || (sw & 0xFF00) == 0x6100 {
+                // Wrong length, the card tells us the correct length in the last byte
+                let correctLe = res[res.count-1]
+                let retryApdu = Data([0x00, 0xB0, p1, p2, correctLe])
+                let retryRes = try await manager.transmit(apdu: retryApdu)
+                try checkSW(retryRes, context: "Read Binary (retry)")
+                let retryChunk = retryRes.prefix(retryRes.count-2)
+                result.append(retryChunk)
+                break
+            } else {
+                try checkSW(res, context: "Read Binary at \(offset)")
+            }
         }
         return result
     }

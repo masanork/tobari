@@ -754,12 +754,36 @@ class UnifiedCLIHandler {
                 debugLog("Using PACE with CAN")
                 try await controller.performPACE(password: can, isCan: true)
             } else if let mrz = params.mrz {
-                if params.usePace == true {
-                    debugLog("Using PACE with MRZ")
-                    try await controller.performPACE(password: mrz, isCan: false)
-                } else {
-                    debugLog("Using BAC with MRZ")
+                var paceFailed = false
+                // If usePace is not explicitly false, try PACE first
+                if params.usePace != false {
+                    do {
+                        debugLog("Attempting PACE with MRZ...")
+                        try await controller.performPACE(password: mrz, isCan: false)
+                        debugLog("PACE successful")
+                    } catch {
+                        debugLog("PACE failed: \(error.localizedDescription)")
+                        paceFailed = true
+                        // If PACE was explicitly requested but failed, we might want to throw
+                        // but usually falling back to BAC is more user-friendly.
+                        // Here we only re-throw if the user explicitly wanted PACE AND we don't want fallback.
+                        // But since we want to be helpful, let's fall back unless usePace was strictly required.
+                        if params.usePace == true && params.can != nil { 
+                            // This case is unlikely as we handle 'can' separately above
+                            throw error
+                        }
+                    }
+                }
+
+                // If PACE failed or was explicitly disabled, try BAC
+                if params.usePace == false || (params.usePace == nil && paceFailed) || (params.usePace == true && paceFailed) {
+                    if paceFailed {
+                        // Reset applet state before BAC on cards that don't support PACE
+                        try await controller.selectPassportAP()
+                    }
+                    debugLog("Attempting BAC with MRZ...")
                     try await controller.performBAC(mrz: mrz)
+                    debugLog("BAC successful")
                 }
             } else {
                 return UnifiedResponse.error(
