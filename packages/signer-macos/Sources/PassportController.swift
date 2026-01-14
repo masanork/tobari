@@ -325,32 +325,45 @@ class PassportController {
     
     private func readEF(fileID: Data) async throws -> Data {
         // Select EF
+        // Use P2=0x0C (FCI not returned) for ICAO 9303 compatibility
         let selApdu = Data([0x00, 0xA4, 0x02, 0x0C, 0x02, fileID[0], fileID[1]])
         let resSel = try await transmit(apdu: selApdu)
         try checkSW(resSel, context: "Select EF")
         
-        // Read Binary with Extended Le: 00 B0 P1 P2 00 00 00 (up to 65536 bytes)
+        // Read in chunks. Some readers/cards don't support extended length (64KB),
+        // so we use a standard short Le (0x00 = 256 bytes) and loop.
         var result = Data()
         var offset = 0
         
-        // Try to read a large chunk first
         while true {
             let p1 = UInt8((offset >> 8) & 0xFF)
             let p2 = UInt8(offset & 0xFF)
-            let readApdu = Data([0x00, 0xB0, p1, p2, 0x00, 0x00, 0x00])
+            // Short Le: 00 B0 P1 P2 00 (requests 256 bytes)
+            let readApdu = Data([0x00, 0xB0, p1, p2, 0x00])
             let res = try await transmit(apdu: readApdu)
             
-            // Last 2 bytes are SW
             if res.count < 2 { break }
+            let sw = (UInt16(res[res.count-2]) << 8) | UInt16(res[res.count-1])
             let chunk = res.prefix(res.count-2)
             
-            if chunk.isEmpty { break }
-            result.append(chunk)
-            offset += chunk.count
-            
-            // If SW is 9000 and we got data, we might need more if the file is huge,
-            // but for passport DGs, they usually fit in one extended read (64KB max).
-            break 
+            if sw == 0x9000 {
+                result.append(chunk)
+                offset += chunk.count
+                if chunk.count < 256 { break }
+            } else if sw == 0x6B00 { // Offset out of range (EOF)
+                break
+            } else if sw == 0x6C00 || (sw & 0xFF00) == 0x6100 {
+                // Wrong length, the card tells us the correct length in the last byte
+                let correctLe = res[res.count-1]
+                let retryApdu = Data([0x00, 0xB0, p1, p2, correctLe])
+                let retryRes = try await transmit(apdu: retryApdu)
+                try checkSW(retryRes, context: "Read Binary (retry)")
+                let retryChunk = retryRes.prefix(retryRes.count-2)
+                result.append(retryChunk)
+                break
+            } else {
+                try checkSW(res, context: "Read Binary at \(offset)")
+            }
         }
         return result
     }
@@ -494,4 +507,3 @@ class PassportController {
         }
     }
 }
-

@@ -75,23 +75,42 @@ class SecureMessaging {
         }
         
         // 2. Wrap Le (Tag 97) if present
-        if apdu.count > 4 {
+        var shouldAppendLe = false
+        var leIsExtended = false
+        if apdu.count >= 5 {
             let lastByteIdx = apdu.count - 1
             let lePresent: Bool
             let leValue: Data
             
-            if apdu.count == 5 || apdu.count == 5 + Int(apdu[4]) + 1 {
+            if apdu.count == 5 {
+                // Case: CLA INS P1 P2 Le
+                lePresent = true
+                leValue = Data([apdu[4]])
+            } else if apdu.count == 5 + (apdu[4] == 0 ? 0 : Int(apdu[4])) + 1 {
+                // Case: CLA INS P1 P2 Lc Data Le
                 lePresent = true
                 leValue = Data([apdu[lastByteIdx]])
-            } else if apdu[4] == 0x00 && (apdu.count == 7 || apdu.count == 7 + (Int(apdu[5]) << 8 | Int(apdu[6])) + 2) {
-                lePresent = true
-                leValue = apdu.suffix(2)
+            } else if apdu[4] == 0x00 && apdu.count >= 7 {
+                // Extended length checks
+                let lc = Int(apdu[5]) << 8 | Int(apdu[6])
+                if apdu.count == 7 { // Extended Le only
+                    lePresent = true
+                    leValue = apdu.suffix(2)
+                } else if apdu.count == 7 + lc + 2 { // Extended Lc + Data + Extended Le
+                    lePresent = true
+                    leValue = apdu.suffix(2)
+                } else {
+                    lePresent = false
+                    leValue = Data()
+                }
             } else {
                 lePresent = false
                 leValue = Data()
             }
             
-            if lePresent && leValue != Data([0x00]) {
+            if lePresent {
+                shouldAppendLe = true
+                leIsExtended = (leValue.count == 2)
                 dataField.append(0x97)
                 dataField.append(contentsOf: encodeLength(leValue.count))
                 dataField.append(leValue)
@@ -119,23 +138,35 @@ class SecureMessaging {
         wrapped.append(0x8E)
         wrapped.append(0x08)
         wrapped.append(mac)
-        wrapped.append(0x00)
+        if shouldAppendLe {
+            wrapped.append(contentsOf: leIsExtended ? [0x00, 0x00] : [0x00])
+        }
         
         return wrapped
     }
     
     /// Unwraps a Secure Messaging response
     func unwrap(response: Data) throws -> (data: Data, sw1: UInt8, sw2: UInt8) {
-        guard response.count >= 10 else { throw SignerError.passport("SM response too short") }
+        guard response.count >= 2 else { throw SignerError.passport("SM response too short") }
         
-        let sw1 = response[response.count-2]
-        let sw2 = response[response.count-1]
+        let transportSw1 = response[response.count - 2]
+        let transportSw2 = response[response.count - 1]
         
+        if transportSw1 != 0x90 || transportSw2 != 0x00 {
+            return (Data(), transportSw1, transportSw2)
+        }
+        
+        incrementSSC()
+        
+        let raw = response.prefix(response.count - 2)
+        let bytes = [UInt8](raw)
         var offset = 0
-        var plainData = Data()
-        let bytes = [UInt8](response)
         
-        while offset < response.count - 10 {
+        var do87: Data?
+        var do99: Data?
+        var do8e: Data?
+        
+        while offset < bytes.count {
             let tag = bytes[offset]
             offset += 1
             
@@ -143,13 +174,50 @@ class SecureMessaging {
             let len = decodeLength(bytes, &lenOffset)
             offset = lenOffset
             
-            if tag == 0x87 || tag == 0x85 {
-                let value = response.subdata(in: offset..<offset+len)
-                let encrypted = value.dropFirst() // Skip indicator
-                let decrypted = try decrypt(data: encrypted)
-                plainData.append(decrypted)
+            guard offset + len <= bytes.count else {
+                throw SignerError.passport("SM response length overflow")
+            }
+            
+            let value = raw.subdata(in: offset..<offset+len)
+            switch tag {
+            case 0x87, 0x85:
+                do87 = value
+            case 0x99:
+                do99 = value
+            case 0x8E:
+                do8e = value
+            default:
+                break
             }
             offset += len
+        }
+        
+        guard let do99Value = do99, do99Value.count == 2 else {
+            throw SignerError.passport("SM response missing DO99")
+        }
+        
+        let sw1 = do99Value[0]
+        let sw2 = do99Value[1]
+        
+        if let do8eValue = do8e {
+            let expectedMac = try calculateResponseMAC(do87: do87, do99: do99Value)
+            if do8eValue != expectedMac {
+                throw SignerError.passport("SM response MAC mismatch")
+            }
+        } else if do87 != nil {
+            throw SignerError.passport("SM response missing DO8E")
+        }
+        
+        var plainData = Data()
+        if let do87Value = do87 {
+            let encrypted: Data
+            if do87Value.first == 0x01 {
+                encrypted = do87Value.dropFirst()
+            } else {
+                encrypted = do87Value
+            }
+            let decrypted = try decrypt(data: encrypted)
+            plainData.append(decrypted)
         }
         
         return (plainData, sw1, sw2)
@@ -212,7 +280,18 @@ class SecureMessaging {
         var sscValue = ssc.bigEndian
         let sscData = withUnsafeBytes(of: &sscValue) { Data($0) }
         mdo.append(sscData)
-        mdo.append(data)
+        
+        // ICAO 9303 / ISO 7816-4: The command header (4 bytes) 
+        // MUST be padded to 8 bytes with 80 00 00 00
+        let header = data.prefix(4)
+        mdo.append(header)
+        mdo.append(contentsOf: [0x80, 0x00, 0x00, 0x00])
+        
+        // Followed by the rest of the data (dataField)
+        if data.count > 4 {
+            mdo.append(data.dropFirst(4))
+        }
+        
         let paddedMdo = pad(mdo)
 
         if proto == .bac {
@@ -226,6 +305,41 @@ class SecureMessaging {
                 paddedMdo.withUnsafeBytes { dataBytes in
                     keyData.withUnsafeBytes { keyBytes in
                         CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), 0, keyBytes.baseAddress, kCCKeySizeAES128, nil, dataBytes.baseAddress, paddedMdo.count, outBytes.baseAddress, outBytes.count, &outLength)
+                    }
+                }
+            }
+            guard status == kCCSuccess else { throw SignerError.internalError("AES MAC failed") }
+            return outData.subdata(in: outLength - 16..<outLength - 8)
+        }
+    }
+
+    private func calculateResponseMAC(do87: Data?, do99: Data) throws -> Data {
+        var mdo = Data()
+        var sscValue = ssc.bigEndian
+        let sscData = withUnsafeBytes(of: &sscValue) { Data($0) }
+        mdo.append(sscData)
+        
+        if let do87Value = do87 {
+            mdo.append(0x87)
+            mdo.append(contentsOf: encodeLength(do87Value.count))
+            mdo.append(do87Value)
+        }
+        
+        mdo.append(0x99)
+        mdo.append(0x02)
+        mdo.append(do99)
+        
+        let padded = pad(mdo)
+        if proto == .bac {
+            return try calculateRetailMAC(data: padded, key: ksMac)
+        } else {
+            let keyData = ksMac.withUnsafeBytes { Data($0) }
+            var outLength = Int(0)
+            var outData = Data(count: padded.count + kCCBlockSizeAES128)
+            let status = outData.withUnsafeMutableBytes { outBytes in
+                padded.withUnsafeBytes { dataBytes in
+                    keyData.withUnsafeBytes { keyBytes in
+                        CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), 0, keyBytes.baseAddress, kCCKeySizeAES128, nil, dataBytes.baseAddress, padded.count, outBytes.baseAddress, outBytes.count, &outLength)
                     }
                 }
             }
