@@ -110,7 +110,7 @@ pub struct UnifiedRequest {
     pub preview: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ResponseStatus {
     Success,
@@ -277,6 +277,52 @@ fn unwrap_cbor(val: ciborium::value::Value) -> ciborium::value::Value {
 pub struct SignDataParams {
     pub data: String, // Base64URL
     pub algorithm: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SignPresentationParams {
+    pub document_path: Option<String>,
+    pub document_data: Option<String>,
+    pub disclosure_fields: Option<Vec<String>>,
+    pub verifier_id: Option<String>,
+    pub nonce: Option<String>,
+    pub response_uri: Option<String>,
+    pub output_format: Option<String>, // "cose" or "jwt"
+    pub output_path: Option<String>,
+}
+
+pub async fn handle_sign_presentation(request: &UnifiedRequest) -> UnifiedResponse {
+    let params: SignPresentationParams = match serde_json::from_value(request.params.clone()) {
+        Ok(p) => p,
+        Err(e) => return UnifiedResponse::error(&request.command, "InvalidRequest", &e.to_string()),
+    };
+
+    // If preview is requested, return preview info and metadata
+    if request.preview == Some(true) {
+        // In Tauri version, "preview" usually means launching the GUI.
+        // We return a preview status which tells the caller we're waiting for user approval.
+        return UnifiedResponse {
+            status: ResponseStatus::Preview,
+            command: request.command.clone(),
+            result: None,
+            preview: Some(PreviewInfo {
+                summary: "Preparing Verifiable Presentation for approval in GUI.".to_string(),
+                fields: None, // We'll populate this if we parse the doc here
+                requires_approval: true,
+                session_id: Some(uuid::Uuid::new_v4().to_string()),
+            }),
+            error: None,
+        };
+    }
+
+    // Execute mode: For now, we'll return an error or a simulated result
+    // Actual implementation requires Holder Binding logic
+    UnifiedResponse::error(
+        &request.command,
+        "InternalError",
+        "Headless execution of sign_presentation is not yet implemented. Use preview mode.",
+    )
 }
 
 pub async fn handle_bbs_generate_key(request: &UnifiedRequest) -> UnifiedResponse {
@@ -1296,6 +1342,7 @@ pub async fn handle_unified_request(request: &UnifiedRequest) -> UnifiedResponse
         "sign_with_bbs" => handle_bbs_sign(request).await,
         "bbs_generate_key" => handle_bbs_generate_key(request).await,
         "sign_data" => handle_sign_data(request).await,
+        "sign_presentation" => handle_sign_presentation(request).await,
         _ => UnifiedResponse::error(
             &request.command,
             "UnsupportedCommand",
@@ -1322,27 +1369,50 @@ pub fn run() {
     }
 
     // Unified Request handling
+    let mut pending_sign_request: Option<SignRequest> = None;
     if let Some(req_str) = args.request.as_ref().cloned().or_else(|| {
         args.file.as_ref().and_then(|path| std::fs::read_to_string(path).ok())
     }) {
         if let Ok(request) = serde_json::from_str::<UnifiedRequest>(&req_str) {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let response = rt.block_on(handle_unified_request(&request));
+            
+            // If it's a success or error, print and exit.
+            // If it's a preview, print the preview response but CONTINUE to launch the GUI.
             println!("{}", serde_json::to_string_pretty(&response).unwrap());
-            std::process::exit(0);
+            
+            if response.status != ResponseStatus::Preview {
+                std::process::exit(0);
+            } else {
+                // Convert UnifiedRequest back to SignRequest for compatibility with existing GUI
+                // (This is a bridge until we update the GUI to handle UnifiedRequest natively)
+                if request.command == "sign_presentation" {
+                    if let Ok(params) = serde_json::from_value::<SignPresentationParams>(request.params) {
+                        pending_sign_request = Some(SignRequest {
+                            challenge: params.nonce.unwrap_or_default(),
+                            rp_id: params.verifier_id.unwrap_or_else(|| "tobari-signer".to_string()),
+                            user_verification: Some("preferred".to_string()),
+                            message: Some(format!("Create presentation for document at {}", params.document_path.as_deref().unwrap_or("(binary)"))),
+                            allow_credentials: None,
+                        });
+                    }
+                }
+            }
         }
     }
 
     // Fallback to legacy path for GUI
-    let sign_request = if let Some(req_str) = args.request {
-        serde_json::from_str::<SignRequest>(&req_str).ok()
-    } else if let Some(file_path) = args.file {
-        std::fs::read_to_string(file_path)
-            .ok()
-            .and_then(|s| serde_json::from_str::<SignRequest>(&s).ok())
-    } else {
-        None
-    };
+    let sign_request = pending_sign_request.or_else(|| {
+        if let Some(req_str) = args.request {
+            serde_json::from_str::<SignRequest>(&req_str).ok()
+        } else if let Some(file_path) = args.file {
+            std::fs::read_to_string(file_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<SignRequest>(&s).ok())
+        } else {
+            None
+        }
+    });
 
     if sign_request.is_none() {
         // If no request provided via CLI, maybe we are in dev mode or just testing.

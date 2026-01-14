@@ -15989,17 +15989,7 @@
     "event": {
       "type": "KeyRotation",
       "timestamp": "2026-01-13T07:42:35.544Z",
-      "payload": {
-        "timestamp": "2026-01-13T07:42:35.543Z",
-        "buildId": "build-1768290155408",
-        "revoked": false,
-        "ed25519Params": "did:key:z6MkhtzPpATsSMEyEGSEzmXwyrWFvMQj1RNXtx5vht3NLuyw",
-        "pqcParams": {
-          "kty": "PQC",
-          "crv": "ML-DSA-44",
-          "x": "4yx9QLZU_i_6AyXcCCthWN0raG47BKjKAw5vtSgIHrL8c1zALelvUiKKo2myeTQMKs_VdxQ1TrybmIx-FYi4IQdk7jKqz_7ZCDaLazRQ-v7hkZ8RFrZnvtZE6FKFs1wUqs8I6eTiDioTh135VQ5jQ_ul_ZMBWLWi8hsRX5-qL6yBMG4QhJXYeh5MsL_DbNg9Wlk2YZdV5Ly4BIiwUfmMrf6e6nhyNSOnnax1nUfB2TfTxU3z3FO1JLu5puPOCnVuMs1ch0agRoUQU2b81ksV-ajDpjgL1udkhQRKKki8Kbnbp_8-l90Eufxw4ZEI3bkneK2r6aLvl6AAKll0HyDYjQMKsyLeE2PPpvBcNnDvVxH-2_FrExKZ7y97SZr-W6trVOPW7noUAOVP8C-Xkpw7Zu1mkPOxmI6gUhfR8V72N6t74pNJUGlqRJiXvSGfJSqaE7UM_lR3bmaNasFyl1_A-4j1lUiFTtF5UNKgyWepxpYQYBOWI4WcAbXvhTgzDHy3I3_e9zEM-L1gKlmxe7K4faotY-Lsllqo6k4TyNea8MEQixh3YjjWmXzl2c63RA9hD-TLgIIJ6wC2WJBuEq_zVEjszuRH1UEH2KCqcc5KYAzMyYn0KSxuUCFYk73FxqkGhPgCZ9oQOUF63oKZFn0hOjj8f7C0Afi9JTl3st5kCini0ELyFrMCyGODBhE_J06sq4GqSuo2O4F-aiKOITAVA0PH0iNVTCyEiLgvtCI4daGcoXkAMrbL-3ZkA-HosRWisLVBCUixlsQWfKwuq38Q-rOafqo7Wgh0ZZJAwbWMS8r3ObHeDYVhvwn4wBqy25D_oumHF_DVSqN9swnRUQaGp_rT91NA7G1bdIjy7AZC9BihbvlbQDyBSs8cWNy5U8b-1pVa2ZO0tOGPejjJZskOoqk1HIPUjfSTgFhsEem6k2pmf0MwykAjnMQW9g8pvZN9qPOqvu6Ba1j9p1y9dF-tqcyu1tdFz2SWDZownVEPLiA770vxXvTwVIdvheEiPE1Q1kcyJ6GcrFwkUemRy4nJF_LdnmjAyJl-osw1Vr0vI6EZ6xiiK0IjEGPAJcXYiOSQyejMfUGfbvDFFnkTQPsNZ_brh-RCYSVBU3HyRvLnPxiF2i9WPXR6OZ_CHblH_TiUfFoh9qO3ni3Ai1cCK50QCgy-yLyKZNANGtzGimKN86Bn6X5_v5ZvEsU9gK1nPEwPyeqs6X0ChysLEg3AYXBePqCVuLmC6YyaHyl2EhG_V3qoCPykQLXWpNOtVR-gylAhPA3QJuL1pYzMC-ZBmTzAm5ggVayzJ8kbQme14aBvd9SaBGO4kYmHR8BcqWAk9-JxEtq7pbXm6JPCbayBl45m2fRO9_C_qTLUzznFoPPopmY0y9vmR3ab2-p_mY5nZYM73y0zUo3nSEuKlK8aNrg9KGLW4zdFQb6hbOhg9m_v0M3UdEHpF2yH77fTneJ54hn-2tjAki55_64LT7XQ1j9YCFHSBkk79LU-YPwryMGR0iWnsHWGDJVKNHV0I40gVYe6BrI6nlykvs_6I5TeBBBGxzkSXVsJN624rFomPsoUedC2-kjNc1XgVxAouqwZ40iUEeDykfJMM2B3w_PxyA_tKdaU_Bwr1_wkUfNlr35rSjT4ASuJHzCmqj4ePff6KykIachco7OjPeB2N1BhsKc32i3vqoGBvGpY25E72ej-6zc6hwTGVz4XOv_B5DCj_aoHmQmNnfqVhHf_hJSbXrK4nQ"
-        }
-      }
+      "pruned": true
     },
     "eventHash": "1349f70680f09dd1116083818d2f6a3f6736bb16dedd2755f29b19903ad3cbec",
     "chainHash": "dd964bd97d8b65323bb3f40e4b9a9ca4c5321807f4e5476f07de8ce0387f8382"
@@ -16009,9 +15999,99 @@
     "event": {
       "type": "KeyRotation",
       "timestamp": "2026-01-13T07:44:21.950Z",
+      "pruned": true
+    },
+    "eventHash": "ea964e0147fdac81df4bbeedaf3760b142774ae9903fa51c1c428f4b5e195fc5",
+    "chainHash": "7242619e1c109fc7e0f6696627ebcda38a8c533ad8fae0fd677fb47f7c2cbb19"
+  },
+  {
+    "prevHash": "7242619e1c109fc7e0f6696627ebcda38a8c533ad8fae0fd677fb47f7c2cbb19",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-13T07:44:50.072Z",
+      "pruned": true
+    },
+    "eventHash": "050f4b40caef75880341b9793cc01db4de564d4b250e64ea0184afdbba1a157c",
+    "chainHash": "9911e3a4516d800b5f8ce8a7f388327110f5216ce72b90a4a5e795c79b2a1fdf"
+  },
+  {
+    "prevHash": "9911e3a4516d800b5f8ce8a7f388327110f5216ce72b90a4a5e795c79b2a1fdf",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-13T07:45:37.614Z",
+      "pruned": true
+    },
+    "eventHash": "1a19cd79ce7b42d1463caa042e29b9d8b595a60b6f39a78617afc02fcd3ade6e",
+    "chainHash": "4f3c3b2b1b5c2de904fe22016d0738b0efe2d595bfd0df0f1a2d034e2679d28d"
+  },
+  {
+    "prevHash": "4f3c3b2b1b5c2de904fe22016d0738b0efe2d595bfd0df0f1a2d034e2679d28d",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-13T08:43:01.251Z",
+      "pruned": true
+    },
+    "eventHash": "6935eb25b143e83722f92ed811fd434199b914b0919577e45e85bad21cf0ace3",
+    "chainHash": "420d7b090ad5cea6a2d972d1126fe6fd15b20a6f303e25edf6673d11941966e0"
+  },
+  {
+    "prevHash": "420d7b090ad5cea6a2d972d1126fe6fd15b20a6f303e25edf6673d11941966e0",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-13T23:23:53.441Z",
+      "pruned": true
+    },
+    "eventHash": "e119d59118ddcd12e7d49081846cba0995bdee3fcff02d40950dc6bee2816fb3",
+    "chainHash": "e50c2682e078303d16c37ccc5f4d4122730cdf32148f28dcdef00dc27133febb"
+  },
+  {
+    "prevHash": "e50c2682e078303d16c37ccc5f4d4122730cdf32148f28dcdef00dc27133febb",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-13T23:30:55.767Z",
+      "pruned": true
+    },
+    "eventHash": "cb84908a187c22c6f018a1bfa9f7bb5dda1d7cef5bcc3dbae2bcaa63950dcc3d",
+    "chainHash": "ec5af7f7b4d3c97be90097093249e142e9df68dc2ede3f997140b44b9b454252"
+  },
+  {
+    "prevHash": "ec5af7f7b4d3c97be90097093249e142e9df68dc2ede3f997140b44b9b454252",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-13T23:36:41.339Z",
+      "pruned": true
+    },
+    "eventHash": "8e515650f627123c9a84fd3a193fd8564d9b911fb8103b2aaaa5eadb26a2ff44",
+    "chainHash": "de1ca594a6c1616dc1608eb4019d5d4da7e0a5aba3d942d8c2eb57f74766c042"
+  },
+  {
+    "prevHash": "de1ca594a6c1616dc1608eb4019d5d4da7e0a5aba3d942d8c2eb57f74766c042",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:03:15.194Z",
+      "pruned": true
+    },
+    "eventHash": "163156a3e3a6f5bd91278781c1d1981e369876a600da86890964243bb6755686",
+    "chainHash": "a4d668623b436acc03783e2497e9dfba86499b250cc0c354ec4b1ed4009562b7"
+  },
+  {
+    "prevHash": "a4d668623b436acc03783e2497e9dfba86499b250cc0c354ec4b1ed4009562b7",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:03:32.676Z",
+      "pruned": true
+    },
+    "eventHash": "cdb58c12755eabe56c0c34e4505b0b5801ad72b5718433b5be183ceb04ea6021",
+    "chainHash": "c66a1d7c6c4bc229a2ba57395475e2f4a71f3b95e043de94d89272414d468124"
+  },
+  {
+    "prevHash": "c66a1d7c6c4bc229a2ba57395475e2f4a71f3b95e043de94d89272414d468124",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:06:56.971Z",
       "payload": {
-        "timestamp": "2026-01-13T07:44:21.950Z",
-        "buildId": "build-1768290261860",
+        "timestamp": "2026-01-14T01:06:56.970Z",
+        "buildId": "build-1768352816809",
         "revoked": false,
         "ed25519Params": "did:key:z6MkhtzPpATsSMEyEGSEzmXwyrWFvMQj1RNXtx5vht3NLuyw",
         "pqcParams": {
@@ -16021,7 +16101,27 @@
         }
       }
     },
-    "eventHash": "ea964e0147fdac81df4bbeedaf3760b142774ae9903fa51c1c428f4b5e195fc5",
-    "chainHash": "7242619e1c109fc7e0f6696627ebcda38a8c533ad8fae0fd677fb47f7c2cbb19"
+    "eventHash": "67a2cbebafca31b95990219b7f9bbd7608c2508be779039bd9596f3bcf07fe0e",
+    "chainHash": "b3190731292abc654b5c0d85359b0ab183f4980db986eb2fca430cc0033ef2bd"
+  },
+  {
+    "prevHash": "b3190731292abc654b5c0d85359b0ab183f4980db986eb2fca430cc0033ef2bd",
+    "event": {
+      "type": "KeyRotation",
+      "timestamp": "2026-01-14T01:09:32.216Z",
+      "payload": {
+        "timestamp": "2026-01-14T01:09:32.215Z",
+        "buildId": "build-1768352972087",
+        "revoked": false,
+        "ed25519Params": "did:key:z6MkhtzPpATsSMEyEGSEzmXwyrWFvMQj1RNXtx5vht3NLuyw",
+        "pqcParams": {
+          "kty": "PQC",
+          "crv": "ML-DSA-44",
+          "x": "4yx9QLZU_i_6AyXcCCthWN0raG47BKjKAw5vtSgIHrL8c1zALelvUiKKo2myeTQMKs_VdxQ1TrybmIx-FYi4IQdk7jKqz_7ZCDaLazRQ-v7hkZ8RFrZnvtZE6FKFs1wUqs8I6eTiDioTh135VQ5jQ_ul_ZMBWLWi8hsRX5-qL6yBMG4QhJXYeh5MsL_DbNg9Wlk2YZdV5Ly4BIiwUfmMrf6e6nhyNSOnnax1nUfB2TfTxU3z3FO1JLu5puPOCnVuMs1ch0agRoUQU2b81ksV-ajDpjgL1udkhQRKKki8Kbnbp_8-l90Eufxw4ZEI3bkneK2r6aLvl6AAKll0HyDYjQMKsyLeE2PPpvBcNnDvVxH-2_FrExKZ7y97SZr-W6trVOPW7noUAOVP8C-Xkpw7Zu1mkPOxmI6gUhfR8V72N6t74pNJUGlqRJiXvSGfJSqaE7UM_lR3bmaNasFyl1_A-4j1lUiFTtF5UNKgyWepxpYQYBOWI4WcAbXvhTgzDHy3I3_e9zEM-L1gKlmxe7K4faotY-Lsllqo6k4TyNea8MEQixh3YjjWmXzl2c63RA9hD-TLgIIJ6wC2WJBuEq_zVEjszuRH1UEH2KCqcc5KYAzMyYn0KSxuUCFYk73FxqkGhPgCZ9oQOUF63oKZFn0hOjj8f7C0Afi9JTl3st5kCini0ELyFrMCyGODBhE_J06sq4GqSuo2O4F-aiKOITAVA0PH0iNVTCyEiLgvtCI4daGcoXkAMrbL-3ZkA-HosRWisLVBCUixlsQWfKwuq38Q-rOafqo7Wgh0ZZJAwbWMS8r3ObHeDYVhvwn4wBqy25D_oumHF_DVSqN9swnRUQaGp_rT91NA7G1bdIjy7AZC9BihbvlbQDyBSs8cWNy5U8b-1pVa2ZO0tOGPejjJZskOoqk1HIPUjfSTgFhsEem6k2pmf0MwykAjnMQW9g8pvZN9qPOqvu6Ba1j9p1y9dF-tqcyu1tdFz2SWDZownVEPLiA770vxXvTwVIdvheEiPE1Q1kcyJ6GcrFwkUemRy4nJF_LdnmjAyJl-osw1Vr0vI6EZ6xiiK0IjEGPAJcXYiOSQyejMfUGfbvDFFnkTQPsNZ_brh-RCYSVBU3HyRvLnPxiF2i9WPXR6OZ_CHblH_TiUfFoh9qO3ni3Ai1cCK50QCgy-yLyKZNANGtzGimKN86Bn6X5_v5ZvEsU9gK1nPEwPyeqs6X0ChysLEg3AYXBePqCVuLmC6YyaHyl2EhG_V3qoCPykQLXWpNOtVR-gylAhPA3QJuL1pYzMC-ZBmTzAm5ggVayzJ8kbQme14aBvd9SaBGO4kYmHR8BcqWAk9-JxEtq7pbXm6JPCbayBl45m2fRO9_C_qTLUzznFoPPopmY0y9vmR3ab2-p_mY5nZYM73y0zUo3nSEuKlK8aNrg9KGLW4zdFQb6hbOhg9m_v0M3UdEHpF2yH77fTneJ54hn-2tjAki55_64LT7XQ1j9YCFHSBkk79LU-YPwryMGR0iWnsHWGDJVKNHV0I40gVYe6BrI6nlykvs_6I5TeBBBGxzkSXVsJN624rFomPsoUedC2-kjNc1XgVxAouqwZ40iUEeDykfJMM2B3w_PxyA_tKdaU_Bwr1_wkUfNlr35rSjT4ASuJHzCmqj4ePff6KykIachco7OjPeB2N1BhsKc32i3vqoGBvGpY25E72ej-6zc6hwTGVz4XOv_B5DCj_aoHmQmNnfqVhHf_hJSbXrK4nQ"
+        }
+      }
+    },
+    "eventHash": "865150d39e8a2a4f36d7c00378dd5339447fc1db2e17aa2b5eb13e58fae9fb92",
+    "chainHash": "cb0e3eb3cf66886304309cafc32bf9859140122906ab462129afd7d906ddbd0f"
   }
 ]

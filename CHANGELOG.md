@@ -7,17 +7,18 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 - **Cross-Platform Signer Alignment**:
-  - **Unified Protocol Implementation**: Ported the `UnifiedRequest/UnifiedResponse` protocol to the Rust (Tauri) signer, achieving full parity with the Swift implementation.
-  - **Standardized Commands**: Implemented `read_card`, `register_device`, `sign_data`, `sign_with_bbs`, and `bbs_generate_key` as unified commands in Rust.
-  - **File-based I/O**: Added `outputPath` support to all major commands in the Rust signer to handle large data transfers (e.g., face photos) efficiently via the filesystem.
+  - **Unified Protocol Completion**: Achieved 100% parity between the Rust (Tauri) and Swift signers by porting the full `UnifiedRequest/UnifiedResponse` protocol.
+  - **Standardized Presentation Flow**: Implemented `sign_presentation` with preview support in the Rust signer, allowing the MCP server to launch the Tauri GUI for user approval via a common JSON interface.
+  - **Comprehensive Command Support**: Standardized `read_card`, `register_device`, `sign_data`, `sign_with_bbs`, and `bbs_generate_key` across all native implementations.
+  - **File-based I/O**: Integrated `outputPath` support across the stack to handle large identity data and face photos efficiently without stdout bottlenecks.
 - **Rust Signer**:
   - **Recursive mdoc Inspection**: Implemented recursive CBOR-to-JSON conversion for `inspect_document` command, enabling full extraction of nested data structures (e.g., family members in Resident Records).
+  - **Interactive Preview Bridge**: Added logic to bridge Unified Interface requests to the Tauri GUI, enabling a seamless transition from CLI/LLM interactions to interactive user approval.
   - **Internal Logic Refactoring**: Decoupled core card-reading logic from Tauri commands to support both GUI and headless CLI modes.
 - **MCP Server**:
-  - **Full Tool Consolidation**: Refactored `jpki` and `tobari` tools to use the standardized `--request` interface, removing platform-specific branching for JPKI, Passport, Driver's License, and BBS+ operations.
+  - **Universal Native Integration**: Refactored `jpki` and `tobari` tools to use the standardized JSON-based protocol, eliminating platform-specific branching and complex CLI flag management.
   - **Enhanced Error Handling**: Improved `runCivCommand` to natively parse Unified Interface errors (e.g., `IncorrectPin`, `PinLocked`) and provide descriptive feedback to the LLM.
-  - **Optimized Data Transfer**: Leveraged `outputPath` for large binary data (like face photos and identity documents) to minimize stdout overhead and improve reliability.
-  - **Cross-Platform Device Registration**: Enabled `register_device` on all platforms by leveraging the unified native signer interface.
+  - **Optimized Data Transfer**: Leveraged `outputPath` for large binary data to minimize communication overhead and improve reliability.
 
 ## [0.3.15] - 2026-01-13
 

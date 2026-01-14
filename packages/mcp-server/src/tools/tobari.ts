@@ -631,45 +631,46 @@ export async function handleCreatePresentation(toolArgs: any) {
                 }
 
                 if (!deviceAuth) {
-                    const isMacSigner = signerPath === DEFAULT_SIGNER_MACOS_PATH;
-                    
-                    const signRequest = {
-                        challenge: Buffer.from(toBeSigned).toString('base64url'),
-                        rp_id: "tobari-mcp-server",
-                        message: `Sign presentation for ${disclosedDoc.docType}`,
-                        user_verification: "preferred"
+                    const request = {
+                        command: "sign_presentation",
+                        params: {
+                            documentPath: path.resolve(req.path),
+                            disclosureFields: req.fields,
+                            nonce: args.verifierNonce,
+                            verifierId: "tobari-mcp-server",
+                            outputFormat: "cose"
+                        },
+                        preview: true // For now, we always want user approval via GUI
                     };
 
-                    const signArgs = isMacSigner 
-                        ? ["--sign-passkey", "--request", JSON.stringify(signRequest)]
-                        : ["--request", JSON.stringify(signRequest)];
-                    
+                    const isMacSigner = signerPath === DEFAULT_SIGNER_MACOS_PATH;
                     const spawnEnv = isMacSigner 
                         ? { ...process.env, TOBARI_SIGNER_USE_KEYCHAIN: "1" }
                         : process.env;
 
-                    const signerProcess = spawn(signerPath!, signArgs, { env: spawnEnv });
+                    const outputStr = await runCivCommand(signerPath!, ["--request", JSON.stringify(request)]);
+                    const response = JSON.parse(outputStr);
 
-                    const resultPromise = new Promise<string>((resolve, reject) => {
-                        let stdout = "";
-                        let stderr = "";
-                        signerProcess.stdout.on("data", (data) => stdout += data);
-                        signerProcess.stderr.on("data", (data) => stderr += data);
-                        signerProcess.on("close", (code) => {
-                            if (code === 0) resolve(stdout);
-                            else reject(new Error(`Signer exited with code ${code}: ${stderr}`));
-                        });
-                        signerProcess.on("error", (err) => reject(err));
-                    });
-
-                    const outputStr = await resultPromise;
-                    let output;
-                    try {
-                        output = JSON.parse(outputStr);
-                    } catch (e) {
-                        throw new Error(`Invalid JSON output from signer: ${outputStr}`);
+                    if (response.status === "preview") {
+                        // In case of preview, the signer GUI should be open now.
+                        // For a stateless tool call, we might need to inform the user.
+                        return {
+                            content: [{
+                                type: "text",
+                                text: JSON.stringify({
+                                    status: "preview_pending",
+                                    message: "Signer GUI has been launched for approval. Please approve the presentation in the app.",
+                                    preview: response.preview
+                                }, null, 2)
+                            }]
+                        };
                     }
 
+                    if (response.status !== "success") {
+                        throw new Error(`Signer failed: ${response.error?.message || "Unknown error"}`);
+                    }
+
+                    const output = response.result.data;
                     const signatureBytes = new Uint8Array(Buffer.from(output.signature, 'base64url'));
 
                     if (output.authData && output.clientDataJSON) {
