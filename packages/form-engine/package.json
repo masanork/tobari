@@ -6,18 +6,21 @@
     "scripts": {
         "build": "bun build ./src/index.ts --outdir ./dist --target browser",
         "dev": "bun build ./src/index.ts --outdir ./dist --target browser --watch",
+        "mkform": "bun run ./scripts/mkform.ts",
         "test": "bun test"
     },
     "peerDependencies": {
         "@tobari/crypto": "workspace:*"
     },
     "dependencies": {
+        "cbor-x": "^1.5.0",
+        "js-yaml": "^4.1.1",
         "lit": "^3.1.0",
-        "zod": "^3.22.4",
-        "cbor-x": "^1.5.0"
+        "zod": "^3.22.4"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "^20.1.0",
+        "@types/js-yaml": "^4.0.9",
         "bun-types": "latest",
         "happy-dom": "^20.1.0"
     }

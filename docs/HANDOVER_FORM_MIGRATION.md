@@ -10,31 +10,34 @@ Two parallel paths were established:
 1.  **v1 (Legacy Support)**: A direct port of the Markdown-to-HTML architecture to support existing assets.
 2.  **v2 (Next-Gen)**: A newly designed, schema-driven, lightweight engine (`form-engine`) native to Tobari's philosophy (Lit/Zod/CBOR).
 
+**Status Update:** v2 Engine has been enhanced with Array support, Data Validation, and a Migration Tool. It is ready for wider adoption testing.
+
 ## 2. Deliverables
 
-### Path A: v1 Legacy Runtime (Usage: Existing Markdown Forms)
+### Path A: v1 Legacy Runtime (Usage: Deprecated)
 
 *   **`@tobari/compiler`**:
     *   Parses Markdown forms into HTML structure + JSON metadata.
-    *   Supports `text`, `number`, `radio`, `calc`, `dynamic table` syntax.
-    *   **Status**: Fully tested (`bun test packages/compiler` passes).
+    *   **Status**: Maintenance mode.
 *   **`@tobari/form-runtime`**:
     *   Client-side library injected into generated HTML.
-    *   Handles data binding, calculation, validation, and signing.
-    *   **Status**: logic fully migrated and tested. PQC support is currently omitted (uses WebCrypto P-256).
-*   **`@tobari/cli` (`md2form`)**:
-    *   CLI tool to convert `.md` -> `.html` (standalone).
-    *   Command: `bun run packages/cli/src/md2form.ts <input.md> -o <output.html>`
+    *   **Status**: Maintenance mode.
 
-### Path B: v2 Form Engine (Usage: Future Standard)
+### Path B: v2 Form Engine (Usage: Recommended)
 
 *   **`docs/TOBARI_FORM_SPEC.md`**:
     *   Specification for the new Schema-Driven architecture.
 *   **`@tobari/form-engine`**:
     *   **Tech Stack**: Lit (Web Components), Zod (Schema Validation), CBOR (Data Format).
-    *   **Features**: Dynamic rendering from JSON schema, reactive updates, nested group support.
-    *   **Demo**: Open `packages/form-engine/index.html` (after `bun run build`) to see the prototype.
-    *   **Status**: Core engine implemented. 180KB bundle (unminified). Schema validation tests pass.
+    *   **Features**:
+        *   Dynamic rendering from JSON schema.
+        *   Text, Integer, Select, Group, and **Array** (Dynamic List) fields.
+        *   **Real-time & Submit-time Validation** using Zod.
+        *   Better styling and error reporting.
+    *   **Status**: Feature Complete for MVP.
+*   **Migration Tool**:
+    *   `packages/form-engine/scripts/migrate.ts`: Converts v1 Markdown forms to v2 JSON Schema.
+    *   Usage: `bun run packages/form-engine/scripts/migrate.ts <input.md>`
 
 ## 3. Architecture Comparison
 
@@ -49,12 +52,12 @@ Two parallel paths were established:
 
 ## 4. Pending Tasks & Next Steps
 
-### Immediate (Next Sprint)
-1.  **v2 UI Refinement**:
-    *   Implement Arrays/Dynamic Lists (currently only static `group` supported).
-    *   Add better styling and validation error messages to `<tobari-form>`.
-2.  **Migration Tool**:
-    *   Develop a script (or AI prompt) to convert existing `srn` Markdown files into v2 JSON Schemas.
+### Immediate
+1.  **Full Migration**:
+    *   Convert all existing example forms (in `examples/`) to v2 using the migration tool.
+    *   Verify them in the v2 engine demo.
+2.  **Deprecation**:
+    *   Remove v1 packages (`packages/compiler`, `packages/form-runtime`, `packages/cli`) once migration is confirmed.
 
 ### Long Term
 1.  **PQC Integration**:
@@ -66,14 +69,13 @@ Two parallel paths were established:
 
 ### Running Tests
 ```bash
-# v1 Compiler
-bun test packages/compiler
-
-# v1 Runtime
-bun test packages/form-runtime
-
 # v2 Engine
 bun test packages/form-engine
+```
+
+### Running Migration
+```bash
+bun run packages/form-engine/scripts/migrate.ts <path-to-markdown>
 ```
 
 ### Building v2 Engine
