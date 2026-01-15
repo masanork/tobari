@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.18] - 2026-01-16
+
+### Fixes
+- **Tauri Signer**: Corrected JPKI attribute parsing by handling `FF20`/`DF20` wrapper tags and padding, restoring proper Basic 4 info extraction.
+- **JPKI (My Number Card)**: Improved face photo extraction to handle nested TLV structures and signature-based fallback for real cards.
+- **Driver's License (JPDL)**: Stabilized TLV parsing and photo handling to match the working macOS implementation.
+- **Cross-Platform Photo Handling**: Added JPEG conversion on macOS with explicit format metadata so GUIs can render photos reliably.
+- **Debug Logging**: Routed PC/SC and card-reader debug output through `TOBARI_DEBUG` for clean GUI operation.
+
 All notable changes to this project will be documented in this file.
 
 
