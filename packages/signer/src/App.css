@@ -267,6 +267,81 @@ button:disabled {
   margin-bottom: 1rem;
 }
 
+/* Wallet View */
+.wallet-view {
+  width: 100%;
+}
+
+.empty-wallet {
+  color: #888;
+  font-style: italic;
+  margin: 2rem 0;
+}
+
+.credential-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-bottom: 1.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.credential-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #2a2a2a;
+  padding: 0.8rem;
+  border-radius: 10px;
+  border: 1px solid #444;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.credential-card:hover {
+  border-color: #24c8db;
+  background: #333;
+}
+
+.cred-icon {
+  font-size: 1.8em;
+  background: #111;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.cred-info {
+  flex: 1;
+}
+
+.cred-name {
+  font-weight: bold;
+  font-size: 0.95em;
+  margin-bottom: 0.1rem;
+}
+
+.cred-type {
+  font-size: 0.75em;
+  color: #aaa;
+  font-family: monospace;
+}
+
+.refresh-btn {
+  font-size: 0.8em;
+  padding: 0.4em 1em;
+  background: transparent;
+  color: #24c8db;
+  border: 1px solid #24c8db;
+  margin-top: 0.5rem;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;

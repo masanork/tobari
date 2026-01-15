@@ -5,7 +5,7 @@ use crate::apdu::{
 use crate::errors::{CivError, Result};
 use crate::models::{CitizenIdentity, IdentityController};
 use crate::reader::CardReader;
-use crate::utils::parse_ber_tlv;
+use crate::utils::{parse_ber_tlv, BerTlv};
 
 /// High-level JPKI Controller
 pub struct JpkiController<R: CardReader> {
@@ -225,6 +225,18 @@ impl<R: CardReader> JpkiController<R> {
         self.verify_pin(&file_ids::EF_INPUT_SUPPORT_PIN, pin)
             .await?;
         let attr_data = self.read_ef_full(&file_ids::EF_ATTRIBUTES).await?;
+        debug_log(&format!(
+            "JPKI EF_ATTRIBUTES size: {} bytes",
+            attr_data.len()
+        ));
+        if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+            let hex = attr_data
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join("");
+            println!("DEBUG: JPKI EF_ATTRIBUTES hex: {}", hex);
+        }
         Self::parse_basic_info(&attr_data)
     }
 
@@ -234,28 +246,32 @@ impl<R: CardReader> JpkiController<R> {
                 "Invalid My Number length.".to_string(),
             ));
         }
+        self.read_face_photo_with_pin(my_number).await
+    }
+
+    pub async fn read_face_photo_with_pin(&mut self, pin: &str) -> Result<Vec<u8>> {
         self.select_surface_ap().await?;
-        self.verify_pin(&file_ids::EF_SURFACE_PIN, my_number)
-            .await?;
+        self.verify_pin(&file_ids::EF_SURFACE_PIN, pin).await?;
 
         let data = self.read_ef_full(&file_ids::EF_FACE_PHOTO).await?;
-        let tlvs = parse_ber_tlv(&data).unwrap_or_default();
-
-        fn find_photo_recursive(tlvs: &[crate::utils::BerTlv]) -> Option<Vec<u8>> {
-            for tlv in tlvs {
-                if tlv.tag == 0xDF27 {
-                    return Some(tlv.value.to_vec());
-                }
-                if let Some(found) = find_photo_recursive(&tlv.children) {
-                    return Some(found);
-                }
-            }
-            None
+        debug_log(&format!(
+            "JPKI EF_FACE_PHOTO size: {} bytes",
+            data.len()
+        ));
+        if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+            let hex = data
+                .iter()
+                .take(64)
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join("");
+            println!("DEBUG: JPKI EF_FACE_PHOTO head64: {}", hex);
         }
 
-        if let Some(photo) = find_photo_recursive(&tlvs) {
+        if let Some(photo) = extract_face_photo(&data) {
             Ok(photo)
         } else if data.len() > 1000 {
+            debug_log("JPKI EF_FACE_PHOTO: DF27 not found, returning raw payload");
             Ok(data)
         } else {
             Err(CivError::NotFound(
@@ -266,18 +282,39 @@ impl<R: CardReader> JpkiController<R> {
 
     fn parse_basic_info(data: &[u8]) -> Result<BasicInfo> {
         let mut info = BasicInfo::default();
-        let tlvs = parse_ber_tlv(data).unwrap_or_default();
-        fn collect_tags(
-            tlvs: &[crate::utils::BerTlv],
-            map: &mut std::collections::HashMap<u32, String>,
-        ) {
+        let tlvs = parse_jpki_flat_tlv(data);
+        fn collect_tags(tlvs: &[BerTlv], map: &mut std::collections::HashMap<u32, String>) {
             for tlv in tlvs {
-                map.insert(tlv.tag, tlv.as_utf8());
-                collect_tags(&tlv.children, map);
+                if tlv.tag == 0xDF20 || tlv.tag == 0xFF20 {
+                    let nested = parse_jpki_flat_tlv(&tlv.value);
+                    collect_tags(&nested, map);
+                }
+                let value = String::from_utf8_lossy(&tlv.value).to_string();
+                map.insert(tlv.tag, value);
             }
         }
         let mut tag_map = std::collections::HashMap::new();
         collect_tags(&tlvs, &mut tag_map);
+        debug_log(&format!(
+            "JPKI EF_ATTRIBUTES tags: {}",
+            tag_map
+                .keys()
+                .map(|k| format!("{:X}", k))
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+        if let Some(v) = tag_map.get(&0xDF22) {
+            debug_log(&format!("JPKI DF22(name) raw: {}", v));
+        }
+        if let Some(v) = tag_map.get(&0xDF23) {
+            debug_log(&format!("JPKI DF23(address) raw: {}", v));
+        }
+        if let Some(v) = tag_map.get(&0xDF24) {
+            debug_log(&format!("JPKI DF24(birth) raw: {}", v));
+        }
+        if let Some(v) = tag_map.get(&0xDF25) {
+            debug_log(&format!("JPKI DF25(gender) raw: {}", v));
+        }
         if let Some(v) = tag_map.get(&0xDF22) {
             info.name = v.clone();
         }
@@ -347,6 +384,196 @@ impl<R: CardReader> JpkiController<R> {
         } else {
             Err(CivError::from_sw(sw1, sw2))
         }
+    }
+}
+
+fn parse_jpki_flat_tlv(data: &[u8]) -> Vec<BerTlv> {
+    let mut tlvs = Vec::new();
+    let mut i = 0;
+
+    while i < data.len() {
+        let first_tag_byte = data[i];
+        if first_tag_byte == 0x00 {
+            i += 1;
+            continue;
+        }
+        if first_tag_byte == 0xFF {
+            if i + 1 >= data.len() || data[i + 1] == 0xFF {
+                i += 1;
+                continue;
+            }
+        }
+
+        let mut tag: u32 = first_tag_byte as u32;
+        i += 1;
+
+        if (first_tag_byte & 0x1F) == 0x1F {
+            while i < data.len() {
+                let next_byte = data[i];
+                tag = (tag << 8) | (next_byte as u32);
+                i += 1;
+                if (next_byte & 0x80) == 0 {
+                    break;
+                }
+            }
+        }
+
+        if i >= data.len() {
+            break;
+        }
+        let first_len_byte = data[i];
+        i += 1;
+
+        let mut len: usize = 0;
+        if first_len_byte <= 0x7F {
+            len = first_len_byte as usize;
+        } else {
+            let len_bytes_count = (first_len_byte & 0x7F) as usize;
+            for _ in 0..len_bytes_count {
+                if i >= data.len() {
+                    break;
+                }
+                len = (len << 8) | (data[i] as usize);
+                i += 1;
+            }
+        }
+
+        if i + len > data.len() {
+            let remaining = data.len().saturating_sub(i);
+            let value = data[i..i + remaining].to_vec();
+            tlvs.push(BerTlv {
+                tag,
+                value,
+                children: Vec::new(),
+            });
+            break;
+        }
+
+        let value = data[i..i + len].to_vec();
+        tlvs.push(BerTlv {
+            tag,
+            value,
+            children: Vec::new(),
+        });
+        i += len;
+    }
+
+    tlvs
+}
+
+fn extract_face_photo(data: &[u8]) -> Option<Vec<u8>> {
+    let mut i = 0;
+    let mut logged = 0;
+    while i + 2 <= data.len() {
+        let b1 = data[i];
+        let b2 = data[i + 1];
+        if (b1 == 0xFF && b2 == 0xFF) || (b1 == 0x00 && b2 == 0x00) {
+            i += 1;
+            continue;
+        }
+
+        let tag = ((b1 as u16) << 8) | (b2 as u16);
+        i += 2;
+        if i >= data.len() {
+            break;
+        }
+
+        let mut value_len = data[i] as usize;
+        i += 1;
+
+        if value_len == 0x81 {
+            if i >= data.len() {
+                break;
+            }
+            value_len = data[i] as usize;
+            i += 1;
+        } else if value_len == 0x82 {
+            if i + 1 >= data.len() {
+                break;
+            }
+            value_len = ((data[i] as usize) << 8) | (data[i + 1] as usize);
+            i += 2;
+        } else if value_len == 0x83 {
+            if i + 2 >= data.len() {
+                break;
+            }
+            value_len = ((data[i] as usize) << 16) | ((data[i + 1] as usize) << 8) | (data[i + 2] as usize);
+            i += 3;
+        }
+
+        if i + value_len > data.len() {
+            break;
+        }
+
+        if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") && logged < 20 {
+            debug_log(&format!(
+                "JPKI EF_FACE_PHOTO tag 0x{:04X} len {}",
+                tag, value_len
+            ));
+            logged += 1;
+        }
+
+        if tag == 0xDF27 {
+            return Some(data[i..i + value_len].to_vec());
+        }
+
+        if tag == 0xDF20 || tag == 0xFF20 || tag == 0xDF21 || tag == 0xFF21 {
+            debug_log(&format!(
+                "JPKI EF_FACE_PHOTO: descending into wrapper 0x{:04X} ({} bytes)",
+                tag, value_len
+            ));
+            if let Some(found) = extract_face_photo(&data[i..i + value_len]) {
+                return Some(found);
+            }
+        }
+
+        i += value_len;
+    }
+
+    // Fallback: scan for DF27 tag directly inside the buffer.
+    let mut j = 0;
+    while j + 3 <= data.len() {
+        if data[j] == 0xDF && data[j + 1] == 0x27 {
+            let mut len = data[j + 2] as usize;
+            let mut k = j + 3;
+            if len == 0x81 {
+                if k >= data.len() { break; }
+                len = data[k] as usize;
+                k += 1;
+            } else if len == 0x82 {
+                if k + 1 >= data.len() { break; }
+                len = ((data[k] as usize) << 8) | (data[k + 1] as usize);
+                k += 2;
+            } else if len == 0x83 {
+                if k + 2 >= data.len() { break; }
+                len = ((data[k] as usize) << 16) | ((data[k + 1] as usize) << 8) | (data[k + 2] as usize);
+                k += 3;
+            }
+            if k + len <= data.len() {
+                debug_log(&format!("JPKI DF27 found by scan at offset {}", j));
+                return Some(data[k..k + len].to_vec());
+            }
+        }
+        j += 1;
+    }
+
+    // Fallback: scan for JP2/J2K signatures inside the buffer.
+    if let Some(offset) = data.windows(12).position(|w| {
+        w == [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A]
+    }) {
+        return Some(data[offset..].to_vec());
+    }
+    if let Some(offset) = data.windows(2).position(|w| w == [0xFF, 0x4F]) {
+        return Some(data[offset..].to_vec());
+    }
+
+    debug_log("JPKI EF_FACE_PHOTO: DF27/JP2/J2K not found");
+    None
+}
+
+fn debug_log(message: &str) {
+    if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+        println!("DEBUG: {}", message);
     }
 }
 

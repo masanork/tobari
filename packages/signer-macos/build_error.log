@@ -1,0 +1,153 @@
+Sources/SmartCardManager.swift:88:23: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 86 |     /// Pre-establish a session for faster consecutive operations
+ 87 |     func establishSession() async throws {
+ 88 |         operationLock.lock()
+    |                       `- warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 89 |         if activeSessionCard != nil {
+ 90 |             operationLock.unlock()
+
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+1 | class NSLock {
+2 | open func lock()}
+  |           `- note: 'lock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:90:27: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 88 |         operationLock.lock()
+ 89 |         if activeSessionCard != nil {
+ 90 |             operationLock.unlock()
+    |                           `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 91 |             return
+ 92 |         }
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:93:23: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 91 |             return
+ 92 |         }
+ 93 |         operationLock.unlock()
+    |                       `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+ 94 |         
+ 95 |         guard let manager = TKSmartCardSlotManager.default else {
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:112:35: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+110 |                 }
+111 |                 if success {
+112 |                     operationLock.lock()
+    |                                   `- warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+113 |                     activeSessionCard = card
+114 |                     operationLock.unlock()
+
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+1 | class NSLock {
+2 | open func lock()}
+  |           `- note: 'lock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:114:35: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+112 |                     operationLock.lock()
+113 |                     activeSessionCard = card
+114 |                     operationLock.unlock()
+    |                                   `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+115 |                     return
+116 |                 }
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:252:27: warning: instance method 'wait' is unavailable from asynchronous contexts; Await a Task handle instead; this is an error in the Swift 6 language mode
+250 | 
+251 |         // Serialize all card operations
+252 |         transmitSemaphore.wait()
+    |                           `- warning: instance method 'wait' is unavailable from asynchronous contexts; Await a Task handle instead; this is an error in the Swift 6 language mode
+253 |         defer { transmitSemaphore.signal() }
+254 | 
+
+Dispatch.DispatchSemaphore.wait:2:13: note: 'wait()' declared here
+1 | class DispatchSemaphore {
+2 | public func wait()}
+  |             `- note: 'wait()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:266:27: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+264 |         if !isDetection {
+265 |             // Use active session if available
+266 |             operationLock.lock()
+    |                           `- warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+267 |             if let card = activeSessionCard {
+268 |                 operationLock.unlock()
+
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+1 | class NSLock {
+2 | open func lock()}
+  |           `- note: 'lock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:268:31: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+266 |             operationLock.lock()
+267 |             if let card = activeSessionCard {
+268 |                 operationLock.unlock()
+    |                               `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+269 |                 let response = try await card.transmit(apdu)
+270 |                 if Self.apduDebugEnabled { fputs("APDU< \(response.hexString)\n", stderr) }
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:274:27: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+272 |                 return response
+273 |             }
+274 |             operationLock.unlock()
+    |                           `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+275 |         } else {
+276 |             operationLock.lock()
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:276:27: warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+274 |             operationLock.unlock()
+275 |         } else {
+276 |             operationLock.lock()
+    |                           `- warning: instance method 'lock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+277 |             let hasActiveSession = activeSessionCard != nil
+278 |             operationLock.unlock()
+
+Foundation.NSLock.lock:2:11: note: 'lock()' declared here
+1 | class NSLock {
+2 | open func lock()}
+  |           `- note: 'lock()' declared here
+3 | 
+
+Sources/SmartCardManager.swift:278:27: warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+276 |             operationLock.lock()
+277 |             let hasActiveSession = activeSessionCard != nil
+278 |             operationLock.unlock()
+    |                           `- warning: instance method 'unlock' is unavailable from asynchronous contexts; Use async-safe scoped locking instead; this is an error in the Swift 6 language mode
+279 |             if hasActiveSession {
+280 |                 throw NSError(domain: "SmartCardManager", code: 101, userInfo: [NSLocalizedDescriptionKey: "Card session busy"])
+
+Foundation.NSLock.unlock:2:11: note: 'unlock()' declared here
+1 | class NSLock {
+2 | open func unlock()}
+  |           `- note: 'unlock()' declared here
+3 | 

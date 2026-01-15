@@ -23,6 +23,7 @@ interface MyNumberCardData {
   gender: string;
   my_number: string;
   face_photo?: string;
+  face_photo_format?: string;
 }
 
 interface DriverLicenseData {
@@ -33,6 +34,7 @@ interface DriverLicenseData {
   expiry_date: string;
   license_number: string;
   categories: string[];
+  face_photo_format?: string;
 }
 
 interface PassportData {
@@ -45,6 +47,13 @@ interface PassportData {
   face_photo?: string;
 }
 
+interface WalletCredential {
+  name: string;
+  path: string;
+  doc_type: string;
+  created_at?: number;
+}
+
 function App() {
   const [request, setRequest] = useState<SignRequest | null>(null);
   const [status, setStatus] = useState<string>("Loading...");
@@ -53,9 +62,47 @@ function App() {
   const [pin2, setPin2] = useState<string>("");
   const [mrz, setMrz] = useState<string>("");
   const [cardData, setCardData] = useState<any | null>(null);
-  const [cardType, setCardType] = useState<string>("jpki");
+  const [cardType, setCardType] = useState<string>("wallet"); // Default to Wallet
+  const [wallet, setWallet] = useState<WalletCredential[]>([]);
 
-// ... (omitted intermediate parts) ...
+  const normalizeBase64 = (input: string) => {
+    let base64 = input.replace(/-/g, "+").replace(/_/g, "/");
+    const padding = base64.length % 4;
+    if (padding) {
+      base64 += "=".repeat(4 - padding);
+    }
+    return base64;
+  };
+
+  const estimateBase64Bytes = (input: string) => {
+    const normalized = normalizeBase64(input);
+    const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+    return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+  };
+
+  const licensePhotoBase64 = cardData?.face_photo ? normalizeBase64(cardData.face_photo) : null;
+  const facePhotoMime =
+    cardData?.face_photo_format === "jpeg"
+      ? "image/jpeg"
+      : cardData?.face_photo_format === "jp2"
+      ? "image/jp2"
+      : cardType === "license"
+      ? "image/jp2"
+      : "image/jpeg";
+  const passportPhotoBase64 = cardData?.dg2 ? normalizeBase64(cardData.dg2) : null;
+
+  const loadWallet = async () => {
+    try {
+      const items = await invoke<WalletCredential[]>("get_wallet_credentials");
+      setWallet(items);
+    } catch (e) {
+      console.error("Failed to load wallet", e);
+    }
+  };
+
+  useEffect(() => {
+    loadWallet();
+  }, []);
 
   const handleReadPassport = async () => {
     if (mrz.length < 20) {
@@ -181,6 +228,38 @@ function App() {
     }
   };
 
+  const handleSaveToWallet = async () => {
+    if (!cardData) return;
+    setStatus("Saving to Wallet...");
+    try {
+      let name = "My Document";
+      let docType = "unknown";
+
+      if (cardType === 'jpki') {
+        name = `MyNumber_${cardData.name}`;
+        docType = "io.github.masanork.tobari.mynumber.v1";
+      } else if (cardType === 'passport') {
+        name = `Passport_${cardData.passport_number || 'Identity'}`;
+        docType = "org.icao.dtc.v1";
+      } else if (cardType === 'license') {
+        name = `License_${cardData.license_number}`;
+        docType = "io.github.masanork.tobari.license.v1";
+      }
+
+      await invoke("save_to_wallet", {
+        name,
+        docType,
+        data: cardData
+      });
+      setStatus("Saved to Wallet!");
+      setCardData(null);
+      setCardType('wallet');
+      loadWallet();
+    } catch (e: any) {
+      setError("Failed to save: " + e.toString());
+    }
+  };
+
   const handleRegister = async () => {
     setStatus("Registering hardware-bound key... Please touch your device.");
     setError(null);
@@ -228,6 +307,7 @@ function App() {
       )}
 
       <div className="card-selector">
+        <button className={cardType === 'wallet' ? 'active' : ''} onClick={() => { setCardType('wallet'); loadWallet(); }}>Wallet</button>
         <button className={cardType === 'jpki' ? 'active' : ''} onClick={() => setCardType('jpki')}>JPKI</button>
         <button className={cardType === 'passport' ? 'active' : ''} onClick={() => setCardType('passport')}>Passport</button>
         <button className={cardType === 'license' ? 'active' : ''} onClick={() => setCardType('license')}>License</button>
@@ -235,6 +315,30 @@ function App() {
       </div>
 
       <div className="card-input-section">
+        {cardType === 'wallet' && (
+          <div className="wallet-view">
+            {wallet.length === 0 ? (
+              <p className="empty-wallet">Your wallet is empty. Scan a card to add it.</p>
+            ) : (
+              <div className="credential-grid">
+                {wallet.map((cred, i) => (
+                  <div key={i} className="credential-card" onClick={() => {/* TODO: Show details */}}>
+                    <div className="cred-icon">
+                      {cred.doc_type.includes('passport') ? '🛂' : 
+                       cred.doc_type.includes('license') ? '🪪' : 
+                       cred.doc_type.includes('resident') ? '🏠' : '📄'}
+                    </div>
+                    <div className="cred-info">
+                      <div className="cred-name">{cred.name}</div>
+                      <div className="cred-type">{cred.doc_type}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="refresh-btn" onClick={loadWallet}>Refresh Wallet</button>
+          </div>
+        )}
         {cardType === 'jpki' && (
           <>
             <input 
@@ -286,6 +390,8 @@ function App() {
               <p><strong>Name:</strong> {cardData.name}</p>
               <p><strong>Address:</strong> {cardData.address}</p>
               <p><strong>Birth Date:</strong> {cardData.birth_date}</p>
+              <p><strong>Gender:</strong> {cardData.gender}</p>
+              <p><strong>My Number:</strong> {cardData.my_number}</p>
             </>
           )}
           {cardType === 'passport' && (
@@ -293,7 +399,7 @@ function App() {
               <p><strong>MRZ Data (DG1):</strong> {cardData.dg1?.substring(0, 30)}...</p>
               <p><strong>Photo Data (DG2):</strong> {cardData.dg2 ? "Present" : "Missing"}</p>
               {cardData.dg2 && (
-                <img src={`data:image/jpeg;base64,${cardData.dg2}`} alt="Passport Face" style={{width: 100, marginTop: 10, borderRadius: 8}} />
+                <img src={`data:image/jpeg;base64,${passportPhotoBase64}`} alt="Passport Face" style={{width: 100, marginTop: 10, borderRadius: 8}} />
               )}
             </>
           )}
@@ -313,9 +419,33 @@ function App() {
           {cardType === 'residence' && (
             <pre className="raw-json">{JSON.stringify(cardData, null, 2)}</pre>
           )}
-          {cardData.face_photo && cardType !== 'passport' && (
-            <img src={`data:image/jpeg;base64,${cardData.face_photo}`} alt="Face" style={{width: 100, marginTop: 10, borderRadius: 8}} />
+          
+          {cardData.face_photo && (
+            <div className="photo-container">
+              <p style={{fontSize: '0.7em', color: '#888'}}>Photo data present ({estimateBase64Bytes(cardData.face_photo)} bytes)</p>
+              <img 
+                src={`data:${facePhotoMime};base64,${licensePhotoBase64}`} 
+                alt="Face" 
+                style={{width: 120, marginTop: 10, borderRadius: 8, border: '1px solid #444'}} 
+                onError={(e) => {
+                  console.error("Photo render error");
+                  // Fallback to jpeg if jp2 fails, or show error
+                  if (!(e.target as HTMLImageElement).src.includes('image/jpeg')) {
+                    (e.target as HTMLImageElement).src = `data:image/jpeg;base64,${licensePhotoBase64}`;
+                  }
+                }}
+              />
+            </div>
           )}
+          
+          <div style={{marginTop: '1.5rem', display: 'flex', gap: '0.5rem'}}>
+            <button className="sign-btn primary" onClick={handleSaveToWallet}>
+              Save to Wallet
+            </button>
+            <button className="reject-btn" onClick={() => setCardData(null)}>
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 

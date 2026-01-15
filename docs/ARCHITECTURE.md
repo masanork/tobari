@@ -42,7 +42,11 @@ We avoid a generic `core` package. Instead, we name packages by their specific d
 *   **Responsibility**: Bundles the Schema + Engine + Adapter into a single HTML file.
 *   **Dependency**: All of the above.
 
-## 4. Technical Standards
+## 4. Data & Storage
+Tobari defines a standardized storage structure for identity documents, user profiles, and logs. This ensures that different components (Signers, MCP Server, CLI) can share a common "Wallet" context.
+*   See [Data Storage Specification](./DATA_STORAGE.md) for details on `$TOBARI_HOME` and directory roles.
+
+## 5. Technical Standards
 *   **Monorepo**: Managed via Bun Workspaces.
 *   **Language**: TypeScript (Strict mode).
 *   **Testing**: Unit tests mandatory.

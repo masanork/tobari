@@ -19,30 +19,64 @@ impl BerTlv {
     }
 }
 
-/// Decode Raw JIS X 0208 bytes to String using ISO-2022-JP decoder.
+/// Decode Raw JIS X 0208 bytes to String using Shift-JIS conversion.
 pub fn decode_jis_x0208(input: &[u8]) -> String {
-    // JPDL text fields are Raw JIS X 0208 (no escape sequences).
-    // Prepend ISO-2022-JP escape sequence for "JIS X 0208-1983" (ESC $ B)
-    let mut data = vec![0x1B, 0x24, 0x42];
-    data.extend_from_slice(input);
-    
-    let (res, _, _) = encoding_rs::ISO_2022_JP.decode(&data);
+    let sjis_data = convert_jis_to_sjis(input);
+    let (res, _, _) = encoding_rs::SHIFT_JIS.decode(&sjis_data);
     res.into_owned()
 }
 
-/// Specialized BER-TLV parser for JPDL quirks (treats 0x1F as single byte tag)
+pub fn convert_jis_to_sjis(input: &[u8]) -> Vec<u8> {
+    let mut res = Vec::new();
+    let mut i = 0;
+    while i < input.len() {
+        if i + 1 < input.len() {
+            let c1 = input[i];
+            let c2 = input[i+1];
+            
+            // JIS X 0208 range: 0x21-0x7E
+            if c1 >= 0x21 && c1 <= 0x7E && c2 >= 0x21 && c2 <= 0x7E {
+                let mut s1 = (c1 - 0x21) / 2;
+                if s1 <= 0x1E { s1 += 0x81 } else { s1 += 0xC1 }
+
+                let mut s2 = c2;
+                if c1 % 2 != 0 {
+                    s2 += 0x1F;
+                } else {
+                    s2 += 0x7D;
+                }
+                if s2 >= 0x7F { s2 += 1; }
+
+                res.push(s1);
+                res.push(s2);
+                i += 2;
+                continue;
+            }
+        }
+        // Treat as single byte
+        res.push(input[i]);
+        i += 1;
+    }
+    res
+}
+
+/// Specialized BER-TLV parser for JPDL (supports multi-byte tags and linear sequence)
 pub fn parse_jpdl_tlv(data: &[u8]) -> Result<Vec<BerTlv>> {
     let mut tlvs = Vec::new();
     let mut i = 0;
 
     while i < data.len() {
         let first_tag_byte = data[i];
+        if first_tag_byte == 0 || first_tag_byte == 0xFF {
+            i += 1;
+            continue;
+        }
+        
         let mut tag: u32 = first_tag_byte as u32;
         i += 1;
 
-        // JPDL Quirk: 0x1F is treated as a single byte tag
-        if (first_tag_byte & 0x1F) == 0x1F && first_tag_byte != 0x1F {
-            // Multibyte tag (Standard BER-TLV)
+    // Support multi-byte tags (e.g., 0x5F40). JPDL treats 0x1F as single-byte.
+    if (first_tag_byte & 0x1F) == 0x1F && first_tag_byte != 0x1F {
             while i < data.len() {
                 let next_byte = data[i];
                 tag = (tag << 8) | (next_byte as u32);
@@ -53,52 +87,40 @@ pub fn parse_jpdl_tlv(data: &[u8]) -> Result<Vec<BerTlv>> {
             }
         }
 
-        if i >= data.len() {
-            bail!("Length truncated");
-        }
+        if i >= data.len() { break; }
+        
         let first_len_byte = data[i];
         i += 1;
-
-        let len: usize;
+        
+        let mut len: usize = 0;
         if first_len_byte <= 0x7F {
             len = first_len_byte as usize;
         } else {
-            let len_len = (first_len_byte & 0x7F) as usize;
-            if i + len_len > data.len() {
-                bail!("Length truncated");
-            }
-            let mut l: usize = 0;
-            for _ in 0..len_len {
-                l = (l << 8) | (data[i] as usize);
+            let len_bytes_count = (first_len_byte & 0x7F) as usize;
+            for _ in 0..len_bytes_count {
+                if i >= data.len() { break; }
+                len = (len << 8) | (data[i] as usize);
                 i += 1;
             }
-            len = l;
         }
 
         if i + len > data.len() {
-            bail!(
-                "Value length {} exceeds remaining data {}",
-                len,
-                data.len() - i
-            );
+            // Truncated or invalid length, but let's take what we can
+            let remaining = data.len() - i;
+            let value = &data[i..i + remaining];
+            tlvs.push(BerTlv {
+                tag,
+                value: value.to_vec(),
+                children: Vec::new(),
+            });
+            break;
         }
 
         let value = &data[i..i + len];
-        let mut children = Vec::new();
-
-        // If constructed tag (bit 6 is 1), try parsing children
-        // JPDL tags are usually Primitive, even if text. 0x1F is Primitive.
-        // We only recurse if it looks constructed.
-        if (first_tag_byte & 0x20) != 0 && len > 0 {
-            if let Ok(c) = parse_jpdl_tlv(value) {
-                children = c;
-            }
-        }
-
         tlvs.push(BerTlv {
             tag,
             value: value.to_vec(),
-            children,
+            children: Vec::new(),
         });
         i += len;
     }

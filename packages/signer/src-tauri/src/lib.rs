@@ -41,6 +41,8 @@ pub struct DriverLicenseData {
     pub license_number: String,
     pub issue_date: String,
     pub expire_date: String,
+    pub face_photo: Option<String>, // Base64
+    pub face_photo_format: Option<String>, // "jpeg" or "jp2"
     pub signature: Option<String>, // Base64
     pub raw_data_group1: Option<String>, // Base64
 }
@@ -64,6 +66,7 @@ pub struct MyNumberCardData {
     pub gender: String,
     pub my_number: String,
     pub face_photo: Option<String>,
+    pub face_photo_format: Option<String>, // "jpeg" or "jp2"
     pub auth_cert: Option<String>, // Base64
     pub sign_cert: Option<String>, // Base64
     pub auth_ca_cert: Option<String>, // Base64
@@ -1135,7 +1138,8 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
 }
 
 async fn read_my_number_card_internal(pin: String, include_my_number: bool, include_face_photo: bool) -> Result<MyNumberCardData, SignerError> {
-    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = JpkiController::new(reader);
 
     let my_number = if include_my_number {
@@ -1148,6 +1152,32 @@ async fn read_my_number_card_internal(pin: String, include_my_number: bool, incl
         .read_attributes(&pin)
         .await
         .map_err(SignerError::from)?;
+    
+    let (face_photo, face_photo_format) = if include_face_photo {
+        let from_mynumber = if !my_number.is_empty() {
+            controller.read_face_photo(&my_number).await.ok()
+        } else {
+            None
+        };
+        let photo = match from_mynumber {
+            Some(photo) => Some(photo),
+            None => controller.read_face_photo_with_pin(&pin).await.ok(),
+        };
+        if photo.is_none() && std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+            println!("DEBUG: JPKI face photo not found (both My Number and PIN fallback failed)");
+        }
+        if let Some(raw) = photo {
+            let (converted, format) = convert_jp2_if_needed(raw);
+            (
+                Some(URL_SAFE_NO_PAD.encode(converted)),
+                format.map(|f| f.to_string()),
+            )
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
     
     let auth_cert = controller.read_auth_cert().await.ok();
     let sign_cert = controller.read_sign_cert().await.ok();
@@ -1162,7 +1192,8 @@ async fn read_my_number_card_internal(pin: String, include_my_number: bool, incl
         birth_date: info.birth_date,
         gender: info.gender,
         my_number,
-        face_photo: if include_face_photo { info.face_photo } else { None },
+        face_photo,
+        face_photo_format,
         auth_cert: auth_cert.map(|d| URL_SAFE_NO_PAD.encode(d)),
         sign_cert: sign_cert.map(|d| URL_SAFE_NO_PAD.encode(d)),
         auth_ca_cert: auth_ca.map(|d| URL_SAFE_NO_PAD.encode(d)),
@@ -1177,7 +1208,8 @@ async fn read_passport(request: PassportReadRequest) -> Result<PassportData, Sig
 }
 
 async fn read_passport_internal(mrz: String) -> Result<PassportData, SignerError> {
-    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = PassportController::new(reader);
 
     controller.perform_bac(&mrz).await.map_err(|e| SignerError::Jpki(e.to_string()))?;
@@ -1204,17 +1236,41 @@ async fn read_passport_internal(mrz: String) -> Result<PassportData, SignerError
 #[cfg(not(target_arch = "wasm32"))]
 #[tauri::command]
 async fn read_driver_license(request: DriverLicenseRequest) -> Result<DriverLicenseData, SignerError> {
-    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = DriversLicenseController::new(reader);
 
     controller.select_dl_ap().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
     controller.verify_pin1(&request.pin1).await.map_err(SignerError::from)?;
     controller.verify_pin2(&request.pin2).await.map_err(SignerError::from)?;
 
+    // Re-select DL AP (DF1) after PIN verification, as verify_pin might have moved to MF/IEF
+    controller.select_dl_ap().await.map_err(|e| SignerError::Jpki(format!("Failed to re-select DL AP: {}", e)))?;
+
     // Use raw EF read for Group 1 (common data)
-    let raw_dg1 = controller.read_ef_full(&[0x00, 0x01]).await.ok();
-    let info = controller.read_common_data().await.map_err(SignerError::from)?;
+    let raw_dg1 = controller.read_ef_full(&[0x00, 0x01]).await
+        .map_err(|e| SignerError::Jpki(format!("Failed to read EF01: {}", e)))?;
+    
+    debug_log(&format!("Raw EF01 total size: {} bytes", raw_dg1.len()));
+    
+    if raw_dg1.is_empty() {
+        return Err(SignerError::Jpki("Read EF01 but it was empty".to_string()));
+    }
+
+    let info = controller.parse_common_data(&raw_dg1).map_err(SignerError::from)?;
     let signature = controller.read_signature().await.ok();
+    
+    // Read photo if PIN2 is likely valid
+    let face_photo_raw = controller.read_photo().await.ok();
+    if let Some(ref photo) = face_photo_raw {
+        debug_log(&format!("Face photo raw size: {} bytes", photo.len()));
+    }
+    let (face_photo, face_photo_format) = face_photo_raw
+        .map(|d| {
+            let (converted, format) = convert_jp2_if_needed(d);
+            (Some(URL_SAFE_NO_PAD.encode(converted)), format.map(|f| f.to_string()))
+        })
+        .unwrap_or((None, None));
 
     Ok(DriverLicenseData {
         name: info.name,
@@ -1224,15 +1280,248 @@ async fn read_driver_license(request: DriverLicenseRequest) -> Result<DriverLice
         license_number: info.license_number,
         issue_date: info.issue_date,
         expire_date: info.expire_date,
+        face_photo,
+        face_photo_format,
         signature: signature.map(|d| URL_SAFE_NO_PAD.encode(d)),
-        raw_data_group1: raw_dg1.map(|d| URL_SAFE_NO_PAD.encode(d)),
+        raw_data_group1: Some(URL_SAFE_NO_PAD.encode(raw_dg1)),
     })
+}
+
+fn debug_log(message: &str) {
+    if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+        println!("DEBUG: {}", message);
+    }
+}
+
+fn is_jpeg(data: &[u8]) -> bool {
+    data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
+}
+
+fn is_jp2(data: &[u8]) -> bool {
+    let sig = [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20];
+    data.windows(sig.len()).any(|w| w == sig)
+}
+
+fn is_j2k_codestream(data: &[u8]) -> bool {
+    data.len() >= 2 && data[0] == 0xFF && data[1] == 0x4F
+}
+
+fn normalize_jp2_payload(data: Vec<u8>) -> Vec<u8> {
+    if let Some(offset) = find_jp2_signature_offset(&data) {
+        return data[offset..].to_vec();
+    }
+    if let Some(offset) = find_j2k_soc_offset(&data) {
+        return data[offset..].to_vec();
+    }
+    data
+}
+
+fn find_jp2_signature_offset(data: &[u8]) -> Option<usize> {
+    let sig = [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A];
+    data.windows(sig.len()).position(|w| w == sig)
+}
+
+fn find_j2k_soc_offset(data: &[u8]) -> Option<usize> {
+    data.windows(2).position(|w| w[0] == 0xFF && w[1] == 0x4F)
+}
+
+fn convert_jp2_if_needed(data: Vec<u8>) -> (Vec<u8>, Option<&'static str>) {
+    if is_jpeg(&data) {
+        return (data, Some("jpeg"));
+    }
+
+    let mut source = normalize_jp2_payload(data);
+    if is_j2k_codestream(&source) && !is_jp2(&source) {
+        if let Some(wrapped) = wrap_j2k_as_jp2(&source) {
+            source = wrapped;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        match convert_jp2_to_jpeg(&source) {
+            Ok(jpeg) => {
+                debug_log(&format!("JP2 converted to JPEG: {} bytes", jpeg.len()));
+                return (jpeg, Some("jpeg"));
+            }
+            Err(err) => {
+                debug_log(&format!("JP2 conversion failed: {}", err));
+            }
+        }
+    }
+
+    let fallback_format = if is_jp2(&source) || is_j2k_codestream(&source) {
+        Some("jp2")
+    } else {
+        None
+    };
+
+    (source, fallback_format)
+}
+
+#[cfg(target_os = "macos")]
+fn convert_jp2_to_jpeg(data: &[u8]) -> Result<Vec<u8>, SignerError> {
+    use std::process::Command;
+
+    let temp_dir = std::env::temp_dir();
+    let id = uuid::Uuid::new_v4().to_string();
+    let output_path = temp_dir.join(format!("tobari-dl-{}.jpg", id));
+
+    let candidates = if is_j2k_codestream(data) {
+        vec!["j2k", "jp2"]
+    } else if is_jp2(data) {
+        vec!["jp2", "j2k"]
+    } else {
+        vec!["j2k", "jp2"]
+    };
+
+    let mut last_err: Option<String> = None;
+
+    for ext in candidates {
+        let input_path = temp_dir.join(format!("tobari-dl-{}.{}", id, ext));
+        std::fs::write(&input_path, data).map_err(|e| {
+            SignerError::Internal(format!("Failed to write {} temp file: {e}", ext))
+        })?;
+
+        let input_str = input_path
+            .to_str()
+            .ok_or_else(|| SignerError::Internal("Failed to format JP2 temp path".to_string()))?;
+        let output_str = output_path
+            .to_str()
+            .ok_or_else(|| SignerError::Internal("Failed to format JPEG temp path".to_string()))?;
+
+        let output = Command::new("/usr/bin/sips")
+            .args(["-s", "format", "jpeg", input_str, "--out", output_str])
+            .output()
+            .map_err(|e| SignerError::Internal(format!("Failed to run sips: {e}")))?;
+
+        let _ = std::fs::remove_file(&input_path);
+
+        if output.status.success() {
+            let jpeg = std::fs::read(&output_path)
+                .map_err(|e| SignerError::Internal(format!("Failed to read JPEG output: {e}")))?;
+            let _ = std::fs::remove_file(&output_path);
+            println!("DEBUG: JP2 conversion succeeded with input .{}", ext);
+            return Ok(jpeg);
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        last_err = Some(format!("sips failed for .{}: {}", ext, stderr));
+    }
+
+    Err(SignerError::Internal(
+        last_err.unwrap_or_else(|| "sips failed".to_string()),
+    ))
+}
+
+fn wrap_j2k_as_jp2(codestream: &[u8]) -> Option<Vec<u8>> {
+    let (width, height, components, bpc) = parse_j2k_siz(codestream)?;
+
+    let mut jp2 = Vec::new();
+    jp2.extend_from_slice(&jp2_signature_box());
+    jp2.extend_from_slice(&jp2_file_type_box());
+    jp2.extend_from_slice(&jp2_header_box(width, height, components, bpc));
+    jp2.extend_from_slice(&jp2_codestream_box(codestream));
+    Some(jp2)
+}
+
+fn parse_j2k_siz(data: &[u8]) -> Option<(u32, u32, u16, u8)> {
+    let mut i = 0;
+    while i + 4 < data.len() {
+        if data[i] == 0xFF && data[i + 1] == 0x51 {
+            if i + 4 >= data.len() {
+                return None;
+            }
+            let lsiz = u16::from_be_bytes([data[i + 2], data[i + 3]]) as usize;
+            if i + 2 + lsiz > data.len() || lsiz < 38 {
+                return None;
+            }
+            let base = i + 4;
+            let xsiz = u32::from_be_bytes([data[base + 2], data[base + 3], data[base + 4], data[base + 5]]);
+            let ysiz = u32::from_be_bytes([data[base + 6], data[base + 7], data[base + 8], data[base + 9]]);
+            let xosiz = u32::from_be_bytes([data[base + 10], data[base + 11], data[base + 12], data[base + 13]]);
+            let yosiz = u32::from_be_bytes([data[base + 14], data[base + 15], data[base + 16], data[base + 17]]);
+            let csiz = u16::from_be_bytes([data[base + 30], data[base + 31]]);
+
+            let width = xsiz.saturating_sub(xosiz);
+            let height = ysiz.saturating_sub(yosiz);
+            if width == 0 || height == 0 || csiz == 0 {
+                return None;
+            }
+
+            let first_ssiz_offset = base + 32;
+            if first_ssiz_offset >= data.len() {
+                return None;
+            }
+            let first_ssiz = data[first_ssiz_offset];
+            let bpc = (first_ssiz & 0x7F).saturating_add(1);
+            let bpc_field = bpc.saturating_sub(1);
+
+            return Some((width, height, csiz, bpc_field));
+        }
+        i += 1;
+    }
+    None
+}
+
+fn make_box(typ: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let len = (8 + data.len()) as u32;
+    let mut out = Vec::with_capacity(len as usize);
+    out.extend_from_slice(&len.to_be_bytes());
+    out.extend_from_slice(typ);
+    out.extend_from_slice(data);
+    out
+}
+
+fn jp2_signature_box() -> Vec<u8> {
+    let mut out = Vec::with_capacity(12);
+    out.extend_from_slice(&12u32.to_be_bytes());
+    out.extend_from_slice(b"jP  ");
+    out.extend_from_slice(&[0x0D, 0x0A, 0x87, 0x0A]);
+    out
+}
+
+fn jp2_file_type_box() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(b"jp2 ");
+    data.extend_from_slice(&0u32.to_be_bytes());
+    data.extend_from_slice(b"jp2 ");
+    make_box(b"ftyp", &data)
+}
+
+fn jp2_header_box(width: u32, height: u32, components: u16, bpc: u8) -> Vec<u8> {
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&height.to_be_bytes());
+    ihdr.extend_from_slice(&width.to_be_bytes());
+    ihdr.extend_from_slice(&components.to_be_bytes());
+    ihdr.push(bpc);
+    ihdr.push(7); // compression type: JPEG2000
+    ihdr.push(0); // unknown colorspace
+    ihdr.push(0); // intellectual property
+    let ihdr_box = make_box(b"ihdr", &ihdr);
+
+    let mut colr = Vec::new();
+    colr.push(1); // meth: enumerated
+    colr.push(0); // precedence
+    colr.push(0); // approximation
+    colr.extend_from_slice(&17u32.to_be_bytes()); // grayscale
+    let colr_box = make_box(b"colr", &colr);
+
+    let mut jp2h = Vec::new();
+    jp2h.extend_from_slice(&ihdr_box);
+    jp2h.extend_from_slice(&colr_box);
+    make_box(b"jp2h", &jp2h)
+}
+
+fn jp2_codestream_box(codestream: &[u8]) -> Vec<u8> {
+    make_box(b"jp2c", codestream)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[tauri::command]
 async fn read_residence_card() -> Result<serde_json::Value, SignerError> {
-    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = ResidenceCardController::new(reader);
 
     controller.select_df2().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
@@ -1351,78 +1640,136 @@ pub async fn handle_unified_request(request: &UnifiedRequest) -> UnifiedResponse
     }
 }
 
+// --- Wallet Storage Logic ---
+
+pub fn get_tobari_home() -> std::path::PathBuf {
+    if let Ok(env_path) = std::env::var("TOBARI_HOME") {
+        return std::path::PathBuf::from(env_path);
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    #[cfg(target_os = "macos")]
+    {
+        home.join("Documents").join("Tobari")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        home.join("Documents").join("Tobari")
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        home.join(".tobari")
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WalletCredential {
+    pub name: String,
+    pub path: String,
+    pub doc_type: String,
+    pub created_at: Option<u64>,
+}
+
+#[tauri::command]
+async fn get_wallet_credentials() -> Result<Vec<WalletCredential>, SignerError> {
+    let credentials_dir = get_tobari_home().join("credentials");
+    if !credentials_dir.exists() {
+        std::fs::create_dir_all(&credentials_dir).map_err(|e| SignerError::Internal(e.to_string()))?;
+        return Ok(vec![]);
+    }
+
+    let mut list = Vec::new();
+    let entries = std::fs::read_dir(credentials_dir).map_err(|e| SignerError::Internal(e.to_string()))?;
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "cose") {
+                // Try to extract docType by decoding the COSE structure (minimal decode)
+                let file = std::fs::File::open(&path).map_err(|e| SignerError::Internal(e.to_string()))?;
+                let doc_type = match ciborium::from_reader::<ciborium::value::Value, _>(file) {
+                    Ok(val) => {
+                        // Handle potential Tag wrapping (e.g. Tag 98)
+                        let mut current = &val;
+                        while let ciborium::value::Value::Tag(_tag, box_val) = current {
+                            current = box_val.as_ref();
+                        }
+                        
+                        if let Some(map) = current.as_map() {
+                            map.iter()
+                                .find(|(k, _)| k.as_text() == Some("docType"))
+                                .and_then(|(_, v)| v.as_text())
+                                .unwrap_or("Unknown")
+                                .to_string()
+                        } else {
+                            "Unknown".to_string()
+                        }
+                    }
+                    Err(_) => "Unknown".to_string(),
+                };
+
+                let metadata = entry.metadata().ok();
+                let created_at = metadata.and_then(|m| m.created().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs());
+
+                list.push(WalletCredential {
+                    name: path.file_name().and_then(|n| n.to_str()).unwrap_or("Unknown").to_string(),
+                    path: path.to_string_lossy().to_string(),
+                    doc_type,
+                    created_at,
+                });
+            }
+        }
+    }
+
+    Ok(list)
+}
+
+#[tauri::command]
+async fn save_to_wallet(name: String, doc_type: String, data: serde_json::Value) -> Result<String, SignerError> {
+    let credentials_dir = get_tobari_home().join("credentials");
+    if !credentials_dir.exists() {
+        std::fs::create_dir_all(&credentials_dir).map_err(|e| SignerError::Internal(e.to_string()))?;
+    }
+
+    // Generate a simple mdoc-like structure (for now, wrapping the data in a map)
+    // In a full implementation, this would use tobari-gen logic
+    let mut mdoc = serde_json::Map::new();
+    mdoc.insert("docType".to_string(), serde_json::Value::String(doc_type.clone()));
+    mdoc.insert("version".to_string(), serde_json::Value::String("1.0".to_string()));
+    mdoc.insert("data".to_string(), data);
+    
+    let file_name = format!("{}.cose", name.replace(" ", "_").to_lowercase());
+    let file_path = credentials_dir.join(&file_name);
+    
+    // Encode as CBOR (COSE-like)
+    let mut buf = Vec::new();
+    ciborium::into_writer(&serde_json::Value::Object(mdoc), &mut buf)
+        .map_err(|e| SignerError::Serialization(e.to_string()))?;
+    
+    std::fs::write(&file_path, buf).map_err(|e| SignerError::Internal(e.to_string()))?;
+    
+    Ok(file_path.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args = Cli::parse();
-
-    if args.bbs_generate_key {
-        match bbs_generate_key() {
-            Ok(keys) => {
-                println!("{}", serde_json::to_string(&keys).unwrap());
-                std::process::exit(0);
-            }
-            Err(e) => {
-                eprintln!("BBS Keygen failed: {:?}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    // Unified Request handling
-    let mut pending_sign_request: Option<SignRequest> = None;
-    if let Some(req_str) = args.request.as_ref().cloned().or_else(|| {
-        args.file.as_ref().and_then(|path| std::fs::read_to_string(path).ok())
-    }) {
-        if let Ok(request) = serde_json::from_str::<UnifiedRequest>(&req_str) {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let response = rt.block_on(handle_unified_request(&request));
-            
-            // If it's a success or error, print and exit.
-            // If it's a preview, print the preview response but CONTINUE to launch the GUI.
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
-            
-            if response.status != ResponseStatus::Preview {
-                std::process::exit(0);
-            } else {
-                // Convert UnifiedRequest back to SignRequest for compatibility with existing GUI
-                // (This is a bridge until we update the GUI to handle UnifiedRequest natively)
-                if request.command == "sign_presentation" {
-                    if let Ok(params) = serde_json::from_value::<SignPresentationParams>(request.params) {
-                        pending_sign_request = Some(SignRequest {
-                            challenge: params.nonce.unwrap_or_default(),
-                            rp_id: params.verifier_id.unwrap_or_else(|| "tobari-signer".to_string()),
-                            user_verification: Some("preferred".to_string()),
-                            message: Some(format!("Create presentation for document at {}", params.document_path.as_deref().unwrap_or("(binary)"))),
-                            allow_credentials: None,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback to legacy path for GUI
-    let sign_request = pending_sign_request.or_else(|| {
-        if let Some(req_str) = args.request {
-            serde_json::from_str::<SignRequest>(&req_str).ok()
-        } else if let Some(file_path) = args.file {
-            std::fs::read_to_string(file_path)
-                .ok()
-                .and_then(|s| serde_json::from_str::<SignRequest>(&s).ok())
-        } else {
-            None
-        }
-    });
-
-    if sign_request.is_none() {
-        // If no request provided via CLI, maybe we are in dev mode or just testing.
-        eprintln!("No valid sign request provided via arguments.");
+    
+    // Ensure TOBARI_HOME structure exists
+    let home = get_tobari_home();
+    for sub in ["credentials", "requests", "data", "history", "config"] {
+        let _ = std::fs::create_dir_all(home.join(sub));
     }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
-            request: Mutex::new(sign_request),
+            request: Mutex::new(None),
             allow_credentials: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
@@ -1436,7 +1783,9 @@ pub fn run() {
             read_driver_license,
             read_residence_card,
             bbs_generate_key,
-            perform_bbs_proof
+            perform_bbs_proof,
+            get_wallet_credentials,
+            save_to_wallet
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

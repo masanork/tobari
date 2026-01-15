@@ -10,7 +10,7 @@ struct MainView: View {
     @State private var showScanner: Bool = false
 
     enum EntryMode {
-        case none, jpki, passport, license
+        case none, jpki, passport, license, wallet
     }
 
     var body: some View {
@@ -25,7 +25,7 @@ struct MainView: View {
                     Image(systemName: state.isCardPresent ? "shield.authconfig.fill" : "shield.slash.fill")
                         .font(.largeTitle)
                         .foregroundColor(state.isCardPresent ? .blue : .secondary)
-                    Text("Tobari Signer")
+                    Text("Tobari Wallet")
                         .font(.headline)
                         .tracking(1.0)
                 }
@@ -36,11 +36,23 @@ struct MainView: View {
                 if let data = state.cardData {
                     IdentityResultView(data: data)
                     
-                    Button("Read Another Card") {
+                    Button("Return to Wallet") {
                         state.cardData = nil
-                        entryMode = .none
+                        entryMode = .wallet
                     }
                     .buttonStyle(.bordered)
+                } else if entryMode == .wallet {
+                    WalletView()
+                        .transition(.move(edge: .leading))
+                    
+                    Button("Read New Card") {
+                        withAnimation {
+                            entryMode = .none
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.blue)
+                    .padding(.bottom)
                 } else if entryMode != .none {
                     EntryView(mode: $entryMode, pin: $pin, pin2: $pin2, mrz: $mrz, showScanner: $showScanner)
                 } else {
@@ -68,6 +80,14 @@ struct MainView: View {
                 .frame(width: 500, height: 400)
         }
         .onAppear {
+            // Ensure directory structure exists
+            StorageManager.shared.ensureDirectoryStructure()
+            
+            // Set initial mode to wallet
+            if entryMode == .none {
+                entryMode = .wallet
+            }
+
             // Activate the application when the view appears
             // This ensures keyboard input goes to the app window, not the terminal
             NSApplication.shared.activate(ignoringOtherApps: true)
@@ -136,6 +156,14 @@ struct CardMenuView: View {
             }
 
             VStack(spacing: 15) {
+                ActionBtn(
+                    title: "Wallet", 
+                    icon: "wallet.pass.fill",
+                    color: .blue
+                ) {
+                    entryMode = .wallet
+                }
+
                 ActionBtn(
                     title: "My Number Card", 
                     icon: "person.badge.shield.fill",

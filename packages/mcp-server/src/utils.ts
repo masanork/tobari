@@ -8,6 +8,34 @@ export const DEFAULT_MYNA_PATH = path.join(PROJECT_ROOT, "packages/civ/target/de
 export const DEFAULT_SIGNER_MACOS_PATH = path.join(PROJECT_ROOT, "packages/signer-macos/bin/tobari-signer-macos");
 
 /**
+ * Get the Tobari Home directory based on environment variables or platform defaults.
+ */
+export function getTobariHome(): string {
+    if (process.env.TOBARI_HOME) {
+        return path.resolve(process.env.TOBARI_HOME);
+    }
+    const home = os.homedir();
+    switch (os.platform()) {
+        case "darwin":
+            return path.join(home, "Documents/Tobari");
+        case "win32":
+            return path.join(home, "Documents/Tobari");
+        default:
+            return path.join(home, ".tobari");
+    }
+}
+
+/**
+ * Get a specific path within TOBARI_HOME.
+ * @param subDir Sub-directory name (e.g., "credentials", "requests")
+ * @param fileName Optional file name to append
+ */
+export function getTobariPath(subDir: "credentials" | "requests" | "data" | "history" | "config", fileName?: string): string {
+    const base = path.join(getTobariHome(), subDir);
+    return fileName ? path.join(base, fileName) : base;
+}
+
+/**
  * Find the best available native signer binary based on current platform and environment.
  */
 export function getNativeSignerPath(): string | undefined {

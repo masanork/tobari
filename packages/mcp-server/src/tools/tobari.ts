@@ -1339,43 +1339,54 @@ function redactValue(value: any, options: { redact: boolean; maxStringLength: nu
 export async function handleListAvailableDocuments(toolArgs: any) {
     try {
         const args = ListAvailableDocumentsSchema.parse(toolArgs);
-        // Default to the project root's examples directory
-        const baseDir = args.rootPath || path.join(PROJECT_ROOT, "examples");
+        const { getTobariHome, getTobariPath } = await import("../utils.js");
 
         const files: any[] = [];
         const scan = async (dir: string) => {
-            const entries = await fs.readdir(dir, { withFileTypes: true });
-            for (const entry of entries) {
-                const fullPath = path.join(dir, entry.name);
-                if (entry.isDirectory() && entry.name !== "node_modules") {
-                    await scan(fullPath);
-                } else if (entry.isFile() && (entry.name.endsWith(".html") || entry.name.endsWith(".cose"))) {
-                    if (entry.name === "verifier-tool.html" || entry.name === "viewer-template.html") continue;
+            try {
+                const entries = await fs.readdir(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isDirectory() && entry.name !== "node_modules") {
+                        await scan(fullPath);
+                    } else if (entry.isFile() && (entry.name.endsWith(".html") || entry.name.endsWith(".cose"))) {
+                        if (entry.name === "verifier-tool.html" || entry.name === "viewer-template.html") continue;
 
-                    try {
-                        const buffer = await readTobariFileAsBuffer(fullPath, args.decrypt);
-                        const cose = decode(buffer);
-                        let docType = cose.docType || "Unknown";
+                        try {
+                            const buffer = await readTobariFileAsBuffer(fullPath, args.decrypt);
+                            const cose = decode(buffer);
+                            let docType = cose.docType || "Unknown";
 
-                        if (Array.isArray(cose) && cose.length >= 3) {
-                            try {
-                                const payload = decode(cose[2]);
-                                if (payload.docType) docType = payload.docType;
-                            } catch { }
-                        }
+                            if (Array.isArray(cose) && cose.length >= 3) {
+                                try {
+                                    const payload = decode(cose[2]);
+                                    if (payload.docType) docType = payload.docType;
+                                } catch { }
+                            }
 
-                        files.push({
-                            name: entry.name,
-                            path: fullPath,
-                            type: docType,
-                            category: docType.includes("service_request") ? "Administrative Request" : "Credential"
-                        });
-                    } catch (e) { }
+                            files.push({
+                                name: entry.name,
+                                path: fullPath,
+                                type: docType,
+                                category: docType.includes("service_request") ? "Administrative Request" : "Credential"
+                            });
+                        } catch (e) { }
+                    }
                 }
+            } catch (e) {
+                // If directory doesn't exist, just skip it
             }
         };
 
-        await scan(baseDir);
+        if (args.rootPath) {
+            await scan(args.rootPath);
+        } else {
+            // Default: scan TOBARI_HOME/credentials, TOBARI_HOME/requests AND legacy examples dir
+            const tobariHome = getTobariHome();
+            await scan(path.join(tobariHome, "credentials"));
+            await scan(path.join(tobariHome, "requests"));
+            await scan(path.join(PROJECT_ROOT, "examples"));
+        }
 
         return {
             content: [

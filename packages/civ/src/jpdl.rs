@@ -81,15 +81,17 @@ impl<R: CardReader> DriversLicenseController<R> {
 
     /// Select Driver's License Application (DF1)
     pub async fn select_dl_ap(&mut self) -> Result<()> {
+        self.select_mf().await?;
         let apdu =
             ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C).with_data(&file_ids::DF_DL);
 
-        let res = self.reader.transmit(&apdu.to_bytes()).await?;
-        Self::check_sw(&res)
+        let _res = self.reader.transmit(&apdu.to_bytes()).await?;
+        Self::check_sw(&_res)
     }
 
     /// Select Driver's License Photo Application (DF2)
     pub async fn select_dl_photo_ap(&mut self) -> Result<()> {
+        self.select_mf().await?;
         let apdu = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x04, 0x0C)
             .with_data(&file_ids::DF_DL_PHOTO);
 
@@ -134,32 +136,58 @@ impl<R: CardReader> DriversLicenseController<R> {
         self.parse_common_data(&raw)
     }
 
-    // Internal parser
-    fn parse_common_data(&self, data: &[u8]) -> Result<LicenseInfo> {
+    /// Parse Common Data (EF01) from raw bytes
+    pub fn parse_common_data(&self, data: &[u8]) -> Result<LicenseInfo> {
         use crate::utils::{decode_jis_x0208, parse_jpdl_tlv};
-        let tlvs = parse_jpdl_tlv(data).unwrap_or_default();
+        
+        let all_tlvs = parse_jpdl_tlv(data).unwrap_or_default();
         let mut info = LicenseInfo::default();
 
-        for tlv in tlvs {
-            match tlv.tag {
-                0x12 => info.name = decode_jis_x0208(&tlv.value),
-                0x13 => info.name_kana = decode_jis_x0208(&tlv.value),
-                0x16 => info.birth_date = String::from_utf8_lossy(&tlv.value).to_string(), // Date is ASCII
-                0x17 => info.address = decode_jis_x0208(&tlv.value),
-                0x18 => info.issue_date = String::from_utf8_lossy(&tlv.value).to_string(), // Date is ASCII
-                0x21 => info.license_number = String::from_utf8_lossy(&tlv.value).to_string(), // Number is ASCII
-                0x1B => info.expire_date = String::from_utf8_lossy(&tlv.value).to_string(), // Date is ASCII
-                0x1A => info.color_class = decode_jis_x0208(&tlv.value),
-                0x1C..=0x1F => {
-                    let cond = decode_jis_x0208(&tlv.value);
-                    if !cond.trim().is_empty() {
-                        info.conditions.push(cond);
+        // Process all TLVs found (including inside 0x11 if it's there)
+        fn process_tlvs(tlvs: &[crate::utils::BerTlv], info: &mut LicenseInfo, controller: &DriversLicenseController<impl crate::reader::CardReader>) {
+            for tlv in tlvs {
+                match tlv.tag {
+                    0x11 => process_tlvs(&parse_jpdl_tlv(&tlv.value).unwrap_or_default(), info, controller),
+                    0x12 => info.name = decode_jis_x0208(&tlv.value),
+                    0x13 => info.name_kana = decode_jis_x0208(&tlv.value),
+                    0x16 => info.birth_date = controller.format_gengou_date(&String::from_utf8_lossy(&tlv.value)),
+                    0x17 => info.address = decode_jis_x0208(&tlv.value),
+                    0x18 => info.issue_date = controller.format_gengou_date(&String::from_utf8_lossy(&tlv.value)),
+                    0x21 => info.license_number = String::from_utf8_lossy(&tlv.value).to_string(),
+                    0x1B => info.expire_date = controller.format_gengou_date(&String::from_utf8_lossy(&tlv.value)),
+                    0x1A => info.color_class = decode_jis_x0208(&tlv.value),
+                    0x1C..=0x1F => {
+                        let cond = decode_jis_x0208(&tlv.value);
+                        if !cond.trim().is_empty() {
+                            info.conditions.push(cond);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
+
+        process_tlvs(&all_tlvs, &mut info, self);
         Ok(info)
+    }
+
+    fn format_gengou_date(&self, s: &str) -> String {
+        if s.len() != 7 { return s.to_string(); }
+        let era = &s[0..1];
+        let yy = &s[1..3];
+        let mm = &s[3..5];
+        let dd = &s[5..7];
+
+        let era_name = match era {
+            "1" => "明治",
+            "2" => "大正",
+            "3" => "昭和",
+            "4" => "平成",
+            "5" => "令和",
+            _ => return s.to_string(),
+        };
+
+        format!("{}{}年{}月{}日", era_name, yy, mm, dd)
     }
 
     /// Read Registered Domicile (Honseki) - EF02
@@ -247,8 +275,30 @@ impl<R: CardReader> DriversLicenseController<R> {
     /// Read Face Photo (DF2/EF01) - JPEG2000
     /// Requires PIN 1 & PIN 2. Must select DF2 first.
     pub async fn read_photo(&mut self) -> Result<Vec<u8>> {
+        use crate::utils::{parse_ber_tlv, BerTlv};
         self.select_dl_photo_ap().await?;
-        self.read_ef_full(&[0x00, 0x01]).await
+        let raw = self.read_ef_full(&[0x00, 0x01]).await?;
+        
+        // Photo is usually in Tag 0x5F40, sometimes nested under constructed TLVs.
+        fn find_value(tlvs: &[BerTlv], tag: u32) -> Option<Vec<u8>> {
+            for tlv in tlvs {
+                if tlv.tag == tag {
+                    return Some(tlv.value.clone());
+                }
+                if let Some(found) = find_value(&tlv.children, tag) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        
+        let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
+        if let Some(value) = find_value(&tlvs, 0x5F40) {
+            return Ok(value);
+        }
+        
+        // Fallback: return raw if no tag found (some cards might differ)
+        Ok(raw)
     }
 
     /// Read raw EF data (handling multiple reads if necessary)
@@ -261,37 +311,46 @@ impl<R: CardReader> DriversLicenseController<R> {
         loop {
             let p1 = (offset >> 8) as u8;
             let p2 = (offset & 0xFF) as u8;
-            // READ BINARY: CLA=00, INS=B0, P1, P2, Le=00 (Short)
+            // READ BINARY: CLA=00, INS=B0, P1, P2, Le=00 (requests 256 bytes)
             let cmd = [0x00, 0xB0, p1, p2, 0x00];
             let res = self.reader.transmit(&cmd).await?;
 
             if res.len() < 2 {
-                break;
+                return Err(CivError::Communication("Response too short".to_string()));
             }
 
             let sw1 = res[res.len() - 2];
             let sw2 = res[res.len() - 1];
             let chunk = &res[..res.len() - 2];
 
-            if chunk.is_empty() {
-                break;
-            }
-
-            data.extend_from_slice(chunk);
-            offset += chunk.len();
-
             if sw1 == 0x90 && sw2 == 0x00 {
-                // If the EF is small, we are done
+                if chunk.is_empty() { break; }
+                data.extend_from_slice(chunk);
+                offset += chunk.len();
+                
+                // Continue reading even if chunk is 256, until we get 6B00 or empty
                 if chunk.len() < 256 { break; }
+            } else if sw1 == 0x61 || sw1 == 0x6C {
+                let retry_cmd = [0x00, 0xB0, p1, p2, sw2];
+                let retry_res = self.reader.transmit(&retry_cmd).await?;
+                if retry_res.len() >= 2 {
+                    let retry_chunk = &retry_res[..retry_res.len()-2];
+                    if retry_chunk.is_empty() { break; }
+                    data.extend_from_slice(retry_chunk);
+                    offset += retry_chunk.len();
+                    if retry_chunk.len() < (if sw2 == 0 { 256 } else { sw2 as usize }) { break; }
+                } else {
+                    break;
+                }
             } else if sw1 == 0x6B {
-                // Offset out of range
+                // End of file
                 break;
             } else {
-                return Err(CivError::ApduError(sw1, sw2));
+                // For some cards, reading might fail with other SWs at the exact end
+                break;
             }
             
-            // Temporary: limit to avoid infinite loops in some cards
-            if offset > 32768 { break; }
+            if offset > 100000 { break; } // Safety limit (100KB)
         }
 
         Ok(data)

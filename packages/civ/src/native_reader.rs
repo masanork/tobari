@@ -20,6 +20,12 @@ pub struct PcscReader {
     card: Option<Card>,
 }
 
+fn debug_log(message: &str) {
+    if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+        println!("DEBUG: {}", message);
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl PcscReader {
     pub fn new() -> Result<Self> {
@@ -35,7 +41,6 @@ impl PcscReader {
             .list_readers(&mut readers_buf)
             .map_err(|e| anyhow!("Failed to list readers: {}", e))?;
 
-        // Use the first reader found
         let reader_name = readers
             .next()
             .ok_or_else(|| anyhow!("No smart card reader found"))?;
@@ -45,29 +50,49 @@ impl PcscReader {
             .map_err(|e| anyhow!("Invalid reader name: {}", e))?
             .to_string();
 
-        // Retry logic for card connection
-        // Wait up to 5 seconds for a card to be inserted/recognized
+        debug_log(&format!("Connecting to reader: {}", name_str));
+
         let start = time::Instant::now();
         let timeout = time::Duration::from_secs(5);
 
         loop {
-            match self
-                .ctx
-                .connect(reader_name, ShareMode::Shared, Protocols::ANY)
-            {
+            // Attempt 1: Shared mode with T1
+            // Attempt 2: Exclusive mode with ANY (to kick out other processes)
+            // Attempt 3: Shared mode with ANY
+            let connect_result = self.ctx.connect(reader_name, ShareMode::Shared, Protocols::T1)
+                .or_else(|_| self.ctx.connect(reader_name, ShareMode::Exclusive, Protocols::ANY))
+                .or_else(|_| self.ctx.connect(reader_name, ShareMode::Shared, Protocols::ANY));
+
+            match connect_result {
                 Ok(card) => {
+                    let mut atr_buf = [0u8; 33];
+                    let status = card.status2(&mut readers_buf, &mut atr_buf)?;
+                    debug_log(&format!(
+                        "Connected! Protocol: {:?}, ATR: {:02X?}",
+                        status.protocol(),
+                        status.atr()
+                    ));
                     self.card = Some(card);
                     return Ok(name_str);
                 }
                 Err(Error::NoSmartcard) | Err(Error::RemovedCard) => {
                     if start.elapsed() > timeout {
-                        return Err(anyhow!("Card not found in reader '{}'. Please ensure the card is inserted correctly.", name_str));
+                        return Err(anyhow!("Card not found in reader '{}'. Please ensure the card is placed correctly.", name_str));
                     }
                     thread::sleep(time::Duration::from_millis(500));
                     continue;
                 }
                 Err(e) => {
-                    return Err(anyhow!("Failed to connect to card: {}", e));
+                    debug_log(&format!(
+                        "Connection error: {:?} (Code: 0x{:08X})",
+                        e,
+                        e as u32
+                    ));
+                    if start.elapsed() > timeout {
+                        return Err(anyhow!("Failed to connect to card: {}", e));
+                    }
+                    thread::sleep(time::Duration::from_millis(500));
+                    continue;
                 }
             }
         }
@@ -83,13 +108,27 @@ impl CardReader for PcscReader {
             .as_ref()
             .ok_or_else(|| anyhow!("Card not connected"))?;
 
-        // Use a heap-allocated buffer for large sizes to avoid stack overflow
-        let mut resp_buf = vec![0u8; EXTENDED_BUFFER_SIZE];
-        let resp = card
-            .transmit(apdu, &mut resp_buf)
-            .map_err(|e| anyhow!("Transmit failed: {}", e))?;
+        if apdu.len() > 255 {
+            debug_log(&format!("Sending Extended APDU (len: {})", apdu.len()));
+        }
 
-        Ok(resp.to_vec())
+        let mut resp_buf = vec![0u8; EXTENDED_BUFFER_SIZE];
+        match card.transmit(apdu, &mut resp_buf) {
+            Ok(resp) => {
+                let res = resp.to_vec();
+                if res.len() >= 2 {
+                    let sw1 = res[res.len()-2];
+                    let sw2 = res[res.len()-1];
+                    // println!("DEBUG: APDU Res SW: {:02X}{:02X}", sw1, sw2);
+                }
+                Ok(res)
+            }
+            Err(e) => {
+                debug_log(&format!("Transmit error: {:?}", e));
+                // If it's a protocol error, maybe we need to reconnect or handle chaining
+                Err(anyhow!("Transmit failed: {}", e))
+            }
+        }
     }
 }
 
