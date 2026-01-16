@@ -246,7 +246,29 @@ impl<R: CardReader> JpkiController<R> {
                 "Invalid My Number length.".to_string(),
             ));
         }
-        self.read_face_photo_with_pin(my_number).await
+        
+        self.select_surface_ap().await?;
+        // Use Surface PIN EF (00 13) for verification with 12-digit My Number.
+        // This matches signer-macos implementation.
+        // Note: verify_pin now uses P2=0x00 (verify current EF) which helps avoid context issues.
+        self.verify_pin(&file_ids::EF_SURFACE_PIN, my_number).await?;
+
+        let data = self.read_ef_full(&file_ids::EF_FACE_PHOTO).await?;
+        debug_log(&format!(
+            "JPKI EF_FACE_PHOTO size: {} bytes",
+            data.len()
+        ));
+        
+        if let Some(photo) = extract_face_photo(&data) {
+            Ok(photo)
+        } else if data.len() > 1000 {
+            debug_log("JPKI EF_FACE_PHOTO: DF27 not found, returning raw payload");
+            Ok(data)
+        } else {
+            Err(CivError::NotFound(
+                "Face photo (tag DF27) not found.".to_string(),
+            ))
+        }
     }
 
     pub async fn read_face_photo_with_pin(&mut self, pin: &str) -> Result<Vec<u8>> {

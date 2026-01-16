@@ -1,0 +1,22 @@
+passport = {
+  version: "1.0",
+  docType: "org.icao.dtc.v1",
+  data: {
+    dg1: bstr, ; MRZ
+    dg2: bstr, ; Photo
+    ? mrz: tstr,
+    ? name: tstr,
+    ? passport_number: tstr,
+    ? birth_date: tstr,
+    ? expiry_date: tstr,
+    ? gender: tstr,
+    ? nationality: tstr,
+    ? face_photo: bstr,
+    ? face_photo_format: tstr,
+    ? sod: bstr,
+    ? dg11: bstr,
+    ? dg12: bstr,
+    ? dg14: bstr,
+    ? dg15: bstr
+  }
+}

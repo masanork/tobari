@@ -124,7 +124,7 @@ async function signWithKey(
             throw new Error("ML-DSA-65 signing requires a raw private key");
         }
         const signature = await mlDsa65Sign(keyBytes, data);
-        return signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength);
+        return signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength) as ArrayBuffer;
     }
 
     if (!(key instanceof CryptoKey)) {

@@ -25,6 +25,11 @@ civ = { path = "../../civ" }
 anyhow = "1.0"
 sha2 = "0.10"
 ciborium = "0.2.2"
+aes-gcm = "0.10"
+hkdf = "0.12"
+p256 = { version = "0.13", features = ["ecdh", "serde", "arithmetic"] }
+rand = "0.8"
+hex = "0.4"
 bbs = "0.4.1"
 bls12_381 = "0.8.0"
 uuid = { version = "1.19.0", features = ["v4"] }
@@ -38,6 +43,8 @@ authenticator = { version = "0.5.0", optional = true, default-features = false, 
 
 [target.'cfg(target_os = "macos")'.dependencies]
 authenticator = { version = "0.5.0", optional = true, default-features = false, features = ["crypto_rust"] }
+security-framework = "2.9.1"
+security-framework-sys = "2.9.1"
 
 [features]
 default = []

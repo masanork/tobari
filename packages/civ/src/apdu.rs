@@ -218,6 +218,9 @@ pub mod file_ids {
     /// Surface (Visual) PIN EF (uses 12-digit My Number)
     pub const EF_SURFACE_PIN: [u8; 2] = [0x00, 0x13];
 
+    /// Match Number B PIN EF (for Card AP, uses 12-digit My Number)
+    pub const EF_MATCH_B_PIN: [u8; 2] = [0x00, 0x14];
+
     /// My Number EF (under Input Support AP)
     pub const EF_MYNUMBER: [u8; 2] = [0x00, 0x01];
 

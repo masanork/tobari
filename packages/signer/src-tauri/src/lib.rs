@@ -4,9 +4,169 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 use tauri::{AppHandle, State};
+use p256::elliptic_curve::sec1::ToEncodedPoint;
 // Note: civ crate needs to be available. PcscReader is only available on native targets.
 #[cfg(not(target_arch = "wasm32"))]
 use civ::{JpkiController, PassportController, DriversLicenseController, ResidenceCardController, PcscReader};
+
+// --- Key Management ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StoredKey {
+    pub id: String, // Credential ID (Base64)
+    pub name: String, // User friendly name
+    pub created_at: u64,
+    pub public_key: serde_json::Value, // JWK
+}
+
+fn get_key_store_path() -> std::path::PathBuf {
+    get_tobari_home().join("config").join("keys.json")
+}
+
+fn load_keys() -> Result<Vec<StoredKey>, SignerError> {
+    let path = get_key_store_path();
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let file = std::fs::File::open(path).map_err(|e| SignerError::Internal(e.to_string()))?;
+    let keys: Vec<StoredKey> = serde_json::from_reader(file).unwrap_or_default();
+    Ok(keys)
+}
+
+fn save_key(key: StoredKey) -> Result<(), SignerError> {
+    let mut keys = load_keys()?;
+    // Remove existing key with same ID if any
+    keys.retain(|k| k.id != key.id);
+    keys.push(key);
+    
+    let path = get_key_store_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| SignerError::Internal(e.to_string()))?;
+    }
+    let file = std::fs::File::create(path).map_err(|e| SignerError::Internal(e.to_string()))?;
+    serde_json::to_writer_pretty(file, &keys).map_err(|e| SignerError::Serialization(e.to_string()))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_registered_keys() -> Result<Vec<StoredKey>, SignerError> {
+    load_keys()
+}
+
+fn get_device_key_path() -> std::path::PathBuf {
+    get_tobari_home().join("config").join("device.key")
+}
+
+fn get_or_generate_device_key() -> Result<p256::SecretKey, SignerError> {
+    let path = get_device_key_path();
+    if path.exists() {
+        let bytes = std::fs::read(path).map_err(|e| SignerError::Internal(e.to_string()))?;
+        p256::SecretKey::from_slice(&bytes).map_err(|e| SignerError::Internal(e.to_string()))
+    } else {
+        let secret = p256::SecretKey::random(&mut rand::thread_rng());
+        let bytes = secret.to_bytes();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(path, bytes).map_err(|e| SignerError::Internal(e.to_string()))?;
+        Ok(secret)
+    }
+}
+
+#[tauri::command]
+fn get_device_public_key() -> Result<serde_json::Value, SignerError> {
+    let secret = get_or_generate_device_key()?;
+    let public_key = secret.public_key();
+    let point = public_key.to_encoded_point(false);
+    let x = point.x().ok_or(SignerError::Internal("Invalid point".to_string()))?;
+    let y = point.y().ok_or(SignerError::Internal("Invalid point".to_string()))?;
+    
+    Ok(serde_json::json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": URL_SAFE_NO_PAD.encode(x),
+        "y": URL_SAFE_NO_PAD.encode(y)
+    }))
+}
+
+#[tauri::command]
+async fn decrypt_data(data: serde_json::Value) -> Result<serde_json::Value, SignerError> {
+    let secret = get_or_generate_device_key()?;
+    
+    let tobari_enc = data.get("tobari_enc").and_then(|v| v.as_bool()).unwrap_or(false);
+    if !tobari_enc {
+        return Ok(data);
+    }
+
+    let ephem_pub_b64 = data.get("enc").or(data.get("ephemeralPublicKey"))
+        .and_then(|v| v.as_str())
+        .ok_or(SignerError::InvalidData("Missing ephemeral key".to_string()))?;
+    let ciphertext_b64 = data.get("ciphertext")
+        .and_then(|v| v.as_str())
+        .ok_or(SignerError::InvalidData("Missing ciphertext".to_string()))?;
+    let iv_b64 = data.get("iv")
+        .and_then(|v| v.as_str())
+        .ok_or(SignerError::InvalidData("Missing IV".to_string()))?;
+    let tag_b64 = data.get("tag")
+        .and_then(|v| v.as_str())
+        .ok_or(SignerError::InvalidData("Missing tag".to_string()))?;
+
+    let ephem_pub_bytes = URL_SAFE_NO_PAD.decode(ephem_pub_b64).map_err(|e| SignerError::InvalidData(e.to_string()))?;
+    let ciphertext = URL_SAFE_NO_PAD.decode(ciphertext_b64).map_err(|e| SignerError::InvalidData(e.to_string()))?;
+    let iv = URL_SAFE_NO_PAD.decode(iv_b64).map_err(|e| SignerError::InvalidData(e.to_string()))?;
+    let tag = URL_SAFE_NO_PAD.decode(tag_b64).map_err(|e| SignerError::InvalidData(e.to_string()))?;
+
+    // Perform ECIES decryption compatible with tobari-ecies.ts
+    use p256::ecdh::EphemeralSecret;
+    use p256::PublicKey;
+    use aes_gcm::{Aes256Gcm, Key, Nonce, Tag, KeyInit, aead::Aead};
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+
+    let remote_pub = PublicKey::from_sec1_bytes(&ephem_pub_bytes)
+        .map_err(|e| SignerError::InvalidData(format!("Invalid ephemeral public key: {}", e)))?;
+    
+    let shared_secret = p256::ecdh::diffie_hellman(secret.to_nonzero_scalar(), remote_pub.as_affine());
+    let secret_bytes = shared_secret.raw_secret_bytes();
+
+    let hkdf = Hkdf::<Sha256>::new(Some(b"tobari-ecies-salt"), secret_bytes.as_slice());
+    let mut okm = [0u8; 32];
+    hkdf.expand(b"tobari-ecies-info", &mut okm).map_err(|e| SignerError::Internal(e.to_string()))?;
+
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&okm));
+    let nonce = Nonce::from_slice(&iv);
+    // aes-gcm crate handles tag verification automatically when it's appended to ciphertext
+    // or passed as part of the Payload. We are appending it.
+    
+    let mut combined = ciphertext.clone();
+    combined.extend_from_slice(&tag);
+
+    let plaintext = cipher.decrypt(nonce, combined.as_slice())
+        .map_err(|e| SignerError::Internal(format!("AES decryption failed: {}", e)))?;
+
+    // Try to parse as CBOR
+    // Note: The frontend uses `encodeCanonical` which might output standard CBOR bytes.
+    let decoded: serde_json::Value = match ciborium::from_reader(plaintext.as_slice()) {
+        Ok(v) => inspect_cbor_value(v), // Convert ciborium Value to serde_json Value using our helper
+        Err(e) => {
+            if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+                println!("DEBUG: CBOR decode failed: {}", e);
+                println!("DEBUG: Plaintext hex: {}", hex::encode(&plaintext));
+            }
+            // Fallback: Try JSON
+            if let Ok(json_val) = serde_json::from_slice(&plaintext) {
+                json_val
+            } else {
+                match String::from_utf8(plaintext) {
+                    Ok(s) => serde_json::Value::String(s),
+                    Err(_) => serde_json::Value::String("Binary data (decryption successful but decode failed)".to_string()),
+                }
+            }
+        }
+    };
+
+    Ok(decoded)
+}
 
 // --- Data Structures ---
 
@@ -617,9 +777,9 @@ pub enum SignerError {
     Serialization(String),
     #[error("Internal error: {0}")]
     Internal(String),
-    #[error("User rejected")]
-    Rejected,
-    #[error("No request found")]
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+    #[error("No pending request found.")]
     NoRequest,
 }
 
@@ -981,7 +1141,7 @@ async fn perform_register(state: State<'_, AppState>) -> Result<String, SignerEr
     // Prepare JWK
     let response = RegisterResponse {
         credential_id: credential_b64.clone(),
-        public_key: reg_result.public_key_jwk,
+        public_key: reg_result.public_key_jwk.clone(),
     };
 
     if let Ok(mut lock) = state.allow_credentials.lock() {
@@ -990,6 +1150,19 @@ async fn perform_register(state: State<'_, AppState>) -> Result<String, SignerEr
             id: credential_b64.clone(),
         }]);
     }
+
+    // Save key to store
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    save_key(StoredKey {
+        id: credential_b64.clone(),
+        name: format!("Passkey {}", &credential_b64[0..8]), // Default name
+        created_at: now,
+        public_key: reg_result.public_key_jwk.clone(),
+    })?;
 
     Ok(serde_json::to_string(&response).map_err(|e| SignerError::Serialization(e.to_string()))?)
 }
@@ -1160,30 +1333,65 @@ async fn read_my_number_card_internal(pin: String, include_my_number: bool, incl
     reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = JpkiController::new(reader);
 
+    // My Number Card has multiple APs.
+    // 1. Text AP (Input Support AP) - protected by 4-digit PIN. Holds Name, Address, etc.
+    // 2. Card AP (Card Info AP) - protected by 4-digit PIN (same PIN, but different auth). Holds MyNumber and Photo.
+    
+    // To read the photo, we MUST authenticate with the Card AP.
+    // The controller.read_mynumber() method handles selecting the Card AP and verifying PIN.
+    
     let my_number = if include_my_number {
+        // This authenticates to the Card Info AP
         controller.read_mynumber(&pin).await.map_err(SignerError::from)?
     } else {
         "".to_string()
     };
 
+    // Text attributes come from Input Support AP
     let info = controller
         .read_attributes(&pin)
         .await
         .map_err(SignerError::from)?;
     
     let (face_photo, face_photo_format) = if include_face_photo {
+        // Try to authenticate with My Number (Match Number B) if available.
         let from_mynumber = if !my_number.is_empty() {
-            controller.read_face_photo(&my_number).await.ok()
+            if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+                println!("DEBUG: Attempting JPKI face photo auth with My Number (len={})", my_number.len());
+            }
+            match controller.read_face_photo(&my_number).await {
+                Ok(photo) => Some(photo),
+                Err(e) => {
+                    if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+                        println!("DEBUG: JPKI read_face_photo with MyNumber failed: {:?}", e);
+                    }
+                    None
+                }
+            }
         } else {
             None
         };
+        
         let photo = match from_mynumber {
             Some(photo) => Some(photo),
-            None => controller.read_face_photo_with_pin(&pin).await.ok(),
+            // Fallback: Try 4-digit PIN directly
+            None => {
+                match controller.read_face_photo_with_pin(&pin).await {
+                    Ok(photo) => Some(photo),
+                    Err(e) => {
+                        if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+                            println!("DEBUG: JPKI read_face_photo_with_pin failed: {:?}", e);
+                        }
+                        None
+                    }
+                }
+            }
         };
+
         if photo.is_none() && std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
-            println!("DEBUG: JPKI face photo not found (both My Number and PIN fallback failed)");
+            println!("DEBUG: JPKI face photo read failed (tried both MyNumber and PIN)");
         }
+        
         if let Some(raw) = photo {
             let (converted, format) = convert_jp2_if_needed(raw);
             (
@@ -1940,7 +2148,7 @@ async fn get_wallet_credentials() -> Result<Vec<WalletCredential>, SignerError> 
                 };
 
                 let metadata = entry.metadata().ok();
-                let created_at = metadata.and_then(|m| m.created().ok())
+                let created_at = metadata.and_then(|m| m.modified().ok())
                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|d| d.as_secs());
 
@@ -1958,30 +2166,107 @@ async fn get_wallet_credentials() -> Result<Vec<WalletCredential>, SignerError> 
 }
 
 #[tauri::command]
-async fn save_to_wallet(name: String, doc_type: String, data: serde_json::Value) -> Result<String, SignerError> {
+async fn save_to_wallet(name: String, _doc_type: String, data: serde_json::Value) -> Result<String, SignerError> {
     let credentials_dir = get_tobari_home().join("credentials");
     if !credentials_dir.exists() {
         std::fs::create_dir_all(&credentials_dir).map_err(|e| SignerError::Internal(e.to_string()))?;
     }
 
-    // Generate a simple mdoc-like structure (for now, wrapping the data in a map)
-    // In a full implementation, this would use tobari-gen logic
-    let mut mdoc = serde_json::Map::new();
-    mdoc.insert("docType".to_string(), serde_json::Value::String(doc_type.clone()));
-    mdoc.insert("version".to_string(), serde_json::Value::String("1.0".to_string()));
-    mdoc.insert("data".to_string(), data);
-    
     let file_name = format!("{}.cose", name.replace(" ", "_").to_lowercase());
     let file_path = credentials_dir.join(&file_name);
     
-    // Encode as CBOR (COSE-like)
+    // Encode the provided data directly as CBOR.
+    // The frontend now prepares the CDDL-compliant structure (and optional encryption envelope).
     let mut buf = Vec::new();
-    ciborium::into_writer(&serde_json::Value::Object(mdoc), &mut buf)
+    ciborium::into_writer(&data, &mut buf)
         .map_err(|e| SignerError::Serialization(e.to_string()))?;
     
     std::fs::write(&file_path, buf).map_err(|e| SignerError::Internal(e.to_string()))?;
     
     Ok(file_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn inspect_wallet_file(path: String) -> Result<serde_json::Value, SignerError> {
+    let content = std::fs::read(&path).map_err(|e| SignerError::Internal(e.to_string()))?;
+    
+    // Check if empty
+    if content.is_empty() {
+        return Ok(serde_json::Value::String("Empty file".to_string()));
+    }
+
+    Ok(inspect_cbor_bytes(&content))
+}
+
+fn inspect_cbor_bytes(data: &[u8]) -> serde_json::Value {
+    match ciborium::from_reader::<ciborium::value::Value, _>(data) {
+        Ok(value) => inspect_cbor_value(value),
+        Err(_) => {
+            // Not valid CBOR, return as Base64 string indicating raw bytes
+            // Or maybe try decoding as UTF-8 string
+            if let Ok(s) = String::from_utf8(data.to_vec()) {
+                serde_json::Value::String(s)
+            } else {
+                let b64 = URL_SAFE_NO_PAD.encode(data);
+                serde_json::json!({
+                    "raw_bytes": b64,
+                    "length": data.len()
+                })
+            }
+        }
+    }
+}
+
+fn inspect_cbor_value(val: ciborium::value::Value) -> serde_json::Value {
+    match val {
+        ciborium::value::Value::Integer(i) => {
+            let i_val: i128 = i.into();
+            // Try to fit in i64, otherwise string
+            if let Ok(v) = i8::try_from(i_val) { serde_json::Value::Number(v.into()) }
+            else if let Ok(v) = i16::try_from(i_val) { serde_json::Value::Number(v.into()) }
+            else if let Ok(v) = i32::try_from(i_val) { serde_json::Value::Number(v.into()) }
+            else if let Ok(v) = i64::try_from(i_val) { serde_json::Value::Number(v.into()) }
+            else { serde_json::Value::String(i_val.to_string()) }
+        },
+        ciborium::value::Value::Bytes(b) => {
+            // Heuristic: if bytes length > 2, try to decode as CBOR
+            if b.len() > 2 {
+                if let Ok(inner) = ciborium::from_reader::<ciborium::value::Value, _>(b.as_slice()) {
+                    return inspect_cbor_value(inner);
+                }
+            }
+            serde_json::Value::String(URL_SAFE_NO_PAD.encode(b))
+        },
+        ciborium::value::Value::Text(s) => serde_json::Value::String(s),
+        ciborium::value::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(inspect_cbor_value).collect())
+        },
+        ciborium::value::Value::Map(map) => {
+            let mut obj = serde_json::Map::new();
+            for (k, v) in map {
+                let key_str = match k {
+                    ciborium::value::Value::Text(s) => s,
+                    ciborium::value::Value::Integer(i) => {
+                        let i_val: i128 = i.into();
+                        i_val.to_string()
+                    },
+                    _ => "complex_key".to_string(),
+                };
+                obj.insert(key_str, inspect_cbor_value(v));
+            }
+            serde_json::Value::Object(obj)
+        },
+        ciborium::value::Value::Tag(_tag, inner) => {
+            // Unwrap tags for now to see content
+            inspect_cbor_value(*inner)
+        },
+        ciborium::value::Value::Float(f) => {
+             serde_json::Number::from_f64(f).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null)
+        },
+        ciborium::value::Value::Bool(b) => serde_json::Value::Bool(b),
+        ciborium::value::Value::Null => serde_json::Value::Null,
+        _ => serde_json::Value::String("Unknown CBOR Type".to_string()),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2013,7 +2298,11 @@ pub fn run() {
             bbs_generate_key,
             perform_bbs_proof,
             get_wallet_credentials,
-            save_to_wallet
+            save_to_wallet,
+            inspect_wallet_file,
+            get_registered_keys,
+            get_device_public_key,
+            decrypt_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

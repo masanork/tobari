@@ -1,0 +1,17 @@
+driver_license = {
+  version: "1.0",
+  docType: "io.github.masanork.tobari.driver_license.v1",
+  data: {
+    name: tstr,
+    ? name_kana: tstr,
+    address: tstr,
+    birth_date: tstr,
+    license_number: tstr,
+    issue_date: tstr,
+    expire_date: tstr,
+    ? face_photo: bstr,
+    ? face_photo_format: tstr,
+    ? signature: bstr,
+    ? raw_data_group1: bstr
+  }
+}

@@ -1,5 +1,9 @@
 
-import { encode } from './utils';
+import { base64url } from './utils';
+
+// Helper functions to match original implementation usage
+const bytesToBase64Url = (b: Uint8Array) => base64url.encode(b);
+const base64UrlToBytes = (s: string) => base64url.decode(s);
 
 /**
  * Custom ECIES implementation compatible with Tobari signer-macos
@@ -52,8 +56,8 @@ export async function encryptTobariEcies(
         {
             name: "HKDF",
             hash: "SHA-256",
-            salt: SALT,
-            info: INFO
+            salt: SALT as unknown as BufferSource,
+            info: INFO as unknown as BufferSource
         },
         hkdfKey,
         256 // 32 bytes for AES-256
@@ -72,7 +76,7 @@ export async function encryptTobariEcies(
     const encryptedBuffer = await crypto.subtle.encrypt(
         { name: "AES-GCM", iv: iv, tagLength: 128 },
         aesKey,
-        plaintext
+        plaintext as unknown as BufferSource
     );
 
     const encryptedBytes = new Uint8Array(encryptedBuffer);
@@ -143,8 +147,8 @@ export async function decryptTobariEcies(
         {
             name: "HKDF",
             hash: "SHA-256",
-            salt: SALT,
-            info: INFO
+            salt: SALT as unknown as BufferSource,
+            info: INFO as unknown as BufferSource
         },
         hkdfKey,
         256
@@ -168,25 +172,10 @@ export async function decryptTobariEcies(
     combined.set(tag, ciphertext.length);
 
     const decryptedBuffer = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: iv, tagLength: 128 },
+        { name: "AES-GCM", iv: iv as unknown as BufferSource, tagLength: 128 },
         aesKey,
-        combined
+        combined as unknown as BufferSource
     );
 
     return new Uint8Array(decryptedBuffer);
-}
-
-// Helpers
-function base64UrlToBytes(str: string): Uint8Array {
-    const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    const binString = atob(base64);
-    return Uint8Array.from(binString, c => c.charCodeAt(0));
-}
-
-function bytesToBase64Url(bytes: Uint8Array): string {
-    const binString = String.fromCharCode(...bytes);
-    return btoa(binString)
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
 }

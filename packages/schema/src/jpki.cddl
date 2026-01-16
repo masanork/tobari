@@ -1,0 +1,17 @@
+jpki = {
+  version: "1.0",
+  docType: "io.github.masanork.tobari.mynumber.v1",
+  data: {
+    name: tstr,
+    address: tstr,
+    birth_date: tstr,
+    gender: tstr,
+    my_number: tstr,
+    ? face_photo: bstr,
+    ? face_photo_format: tstr,
+    ? auth_cert: bstr,
+    ? sign_cert: bstr,
+    ? auth_ca_cert: bstr,
+    ? sign_ca_cert: bstr
+  }
+}

@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "Tobari Signer",
-        "width": 400,
-        "height": 600,
-        "resizable": false
+        "width": 800,
+        "height": 700,
+        "resizable": true
       }
     ],
     "security": {

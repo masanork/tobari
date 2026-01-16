@@ -16,30 +16,203 @@
 body {
   margin: 0;
   display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  width: 100%;
 }
 
-.container {
+#root {
   width: 100%;
-  max-width: 400px;
-  margin: 0 auto;
+  height: 100vh;
+}
+
+/* 2-Column Layout */
+.app-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.sidebar {
+  background-color: #1a1a1a;
+  padding: 1.5rem;
+  border-right: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.content-area {
   padding: 2rem;
-  text-align: center;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center content initially */
+  justify-content: flex-start;
+  position: relative;
+  box-sizing: border-box;
 }
 
 h1 {
-  font-size: 1.5em;
-  margin-bottom: 2rem;
+  font-size: 1.2em;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  color: #24c8db;
 }
 
-.request-card {
-  background: #1a1a1a;
-  padding: 1.5rem;
+h2 {
+  font-size: 1.5em;
+  margin-top: 0;
+}
+
+/* Card Selector */
+.card-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.card-selector button {
+  flex: 1 1 45%; /* 2 items per row approx */
+  padding: 0.5em;
+  font-size: 0.8em;
+  border-radius: 6px;
+  background: #2a2a2a;
+  color: #888;
+  border: 1px solid transparent;
+}
+
+.card-selector button.active {
+  background: #333;
+  color: #24c8db;
+  border-color: #24c8db;
+}
+
+/* Input Sections */
+.card-input-section {
+  flex: 1; /* Take remaining space before status bar */
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.input-group input,
+.vertical-inputs input {
+  padding: 0.6em;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #111;
+  color: white;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.vertical-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Wallet View */
+.wallet-view {
+  width: 100%;
+}
+
+.empty-wallet {
+  color: #666;
+  font-style: italic;
+  font-size: 0.9em;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.credential-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.credential-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: #2a2a2a;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.credential-card:hover {
+  background: #333;
+  border-color: #555;
+}
+
+.cred-icon {
+  font-size: 1.2em;
+  background: #111;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.cred-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.cred-name {
+  font-weight: bold;
+  font-size: 0.85em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cred-type {
+  font-size: 0.7em;
+  color: #888;
+}
+
+/* Status Bar */
+.status-bar {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid #333;
+  text-align: center;
+}
+
+.status-message {
+  font-size: 0.85em;
+  color: #24c8db;
+  margin-bottom: 0.5rem;
+  min-height: 1.2em;
+}
+
+/* Request Card & Content */
+.request-card, .card-data-preview {
+  background: #2a2a2a;
+  padding: 2rem;
   border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-  text-align: left;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 600px;
+  box-sizing: border-box;
 }
 
 .field-group {
@@ -50,12 +223,12 @@ h1 {
   display: block;
   font-size: 0.8em;
   color: #888;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.2rem;
 }
 
 .value {
   font-size: 1.2em;
-  font-weight: bold;
+  font-weight: 500;
 }
 
 .message-box {
@@ -71,173 +244,157 @@ h1 {
   color: #aaa;
   margin-bottom: 0.5rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
-.message-box p {
-  margin: 0;
-  font-size: 0.95em;
+.bbs-details {
+  background: #333;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border-left: 3px solid #646cff;
 }
 
 .details {
-  margin-bottom: 1.5rem;
-  font-size: 0.8em;
-  color: #666;
+  margin-bottom: 2rem;
+  font-size: 0.9em;
+  color: #888;
 }
 
 .detail-content {
-  padding: 0.5rem;
+  padding: 0.8rem;
   background: #111;
   border-radius: 4px;
   margin-top: 0.5rem;
-  overflow-wrap: break-word;
-}
-
-.status-message {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  color: #24c8db;
-  min-height: 1.5em;
 }
 
 .actions {
   display: flex;
   gap: 1rem;
-  justify-content: space-between;
-  align-items: flex-start;
+  justify-content: flex-end;
+  margin-top: 2rem;
 }
 
 .btn-group {
   display: flex;
-  flex-direction: column;
   gap: 0.5rem;
-  flex: 2;
 }
 
-.card-selector {
-  display: flex;
-  gap: 0.2rem;
-  margin-bottom: 1rem;
-  background: #111;
-  padding: 0.3rem;
-  border-radius: 10px;
-}
-
-.card-selector button {
-  padding: 0.4em 0.8em;
-  font-size: 0.85em;
-  border-radius: 6px;
-  background: transparent;
-  color: #888;
-}
-
-.card-selector button.active {
-  background: #333;
-  color: #24c8db;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.vertical-inputs {
+.cert-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  width: 100%;
-}
-
-.raw-json {
-  font-family: monospace;
-  font-size: 0.8em;
-  background: #111;
-  color: #e6e6e6;
-  padding: 0.5rem;
-  border-radius: 6px;
-  overflow-x: auto;
-  text-align: left;
-}
-
-.card-input-section {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-  align-items: flex-start;
-}
-
-.card-input-section input {
-  flex: 1;
-  padding: 0.6em;
-  border-radius: 8px;
-  border: 1px solid #444;
-  background: #111;
-  color: white;
-}
-
-.card-data-preview {
-  background: #2a2a2a;
-  padding: 1rem;
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
-  text-align: left;
-  font-size: 0.9em;
-  border-left: 4px solid #24c8db;
-}
-
-.card-data-preview h3 {
-  margin-top: 0;
-  margin-bottom: 0.5rem;
-  font-size: 1.1em;
-  color: #24c8db;
-}
-
-.bbs-details {
-  background: #2a2a2a;
-  padding: 1rem;
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
-  text-align: left;
-  border-left: 4px solid #646cff;
-}
-
-.bbs-details label {
-  display: block;
-  font-size: 0.8em;
-  color: #646cff;
-  font-weight: bold;
-  margin-bottom: 0.5rem;
-  text-transform: uppercase;
-}
-
-.bbs-details ul {
-  margin: 0.5rem 0;
-  padding-left: 1.2rem;
-  font-size: 0.9em;
-}
-
-.privacy-note {
-  font-size: 0.8em;
-  color: #888;
-  font-style: italic;
   margin-top: 0.5rem;
 }
 
-.card-data-preview p {
-  margin: 0.2rem 0;
+.cert-list summary {
+  font-size: 0.85em;
+  color: #24c8db;
+  cursor: pointer;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #333;
 }
 
-button {
+.cert-list details[open] summary {
+  border-bottom: none;
+}
+
+.cert-list pre {
+  margin-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Preview Styles */
+.card-data-preview h3 {
+  color: #24c8db;
+  border-bottom: 1px solid #444;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.preview-full {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.preview-item {
+  background: #333;
+  padding: 0.8rem;
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+
+.preview-item strong {
+  display: block;
+  font-size: 0.8em;
+  color: #aaa;
+  margin-bottom: 0.2rem;
+}
+
+.photo-preview {
+  margin-top: 1rem;
+  text-align: center;
+  background: #111;
+  padding: 1rem;
   border-radius: 8px;
+}
+
+.photo-preview img, .photo-container img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 4px;
+}
+
+.raw-json {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.8em;
+  background: #111;
+  color: #e6e6e6;
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+/* Placeholder */
+.placeholder-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #555;
+  text-align: center;
+  margin-top: 20vh;
+}
+
+.placeholder-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+/* Buttons */
+button {
+  border-radius: 6px;
   border: 1px solid transparent;
   padding: 0.6em 1.2em;
-  font-size: 1em;
+  font-size: 0.9em;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s;
-  flex: 1;
+  transition: border-color 0.25s;
 }
 
 button:hover {
   border-color: #646cff;
-  filter: brightness(1.1);
 }
 
 button:disabled {
@@ -245,134 +402,95 @@ button:disabled {
   cursor: not-allowed;
 }
 
-.reject-btn {
-  background-color: #3a3a3a;
-  color: #fff;
-}
-
-.sign-btn {
-  background-color: #646cff;
-  color: #fff;
-}
-
 .sign-btn.primary {
   background-color: #24c8db;
   color: #000;
+  font-weight: bold;
+}
+
+.reject-btn {
+  background-color: transparent;
+  border: 1px solid #444;
+  color: #aaa;
+}
+
+.reject-btn:hover {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
 }
 
 .error-container {
   color: #ff6b6b;
-  background: #3a1a1a;
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid #ff6b6b;
   padding: 1rem;
   border-radius: 8px;
-  margin-bottom: 1rem;
-}
-
-/* Wallet View */
-.wallet-view {
-  width: 100%;
-}
-
-.empty-wallet {
-  color: #888;
-  font-style: italic;
-  margin: 2rem 0;
-}
-
-.credential-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
   margin-bottom: 1.5rem;
-  max-height: 300px;
-  overflow-y: auto;
-  padding-right: 0.5rem;
+  width: 100%;
+  max-width: 600px;
 }
 
-.credential-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  background: #2a2a2a;
-  padding: 0.8rem;
-  border-radius: 10px;
-  border: 1px solid #444;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: left;
-}
-
-.credential-card:hover {
-  border-color: #24c8db;
-  background: #333;
-}
-
-.cred-icon {
-  font-size: 1.8em;
-  background: #111;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-}
-
-.cred-info {
-  flex: 1;
-}
-
-.cred-name {
-  font-weight: bold;
-  font-size: 0.95em;
-  margin-bottom: 0.1rem;
-}
-
-.cred-type {
-  font-size: 0.75em;
-  color: #aaa;
-  font-family: monospace;
-}
-
-.refresh-btn {
-  font-size: 0.8em;
-  padding: 0.4em 1em;
-  background: transparent;
-  color: #24c8db;
-  border: 1px solid #24c8db;
-  margin-top: 0.5rem;
+.error-text {
+  margin: 0;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
-    background-color: #ffffff;
+    background-color: #f0f2f5;
   }
-  .request-card {
-    background: #f9f9f9;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  
+  .sidebar {
+    background-color: #fff;
+    border-right: 1px solid #e0e0e0;
   }
-  .message-box {
-    background: #f0f0f0;
+  
+  .request-card, .card-data-preview {
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
-  .reject-btn {
-    background-color: #e0e0e0;
-    color: #333;
+  
+  .card-selector button {
+    background: #f5f5f5;
+    color: #666;
   }
-  .detail-content {
-    background: #f0f0f0;
+  
+  .card-selector button.active {
+    background: #e6f7ff;
+    color: #007acc;
+    border-color: #007acc;
   }
-  .error-container {
-     background: #ffe0e0;
-     color: #d00000;
-  }
-  .card-input-section input {
+  
+  .input-group input, .vertical-inputs input {
     background: #fff;
     border-color: #ccc;
     color: #333;
   }
-  .card-data-preview {
-    background: #f0f8ff;
-    color: #333;
+  
+  .preview-item, .message-box, .bbs-details, .photo-preview {
+    background: #f9f9f9;
+  }
+  
+  .credential-card {
+    background: #f9f9f9;
+    border-color: #eee;
+  }
+  
+  .credential-card:hover {
+    background: #f0f0f0;
+    border-color: #ccc;
+  }
+  
+  .cred-icon {
+    background: #eee;
+  }
+  
+  h1, h2, .card-data-preview h3, .status-message {
+    color: #007acc; /* Darker blue for light mode */
+  }
+  
+  .sign-btn.primary {
+    background-color: #007acc;
+    color: white;
   }
 }
