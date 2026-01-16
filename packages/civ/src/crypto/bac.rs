@@ -61,7 +61,9 @@ impl BacSession {
 
         let wrapped = crate::apdu::ApduCommand::new(cla_sm, apdu.ins, apdu.p1, apdu.p2)
             .with_data(&command_data);
-        Ok(wrapped.to_bytes())
+        let mut bytes = wrapped.to_bytes();
+        bytes.push(0x00); // Le' always present for MRTD SM
+        Ok(bytes)
     }
 
     pub fn unwrap_response(&mut self, response: &[u8]) -> Result<(Vec<u8>, u8, u8)> {
@@ -316,9 +318,11 @@ fn adjust_parity(key: &mut [u8]) {
 }
 
 fn build_mac_input(ssc: &[u8; 8], cla: u8, ins: u8, p1: u8, p2: u8, tlvs: &[u8]) -> Vec<u8> {
-    let mut data = Vec::with_capacity(8 + 4 + tlvs.len());
+    let mut data = Vec::with_capacity(8 + 8 + tlvs.len());
     data.extend_from_slice(ssc);
     data.extend_from_slice(&[cla, ins, p1, p2]);
+    // ICAO 9303: command header padded to 8 bytes with 0x80 00 00 00
+    data.extend_from_slice(&[0x80, 0x00, 0x00, 0x00]);
     data.extend_from_slice(tlvs);
     pad_iso9797(&data, 8)
 }
@@ -505,7 +509,7 @@ pub fn build_mutual_auth_data(
     k_enc: &[u8; 16],
     k_mac: &[u8; 16],
     rnd_ic: &[u8; 8],
-) -> Result<(Vec<u8>, u64)> {
+) -> Result<(Vec<u8>, u64, [u8; 8], [u8; 16])> {
     use rand_core::{OsRng, RngCore};
     let mut rnd_ifd = [0u8; 8];
     let mut k_ifd = [0u8; 16];
@@ -524,7 +528,17 @@ pub fn build_mutual_auth_data(
     ssc_bytes[0..4].copy_from_slice(&rnd_ic[4..8]);
     ssc_bytes[4..8].copy_from_slice(&rnd_ifd[4..8]);
     let ssc = u64::from_be_bytes(ssc_bytes);
-    Ok((data, ssc))
+    Ok((data, ssc, rnd_ifd, k_ifd))
+}
+
+pub fn decrypt_mutual_auth_response(k_enc: &[u8; 16], encrypted: &[u8]) -> Result<[u8; 32]> {
+    let decrypted = decrypt_3des_cbc_raw(k_enc, encrypted)?;
+    if decrypted.len() != 32 {
+        return Err(anyhow!("Invalid mutual auth response length"));
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&decrypted);
+    Ok(out)
 }
 
 pub fn mock_mutual_auth_response(

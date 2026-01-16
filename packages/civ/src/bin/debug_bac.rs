@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Keys derived.");
 
     // 4. Build Auth Data
-    let (auth_data, _ssc) = bac::build_mutual_auth_data(&k_enc, &k_mac, &rnd_ic_arr).unwrap();
+    let (auth_data, _ssc, _rnd_ifd, _k_ifd) = bac::build_mutual_auth_data(&k_enc, &k_mac, &rnd_ic_arr).unwrap();
     println!("Auth Data Len: {}", auth_data.len()); // Should be 40
 
     // 5. EXTERNAL AUTHENTICATE

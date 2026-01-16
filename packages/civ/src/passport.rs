@@ -118,35 +118,59 @@ impl<R: CardReader> PassportController<R> {
         let k_seed = bac::derive_key_seed(mrz);
         let (k_enc, k_mac) = bac::derive_session_keys(&k_seed);
 
-        let get_challenge = ApduCommand::new(CLA_ISO, INS_GET_CHALLENGE, 0x00, 0x00).with_le(0x08);
-        let rnd_ic_response = self
-            .reader
-            .transmit(&get_challenge.to_bytes())
-            .await
-            .map_err(|e| CivError::Communication(e.to_string()))?;
+        let get_challenge =
+            ApduCommand::new(CLA_ISO, INS_GET_CHALLENGE, 0x00, 0x00).with_le(0x08);
+        let rnd_ic_response = self.transmit(&get_challenge).await?;
         Self::check_sw(&rnd_ic_response)?;
         let rnd_ic = &rnd_ic_response[0..8];
 
         let rnd_ic: [u8; 8] = rnd_ic
             .try_into()
             .map_err(|_| CivError::Communication("Invalid RND.ICC".to_string()))?;
-        let (auth_data, ssc) = bac::build_mutual_auth_data(&k_enc, &k_mac, &rnd_ic)
+        let (auth_data, ssc, rnd_ifd, k_ifd) = bac::build_mutual_auth_data(&k_enc, &k_mac, &rnd_ic)
             .map_err(|e| CivError::AuthenticationFailed(e.to_string()))?;
         
-        // Align with signer-macos: Add 0x28 (Le) at the end of auth_data for EXTERNAL AUTHENTICATE
-        let mut auth_data_with_le = auth_data;
-        auth_data_with_le.push(0x28);
-
-        let external_auth =
-            ApduCommand::new(CLA_ISO, INS_EXTERNAL_AUTHENTICATE, 0x00, 0x00).with_data(&auth_data_with_le);
-        let response = self
-            .reader
-            .transmit(&external_auth.to_bytes())
-            .await
-            .map_err(|e| CivError::Communication(e.to_string()))?;
+        // Align with signer-macos: Lc=0x28, Data=E.IF||M.IF, Le=0x28
+        let external_auth = ApduCommand::new(CLA_ISO, INS_EXTERNAL_AUTHENTICATE, 0x00, 0x00)
+            .with_data(&auth_data)
+            .with_le(0x28);
+        let response = self.transmit(&external_auth).await?;
         Self::check_sw(&response)?;
+        let response_data = response[0..response.len() - 2].to_vec();
+        if response_data.len() < 40 {
+            return Err(CivError::AuthenticationFailed(
+                "Mutual auth response too short".to_string(),
+            ));
+        }
+        let enc_res = &response_data[0..32];
+        let s_res =
+            bac::decrypt_mutual_auth_response(&k_enc, enc_res).map_err(|e| {
+                CivError::AuthenticationFailed(e.to_string())
+            })?;
+        let rnd_ic_res = &s_res[0..8];
+        let rnd_ifd_res = &s_res[8..16];
+        let k_ic = &s_res[16..32];
 
-        self.secure_session = Some(SecureSession::Bac(bac::BacSession::new(k_enc, k_mac, ssc)));
+        if rnd_ic_res != rnd_ic {
+            return Err(CivError::AuthenticationFailed(
+                "Mutual auth RND.IC mismatch".to_string(),
+            ));
+        }
+        if rnd_ifd_res != rnd_ifd {
+            return Err(CivError::AuthenticationFailed(
+                "Mutual auth RND.IFD mismatch".to_string(),
+            ));
+        }
+
+        let mut k_seed = [0u8; 16];
+        for i in 0..16 {
+            k_seed[i] = k_ifd[i] ^ k_ic[i];
+        }
+        let (ks_enc, ks_mac) = bac::derive_session_keys(&k_seed);
+
+        self.secure_session = Some(SecureSession::Bac(bac::BacSession::new(
+            ks_enc, ks_mac, ssc,
+        )));
         Ok(())
     }
 
@@ -358,12 +382,28 @@ impl<R: CardReader> PassportController<R> {
     }
 
     pub(crate) async fn read_file(&mut self, file_id: &[u8]) -> Result<Vec<u8>> {
-        let select = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x02, 0x0C).with_data(file_id);
+        let select = ApduCommand::new(CLA_ISO, INS_SELECT_FILE, 0x02, 0x0C)
+            .with_data(file_id);
         let res_sel = self.transmit(&select).await?;
-        Self::check_sw(&res_sel)?;
+        if let Err(err) = Self::check_sw(&res_sel) {
+            let sw1 = res_sel.get(res_sel.len().saturating_sub(2)).copied().unwrap_or(0);
+            let sw2 = res_sel.get(res_sel.len().saturating_sub(1)).copied().unwrap_or(0);
+            if matches!(sw1, 0x69 | 0x67 | 0x6A) {
+                let plain_res = self
+                    .reader
+                    .transmit(&select.to_bytes())
+                    .await
+                    .map_err(|e| CivError::Communication(e.to_string()))?;
+                Self::check_sw(&plain_res)?;
+            } else {
+                return Err(err);
+            }
+        }
 
+        let sm_active = self.secure_session.is_some();
         let mut data = Vec::new();
         let mut offset: u16 = 0;
+        let mut expected_size: Option<usize> = None;
         loop {
             let read = ApduCommand::new(
                 CLA_ISO,
@@ -382,12 +422,70 @@ impl<R: CardReader> PassportController<R> {
             if !chunk.is_empty() {
                 data.extend_from_slice(chunk);
                 offset += chunk.len() as u16;
+                if expected_size.is_none() {
+                    expected_size = parse_tlv_total_length(&data);
+                    if let Some(size) = expected_size {
+                        debug_passport(&format!(
+                            "Passport: EF total size from TLV header: {} bytes",
+                            size
+                        ));
+                    }
+                }
             }
             if sw1 == 0x90 && sw2 == 0x00 {
-                if chunk.len() < 256 {
+                if chunk.is_empty() {
                     break;
                 }
+                if !sm_active && chunk.len() < 256 {
+                    break;
+                }
+                if let Some(size) = expected_size {
+                    if data.len() >= size {
+                        break;
+                    }
+                }
+            } else if sw1 == 0x6C || sw1 == 0x61 {
+                let correct_le = if sw2 == 0 { 256 } else { sw2 as usize };
+                let retry = ApduCommand::new(
+                    CLA_ISO,
+                    INS_READ_BINARY,
+                    (offset >> 8) as u8,
+                    (offset & 0xFF) as u8,
+                )
+                .with_le(correct_le);
+                let retry_res = self.transmit(&retry).await?;
+                if retry_res.len() < 2 {
+                    return Err(CivError::Communication("Retry response too short".to_string()));
+                }
+                let retry_sw1 = retry_res[retry_res.len() - 2];
+                let retry_sw2 = retry_res[retry_res.len() - 1];
+                if retry_sw1 == 0x90 && retry_sw2 == 0x00 {
+                    let retry_chunk = &retry_res[..retry_res.len() - 2];
+                    if !retry_chunk.is_empty() {
+                        data.extend_from_slice(retry_chunk);
+                        offset += retry_chunk.len() as u16;
+                        if expected_size.is_none() {
+                            expected_size = parse_tlv_total_length(&data);
+                        }
+                    } else {
+                        break;
+                    }
+                    if let Some(size) = expected_size {
+                        if data.len() >= size {
+                            break;
+                        }
+                    }
+                } else {
+                    return Err(CivError::from_sw(retry_sw1, retry_sw2));
+                }
             } else if sw1 == 0x6B || (sw1 == 0x62 && sw2 == 0x82) {
+                debug_passport(&format!(
+                    "Passport: read terminated SW={:02X}{:02X} at offset {}, total {}",
+                    sw1,
+                    sw2,
+                    offset,
+                    data.len()
+                ));
                 break;
             } else {
                 return Err(CivError::from_sw(sw1, sw2));
@@ -400,14 +498,37 @@ impl<R: CardReader> PassportController<R> {
     }
 
     async fn transmit(&mut self, apdu: &ApduCommand) -> Result<Vec<u8>> {
+        let debug_enabled = std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1");
+        if debug_enabled {
+            let bytes = apdu.to_bytes();
+            let hex = bytes
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join("");
+            println!("DEBUG: Passport APDU => {}", hex);
+        }
         if let Some(session) = self.secure_session.as_mut() {
             let is_sm_command = (apdu.cla & 0x0C) != 0;
             let wrapped = session.wrap_command(apdu)?;
+            if debug_enabled {
+                let hex = wrapped
+                    .iter()
+                    .map(|b| format!("{:02X}", b))
+                    .collect::<Vec<_>>()
+                    .join("");
+                println!("DEBUG: Passport APDU (wrapped) => {}", hex);
+            }
             let response = self
                 .reader
                 .transmit(&wrapped)
                 .await
                 .map_err(|e| CivError::Communication(e.to_string()))?;
+            if debug_enabled && response.len() >= 2 {
+                let sw1 = response[response.len() - 2];
+                let sw2 = response[response.len() - 1];
+                println!("DEBUG: Passport APDU <= {:02X}{:02X}", sw1, sw2);
+            }
             if is_sm_command || response.len() > 2 {
                 let (data, sw1, sw2) = session.unwrap_response(&response)?;
                 let mut out = data;
@@ -418,10 +539,17 @@ impl<R: CardReader> PassportController<R> {
                 Ok(response)
             }
         } else {
-            self.reader
+            let response = self
+                .reader
                 .transmit(&apdu.to_bytes())
                 .await
-                .map_err(|e| CivError::Communication(e.to_string()))
+                .map_err(|e| CivError::Communication(e.to_string()))?;
+            if debug_enabled && response.len() >= 2 {
+                let sw1 = response[response.len() - 2];
+                let sw2 = response[response.len() - 1];
+                println!("DEBUG: Passport APDU <= {:02X}{:02X}", sw1, sw2);
+            }
+            Ok(response)
         }
     }
 
@@ -436,6 +564,63 @@ impl<R: CardReader> PassportController<R> {
         } else {
             Err(CivError::from_sw(sw1, sw2))
         }
+    }
+}
+
+fn parse_tlv_total_length(data: &[u8]) -> Option<usize> {
+    if data.len() < 2 {
+        return None;
+    }
+    let mut offset = 0usize;
+    let first_tag = data[offset];
+    offset += 1;
+    if (first_tag & 0x1F) == 0x1F {
+        while offset < data.len() && (data[offset] & 0x80) != 0 {
+            offset += 1;
+        }
+        if offset < data.len() {
+            offset += 1;
+        }
+    }
+    if offset >= data.len() {
+        return None;
+    }
+    let len_byte = data[offset];
+    offset += 1;
+    let content_len = if len_byte <= 0x7F {
+        len_byte as usize
+    } else if len_byte == 0x81 {
+        if offset >= data.len() {
+            return None;
+        }
+        let len = data[offset] as usize;
+        offset += 1;
+        len
+    } else if len_byte == 0x82 {
+        if offset + 1 >= data.len() {
+            return None;
+        }
+        let len = ((data[offset] as usize) << 8) | data[offset + 1] as usize;
+        offset += 2;
+        len
+    } else if len_byte == 0x83 {
+        if offset + 2 >= data.len() {
+            return None;
+        }
+        let len = ((data[offset] as usize) << 16)
+            | ((data[offset + 1] as usize) << 8)
+            | data[offset + 2] as usize;
+        offset += 3;
+        len
+    } else {
+        return None;
+    };
+    Some(offset + content_len)
+}
+
+fn debug_passport(message: &str) {
+    if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
+        println!("DEBUG: {}", message);
     }
 }
 
@@ -490,17 +675,8 @@ impl<R: CardReader> IdentityController for PassportController<R> {
             }
         }
         let dg1 = self.read_dg1().await?;
-        let tlvs = parse_ber_tlv(&dg1).unwrap_or_default();
-        let mrz_raw = if !tlvs.is_empty() && tlvs[0].tag == 0x61 {
-            let inner = parse_ber_tlv(&tlvs[0].value).unwrap_or_default();
-            if !inner.is_empty() && inner[0].tag == 0x5F1F {
-                String::from_utf8_lossy(&inner[0].value).to_string()
-            } else {
-                String::from_utf8_lossy(&dg1).to_string()
-            }
-        } else {
-            String::from_utf8_lossy(&dg1).to_string()
-        };
+        let mrz_raw = extract_mrz_from_dg1(&dg1)
+            .unwrap_or_else(|| String::from_utf8_lossy(&dg1).to_string());
 
         let mut mrz_clean = mrz_raw.replace("\r", "");
         if mrz_clean.len() >= 88 && !mrz_clean.contains('\n') {
@@ -539,6 +715,52 @@ fn parse_pace_response(res: &[u8], target_tag: u8) -> Result<Vec<u8>> {
 
     find_tag_recursive(&tlvs, target_tag as u32)
         .ok_or_else(|| CivError::NotFound(format!("Tag {:02X} not found", target_tag)))
+}
+
+fn extract_mrz_from_dg1(dg1: &[u8]) -> Option<String> {
+    fn find_mrz_tlv(tlvs: &[crate::utils::BerTlv]) -> Option<Vec<u8>> {
+        for tlv in tlvs {
+            if tlv.tag == 0x5F1F {
+                return Some(tlv.value.clone());
+            }
+            if let Some(value) = find_mrz_tlv(&tlv.children) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    if let Ok(tlvs) = parse_ber_tlv(dg1) {
+        if let Some(value) = find_mrz_tlv(&tlvs) {
+            let mut mrz = String::from_utf8_lossy(&value).to_string();
+            mrz = mrz.replace('\r', "").replace('\n', "");
+            if mrz.len() == 88 {
+                mrz.insert(44, '\n');
+            }
+            return Some(mrz);
+        }
+    }
+
+    let needle_td3 = [b'P', b'<'];
+    let needle_td1 = [b'I', b'<'];
+    let pos = dg1
+        .windows(2)
+        .position(|w| w == needle_td3 || w == needle_td1)?;
+    let slice = &dg1[pos..];
+    let mut mrz: String = slice
+        .iter()
+        .map(|b| if b.is_ascii() { *b as char } else { ' ' })
+        .collect();
+    mrz = mrz.replace('\r', "").replace('\n', "");
+    if mrz.len() >= 90 {
+        mrz.truncate(90);
+    } else if mrz.len() >= 88 {
+        mrz.truncate(88);
+    }
+    if mrz.len() == 88 {
+        mrz.insert(44, '\n');
+    }
+    Some(mrz)
 }
 
 fn encode_len(len: usize) -> Vec<u8> {

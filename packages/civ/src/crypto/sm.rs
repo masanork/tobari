@@ -229,6 +229,7 @@ impl SecureMessagingSession for AesSecureMessaging {
         let mut res = vec![apdu.cla | 0x0C, apdu.ins, apdu.p1, apdu.p2];
         res.extend_from_slice(&encode_length(wrapped_data.len()));
         res.extend_from_slice(&wrapped_data);
+        res.push(0x00); // Le' is always present for MRTD secure messaging
 
         Ok(res)
     }

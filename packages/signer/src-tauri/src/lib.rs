@@ -19,6 +19,24 @@ pub struct PassportReadRequest {
 pub struct PassportData {
     pub dg1: String, // Base64 MRZ
     pub dg2: String, // Base64 Photo
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mrz: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub passport_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub birth_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiry_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nationality: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub face_photo: Option<String>, // Base64
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub face_photo_format: Option<String>, // "jpeg" or "jp2"
     pub sod: Option<String>,
     pub dg11: Option<String>,
     pub dg12: Option<String>,
@@ -1212,25 +1230,235 @@ async fn read_passport_internal(mrz: String) -> Result<PassportData, SignerError
     reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = PassportController::new(reader);
 
-    controller.perform_bac(&mrz).await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    debug_log("Passport: selecting ICAO applet");
+    controller.select_ep_ap().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    debug_log("Passport: starting BAC");
+    let mrz_key = normalize_mrz_for_bac(&mrz)?;
+    debug_log(&format!("Passport: MRZ key length {}", mrz_key.len()));
+    controller.perform_bac(&mrz_key).await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    debug_log("Passport: BAC complete, reading DG1");
     
     let dg1 = controller.read_dg1().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    debug_log(&format!("Passport: DG1 read ({} bytes)", dg1.len()));
     let dg2 = controller.read_dg2().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    debug_log(&format!("Passport: DG2 read ({} bytes)", dg2.len()));
     let sod = controller.read_sod().await.ok();
     let dg11 = controller.read_dg11().await.ok();
     let dg12 = controller.read_dg12().await.ok();
     let dg14 = controller.read_dg14().await.ok();
     let dg15 = controller.read_dg15().await.ok();
 
+    let mrz_text = extract_mrz_from_dg1(&dg1);
+    let parsed = mrz_text
+        .as_deref()
+        .and_then(|m| civ::utils::MrzUtils::parse_mrz_td3(m).ok());
+
+    let (face_photo, face_photo_format) = extract_photo_from_dg2(&dg2)
+        .map(|raw| {
+            let (converted, format) = convert_jp2_if_needed(raw);
+            (Some(URL_SAFE_NO_PAD.encode(converted)), format.map(|f| f.to_string()))
+        })
+        .unwrap_or((None, None));
+
     Ok(PassportData {
         dg1: URL_SAFE_NO_PAD.encode(dg1),
         dg2: URL_SAFE_NO_PAD.encode(dg2),
+        mrz: mrz_text,
+        name: parsed.as_ref().map(|p| p.full_name.clone()),
+        passport_number: parsed.as_ref().map(|p| p.identity_number.clone()),
+        birth_date: parsed.as_ref().map(|p| p.birth_date.clone()),
+        expiry_date: parsed
+            .as_ref()
+            .and_then(|p| p.expiration_date.clone()),
+        gender: parsed.as_ref().map(|p| p.gender.clone()),
+        nationality: parsed
+            .as_ref()
+            .and_then(|p| p.issuing_authority.clone()),
+        face_photo,
+        face_photo_format,
         sod: sod.map(|d| URL_SAFE_NO_PAD.encode(d)),
         dg11: dg11.map(|d| URL_SAFE_NO_PAD.encode(d)),
         dg12: dg12.map(|d| URL_SAFE_NO_PAD.encode(d)),
         dg14: dg14.map(|d| URL_SAFE_NO_PAD.encode(d)),
         dg15: dg15.map(|d| URL_SAFE_NO_PAD.encode(d)),
     })
+}
+
+fn extract_mrz_from_dg1(dg1: &[u8]) -> Option<String> {
+    fn find_mrz_tlv(tlvs: &[civ::utils::BerTlv]) -> Option<Vec<u8>> {
+        for tlv in tlvs {
+            if tlv.tag == 0x5F1F {
+                return Some(tlv.value.clone());
+            }
+            if let Some(value) = find_mrz_tlv(&tlv.children) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    if let Ok(tlvs) = civ::utils::parse_ber_tlv(dg1) {
+        if let Some(value) = find_mrz_tlv(&tlvs) {
+            let mut mrz = String::from_utf8_lossy(&value).to_string();
+            mrz = mrz.replace('\r', "").replace('\n', "");
+            if mrz.len() == 88 {
+                mrz.insert(44, '\n');
+            }
+            return Some(mrz);
+        }
+    }
+
+    let needle_td3 = [b'P', b'<'];
+    let needle_td1 = [b'I', b'<'];
+    let pos = dg1
+        .windows(2)
+        .position(|w| w == needle_td3 || w == needle_td1)?;
+    let slice = &dg1[pos..];
+    let mut mrz: String = slice
+        .iter()
+        .map(|b| if b.is_ascii() { *b as char } else { ' ' })
+        .collect();
+    mrz = mrz.replace('\r', "").replace('\n', "");
+    if mrz.len() >= 90 {
+        mrz.truncate(90);
+    } else if mrz.len() >= 88 {
+        mrz.truncate(88);
+    }
+    if mrz.len() == 88 {
+        mrz.insert(44, '\n');
+    }
+    Some(mrz)
+}
+
+fn extract_photo_from_dg2(dg2: &[u8]) -> Option<Vec<u8>> {
+    let jpeg_sig = [0xFF, 0xD8, 0xFF];
+    if let Some(pos) = dg2.windows(jpeg_sig.len()).position(|w| w == jpeg_sig) {
+        return Some(dg2[pos..].to_vec());
+    }
+    let jp2_sig = [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20];
+    if let Some(pos) = dg2.windows(jp2_sig.len()).position(|w| w == jp2_sig) {
+        return Some(dg2[pos..].to_vec());
+    }
+    let j2k_sig = [0xFF, 0x4F];
+    if let Some(pos) = dg2.windows(j2k_sig.len()).position(|w| w == j2k_sig) {
+        return Some(dg2[pos..].to_vec());
+    }
+    None
+}
+
+fn normalize_mrz_for_bac(input: &str) -> Result<String, SignerError> {
+    let trimmed = input.trim();
+    let normalized_input = trimmed
+        .replace('\r', "\n")
+        .replace(' ', "")
+        .replace('\t', "")
+        .to_ascii_uppercase();
+
+    let lines: Vec<&str> = normalized_input
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    debug_log(&format!(
+        "Passport: MRZ input len={}, lines={}, line_lens={:?}",
+        normalized_input.len(),
+        lines.len(),
+        lines.iter().map(|l| l.len()).collect::<Vec<_>>()
+    ));
+
+    if lines.len() == 2 {
+        let mut line2 = lines[1].to_string();
+        if line2.len() < 44 {
+            line2.push_str(&"<".repeat(44 - line2.len()));
+        }
+        if line2.len() >= 44 {
+            let line2 = line2.as_str();
+            let doc_no = line2[0..9].to_string();
+            let birth = line2[13..19].to_string();
+            let expiry = line2[21..27].to_string();
+            return Ok(format_bac_key(&doc_no, &birth, &expiry));
+        }
+    }
+
+    if lines.len() == 3 {
+        let mut line1 = lines[0].to_string();
+        let mut line2 = lines[1].to_string();
+        if line1.len() < 30 {
+            line1.push_str(&"<".repeat(30 - line1.len()));
+        }
+        if line2.len() < 30 {
+            line2.push_str(&"<".repeat(30 - line2.len()));
+        }
+        if line1.len() >= 30 && line2.len() >= 30 {
+            let line1 = line1.as_str();
+            let line2 = line2.as_str();
+            let doc_no = line1[0..9].to_string();
+            let birth = line2[0..6].to_string();
+            let expiry = line2[8..14].to_string();
+            return Ok(format_bac_key(&doc_no, &birth, &expiry));
+        }
+    }
+
+    if lines.len() == 1 {
+        let line = lines[0];
+        if line.len() >= 88 && line.starts_with("P<") {
+            let slice = &line[0..88];
+            let line2 = &slice[44..88];
+            let doc_no = line2[0..9].to_string();
+            let birth = line2[13..19].to_string();
+            let expiry = line2[21..27].to_string();
+            return Ok(format_bac_key(&doc_no, &birth, &expiry));
+        } else if line.len() >= 90 {
+            let slice = &line[0..90];
+            let line1 = &slice[0..30];
+            let line2 = &slice[30..60];
+            let doc_no = line1[0..9].to_string();
+            let birth = line2[0..6].to_string();
+            let expiry = line2[8..14].to_string();
+            return Ok(format_bac_key(&doc_no, &birth, &expiry));
+        }
+    }
+
+    let cleaned: String = normalized_input
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '<')
+        .collect();
+    debug_log(&format!("Passport: MRZ cleaned len={}", cleaned.len()));
+
+    if cleaned.len() == 24 {
+        return Ok(cleaned);
+    }
+
+    let (doc_no, birth, expiry) = if cleaned.len() == 21 {
+        (
+            cleaned[0..9].to_string(),
+            cleaned[9..15].to_string(),
+            cleaned[15..21].to_string(),
+        )
+    } else if cleaned.len() == 20 {
+        let mut doc = cleaned[0..8].to_string();
+        doc.push('<');
+        (
+            doc,
+            cleaned[8..14].to_string(),
+            cleaned[14..20].to_string(),
+        )
+    } else {
+        return Err(SignerError::Jpki(
+            "Invalid MRZ length. Expected 20, 21, or 24 characters.".to_string(),
+        ));
+    };
+
+    Ok(format_bac_key(&doc_no, &birth, &expiry))
+}
+
+fn format_bac_key(doc_no: &str, birth: &str, expiry: &str) -> String {
+    let doc_cd = civ::utils::MrzUtils::calculate_check_digit(doc_no) as char;
+    let birth_cd = civ::utils::MrzUtils::calculate_check_digit(birth) as char;
+    let expiry_cd = civ::utils::MrzUtils::calculate_check_digit(expiry) as char;
+    format!(
+        "{}{}{}{}{}{}",
+        doc_no, doc_cd, birth, birth_cd, expiry, expiry_cd
+    )
 }
 
 #[cfg(not(target_arch = "wasm32"))]

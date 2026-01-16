@@ -257,8 +257,8 @@ impl MrzUtils {
         .to_string();
         let expiration_date_raw = &line2[21..27];
 
-        let birth_date = DateUtils::parse_yymmdd(birth_date_raw)?;
-        let expiration_date = DateUtils::parse_yymmdd(expiration_date_raw)?;
+        let birth_date = DateUtils::parse_yymmdd_birth(birth_date_raw)?;
+        let expiration_date = DateUtils::parse_yymmdd_expiration(expiration_date_raw)?;
 
         Ok(super::models::CitizenIdentity {
             full_name,
@@ -288,19 +288,48 @@ impl DateUtils {
         if s.len() != 6 {
             bail!("Invalid date length");
         }
-        let year_short: u32 = s[0..2].parse()?;
-        let month: u32 = s[2..4].parse()?;
-        let day: u32 = s[4..6].parse()?;
+        let year_short: i32 = s[0..2].parse()?;
+        let month: i32 = s[2..4].parse()?;
+        let day: i32 = s[4..6].parse()?;
 
         if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
             bail!("Invalid date components");
         }
-        // Pivot year: assume 1980-2079
-        let year = if year_short < 80 {
-            2000 + year_short
-        } else {
-            1900 + year_short
-        };
+        let mut year = 2000 + year_short;
+        let current_year = current_year_utc();
+        if year > current_year {
+            year -= 100;
+        }
+        Ok(format!("{:04}-{:02}-{:02}", year, month, day))
+    }
+
+    /// Parse YYMMDD as birth date (prefer past century if in the future)
+    pub fn parse_yymmdd_birth(s: &str) -> Result<String> {
+        Self::parse_yymmdd(s)
+    }
+
+    /// Parse YYMMDD as expiration date (prefer near-future dates)
+    pub fn parse_yymmdd_expiration(s: &str) -> Result<String> {
+        if s.len() != 6 {
+            bail!("Invalid date length");
+        }
+        let year_short: i32 = s[0..2].parse()?;
+        let month: i32 = s[2..4].parse()?;
+        let day: i32 = s[4..6].parse()?;
+
+        if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+            bail!("Invalid date components");
+        }
+
+        let mut year = 2000 + year_short;
+        let current_year = current_year_utc();
+        if year < current_year - 10 {
+            year += 100;
+        }
+        if year > current_year + 30 {
+            year -= 100;
+        }
+
         Ok(format!("{:04}-{:02}-{:02}", year, month, day))
     }
 
@@ -352,6 +381,27 @@ impl DateUtils {
             day
         ))
     }
+}
+
+fn current_year_utc() -> i32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let days = secs / 86_400;
+
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+    year as i32
 }
 
 #[cfg(test)]

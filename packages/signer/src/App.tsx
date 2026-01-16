@@ -38,13 +38,17 @@ interface DriverLicenseData {
 }
 
 interface PassportData {
-  name: string;
-  nationality: string;
-  passport_number: string;
-  birth_date: string;
-  gender: string;
-  expiry_date: string;
+  dg1: string;
+  dg2: string;
+  mrz?: string;
+  name?: string;
+  nationality?: string;
+  passport_number?: string;
+  birth_date?: string;
+  gender?: string;
+  expiry_date?: string;
   face_photo?: string;
+  face_photo_format?: string;
 }
 
 interface WalletCredential {
@@ -89,7 +93,11 @@ function App() {
       : cardType === "license"
       ? "image/jp2"
       : "image/jpeg";
-  const passportPhotoBase64 = cardData?.dg2 ? normalizeBase64(cardData.dg2) : null;
+  const passportPhotoBase64 = cardData?.face_photo
+    ? normalizeBase64(cardData.face_photo)
+    : cardData?.dg2
+    ? normalizeBase64(cardData.dg2)
+    : null;
 
   const loadWallet = async () => {
     try {
@@ -396,10 +404,23 @@ function App() {
           )}
           {cardType === 'passport' && (
             <>
+              {cardData.name && (
+                <>
+                  <p><strong>Name:</strong> {cardData.name}</p>
+                  <p><strong>Passport No:</strong> {cardData.passport_number}</p>
+                  <p><strong>Birth Date:</strong> {cardData.birth_date}</p>
+                  <p><strong>Expiry Date:</strong> {cardData.expiry_date}</p>
+                  <p><strong>Nationality:</strong> {cardData.nationality}</p>
+                  <p><strong>Gender:</strong> {cardData.gender}</p>
+                </>
+              )}
+              {cardData.mrz && (
+                <pre className="raw-json">{cardData.mrz}</pre>
+              )}
               <p><strong>MRZ Data (DG1):</strong> {cardData.dg1?.substring(0, 30)}...</p>
               <p><strong>Photo Data (DG2):</strong> {cardData.dg2 ? "Present" : "Missing"}</p>
-              {cardData.dg2 && (
-                <img src={`data:image/jpeg;base64,${passportPhotoBase64}`} alt="Passport Face" style={{width: 100, marginTop: 10, borderRadius: 8}} />
+              {passportPhotoBase64 && (
+                <img src={`data:${facePhotoMime};base64,${passportPhotoBase64}`} alt="Passport Face" style={{width: 100, marginTop: 10, borderRadius: 8}} />
               )}
             </>
           )}
