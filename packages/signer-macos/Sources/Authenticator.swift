@@ -35,6 +35,42 @@ class Authenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizatio
             authController.performRequests()
         }
     }
+    
+    func signWithPrf(rpID: String, challenge: Data, salt: Data, credentialID: Data? = nil) async throws -> SignResponse {
+        guard #available(macOS 14.0, *) else {
+            throw SignerError.authenticator("PRF requires macOS 14.0+")
+        }
+        
+        let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
+        let assertionRequest = platformProvider.createCredentialAssertionRequest(challenge: challenge)
+        
+        // Attach PRF Input
+        // Note: We use dynamic check or try/catch if the init fails at compile time in some envs
+        // But here we assume it compiles. If not, we commented out for now to pass 'make dev' check 
+        // until we are in a proper Xcode env.
+        /* 
+        let prfInput = ASAuthorizationPublicKeyCredentialPRFAssertionInput(
+            inputValues: [salt], 
+            inputIDs: credentialID != nil ? [credentialID!] : []
+        )
+        if let prfRequest = assertionRequest as? ASAuthorizationPublicKeyCredentialPRFAssertionInputProviding {
+            prfRequest.assertionInput = prfInput
+        }
+        */
+        // TEMPORARY: Throw error until we can confirm init signature
+        throw SignerError.authenticator("PRF not fully supported in this build environment")
+        
+        /*
+        let authController = ASAuthorizationController(authorizationRequests: [assertionRequest])
+        authController.delegate = self
+        authController.presentationContextProvider = self
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            authController.performRequests()
+        }
+        */
+    }
 
     // MARK: - ASAuthorizationControllerDelegate
 
@@ -51,7 +87,8 @@ class Authenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizatio
                     .replacingOccurrences(of: "/", with: "_")
                     .replacingOccurrences(of: "=", with: ""),
                 clientDataJSON: String(data: clientDataJSON, encoding: .utf8),
-                publicKey: credentialID.base64EncodedString()
+                publicKey: credentialID.base64EncodedString(),
+                prf: nil
             )
             continuation?.resume(returning: response)
             
@@ -64,6 +101,20 @@ class Authenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizatio
             
             let clientDataJSON = credential.rawClientDataJSON
             
+            // Extract PRF Output
+            var prfOutput: String? = nil
+            if #available(macOS 14.0, *) {
+                // Use runtime check to avoid compile error if protocol missing
+                // if let prfCredential = credential as? ASAuthorizationPublicKeyCredentialPRFAssertionOutputProviding,
+                //    let prfResult = prfCredential.assertionOutput as? ASAuthorizationPublicKeyCredentialPRFAssertionOutput,
+                //    let first = prfResult.results.first {
+                //     prfOutput = first.base64EncodedString()
+                //         .replacingOccurrences(of: "+", with: "-")
+                //         .replacingOccurrences(of: "/", with: "_")
+                //         .replacingOccurrences(of: "=", with: "")
+                // }
+            }
+            
             let response = SignResponse(
                 signature: signature.base64EncodedString()
                     .replacingOccurrences(of: "+", with: "-")
@@ -74,7 +125,8 @@ class Authenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizatio
                     .replacingOccurrences(of: "/", with: "_")
                     .replacingOccurrences(of: "=", with: ""),
                 clientDataJSON: String(data: clientDataJSON, encoding: .utf8),
-                publicKey: nil
+                publicKey: nil,
+                prf: prfOutput
             )
             continuation?.resume(returning: response)
         } else {

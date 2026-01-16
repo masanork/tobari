@@ -8,30 +8,77 @@ This document outlines the principles for protecting credential data within the 
 - Credential data is encrypted using keys tied to the device's hardware security module (HSM) such as Secure Enclave, StrongBox, or FIDO Keys.
 - We adopt a "Destructive Loss" design: **"If the device is lost or broken, the data is lost."** This approach prevents unauthorized cloning of credentials and tightly couples physical "possession" with digital proof.
 
-### Adoption of HPKE (Hybrid Public Key Encryption)
-- We fully adopt the HPKE (RFC 9180) standard for a interoperable and secure hybrid encryption.
-- HPKE is used for both storage protection (Encryption at Rest) and communication channels during presentation (Encryption in Transit).
+### Hybrid Strategy: Portability & Security
+To balance strong hardware binding with cross-device portability (e.g., using a single YubiKey across Mac and Windows), we adopt a hybrid strategy supporting two key derivation methods:
+1.  **WebAuthn PRF (Portable)**: Deriving keys from FIDO2/WebAuthn authenticators using the PRF (Pseudo-Random Function) extension. This allows "Roaming Authenticators" (like YubiKeys) to decrypt data on any supported platform.
+2.  **Platform Native (Device-Bound)**: Using platform-specific hardware keys (Secure Enclave on macOS/iOS, StrongBox on Android) via HPKE/ECIES.
 
 ### Consent via Explicit Unlock
 - Decryption and signing of data are impossible unless the user performs a biometric check (FaceID/TouchID) or enters a PIN to release (Unlock) the private key within the HSM.
 - This Unlock action is defined as "Explicit Consent for Presentation."
 
-## 2. Recommended Workflow
+## 2. Encryption Architecture (The Envelope)
+
+We utilize a **Key Wrapping** architecture. The credential data is encrypted with a random **Document Encryption Key (DEK)**, which is then encrypted (wrapped) by one or more **Key Encryption Keys (KEK)** derived from different sources.
+
+### Data Structure (Concept)
+```json
+{
+  "alg": "AES-256-GCM",      // Algorithm for DEK -> Payload
+  "iv": "...",               // IV for DEK
+  "ciphertext": "...",       // Encrypted Credential Payload
+  "recipients": [            // Array of wrapped DEKs
+    {
+      "type": "webauthn-prf",
+      "kid": "YubiKey-5C-NFC",
+      "salt": "random-salt", // Used in PRF input
+      "encrypted_key": "..." // DEK wrapped with KEK_prf
+    },
+    {
+      "type": "hpke-p256",   // Platform Native
+      "kid": "MacBook-Local",
+      "enc": "...",          // Ephemeral Public Key
+      "encrypted_key": "..." // DEK wrapped with KEK_ecdh
+    }
+  ]
+}
+```
+
+## 3. Recommended Workflow
 
 ### A. Encryption at Rest (Issuance/Storage)
-1. Generate an HPKE key pair ($SK_{holder}, PK_{holder}$) within the device.
-2. Configure $SK_{holder}$ to be protected by the HSM, requiring user authentication (e.g., FIDO) for every use.
-3. Encrypt the credential data $M$ received from the Issuer using $PK_{holder}$ before saving it to local storage.
+1. **Generate DEK**: Create a random 256-bit symmetric key.
+2. **Encrypt Payload**: Encrypt the credential data using the DEK (AES-GCM).
+3. **Wrap DEK (Method 1: WebAuthn PRF)**:
+   - Generate a random `salt`.
+   - Request PRF output from the authenticator using the `salt`.
+   - Derive $KEK_{prf}$ from the PRF output (via HKDF).
+   - Encrypt DEK with $KEK_{prf}$.
+4. **Wrap DEK (Method 2: Native HPKE)**:
+   - Obtain the device's public key $PK_{device}$.
+   - Encrypt DEK using HPKE ($PK_{device}$).
+5. **Save**: Store the "Envelope" (ciphertext + recipients) locally.
 
-### B. Presentation / Transfer
-1. **Unlock**: The user authenticates, temporarily allowing the HSM to use $SK_{holder}$.
-2. **Decrypt**: Use $SK_{holder}$ to decrypt the stored data and expand the raw credential into memory.
-3. **VP Creation**: Construct a Verifiable Presentation (VP) from the decrypted data. Attach a device signature (Holder Binding) as required.
-4. **Target Encryption**: Obtain the Verifier's public key $PK_{verifier}$ and encrypt the VP using HPKE.
-5. **Send**: Transmit the encrypted VP to the Verifier.
+### B. Decryption (Unlock)
+1. **User Consent**: The user authenticates (Biometrics/PIN).
+2. **Unwrap DEK**:
+   - **If PRF**: Replay the PRF request with the stored `salt` to get the same output -> derive $KEK_{prf}$ -> decrypt DEK.
+   - **If HPKE**: Use the device private key to decrypt the encapsulated key -> get DEK.
+3. **Decrypt Payload**: Use the restored DEK to decrypt the credential data.
 
-## 3. Future Considerations
+## 4. Cross-Platform & Code Sharing
 
-- **Leveraging FIDO2 HMAC-Secret Extension**: Implementing key derivation via WebAuthn/FIDO2 for cross-platform hardware-backed encryption.
-- **Memory Safety**: Minimizing the duration raw decrypted data exists in memory and ensuring immediate zeroization after use.
-- **Protocol Alignment**: Compatibility with existing protocols like OID4VP (OpenID for Verifiable Presentations).
+To ensure security consistency across Tauri (macOS/Windows/Linux) and Native (iOS/macOS) apps:
+
+- **Core Logic (Rust/Wasm)**:
+  - Encryption formats (Envelope parsing/creation).
+  - Key derivation (HKDF).
+  - Symmetric encryption (AES-GCM).
+- **Platform Layer (Swift/TS)**:
+  - Interfacing with WebAuthn API (Browser/OS).
+  - Interfacing with Secure Enclave / Keychain.
+
+## 5. Future Considerations
+
+- **Multi-Device Sync**: Allowing users to add new "Recipients" (e.g., adding a new iPhone's key to an existing document) without re-issuance, by decrypting and re-wrapping the DEK.
+- **Post-Quantum Readiness**: The Envelope structure allows adding PQC-based recipients (e.g., `hpke-mlkem768`) seamlessly in the future.

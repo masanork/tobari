@@ -12,6 +12,7 @@ struct SignResponse: Codable {
     let authData: String? // Base64URL (WebAuthn only)
     let clientDataJSON: String? // Raw JSON string (WebAuthn only)
     let publicKey: String? // JWK or Cert base64
+    let prf: String? // Base64URL (WebAuthn PRF output)
 }
 
 class CLIHandler {
@@ -102,7 +103,8 @@ class CLIHandler {
                     signature: signature,
                     authData: nil,
                     clientDataJSON: nil,
-                    publicKey: publicKey
+                    publicKey: publicKey,
+                    prf: nil
                 )
                 printResult(response)
                 exit(0)
@@ -429,7 +431,8 @@ class CLIHandler {
                         .replacingOccurrences(of: "=", with: ""),
                     authData: nil,
                     clientDataJSON: nil,
-                    publicKey: jwk
+                    publicKey: jwk,
+                    prf: nil
                 )
                 printResult(response)
                 exit(0)
@@ -464,7 +467,8 @@ class CLIHandler {
                 signature: signature,
                 authData: nil,
                 clientDataJSON: nil,
-                publicKey: publicKey
+                publicKey: publicKey,
+                prf: nil
             )
             
             printResult(response)

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Simple PRF",
+    "payload": "Hello from Tauri to macOS",
+    "kid": "test-key-01",
+    "salt": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo",
+    "prfOutput": "u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7s",
+    "envelope": {
+      "version": "2.0",
+      "alg": "AES-256-GCM",
+      "iv": "gp15ccgyB4k6lafC",
+      "ciphertext": "JVPU3aWf8P2SCaE4D27gWWD4PHCJgNn-tA",
+      "tag": "ZIv_P7OCSs0eCCr2hZDVtA",
+      "recipients": [
+        {
+          "type": "webauthn-prf",
+          "kid": "test-key-01",
+          "salt": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo",
+          "iv": "nu3u3GPblmOpX4hu",
+          "encrypted_key": "fV9mPTpL8qGBWXbHihsNZW6uLTfRuU0BTLFveLNp4vo",
+          "tag": "1OcCDt9ndletV7c1nZ0G4Q"
+        }
+      ]
+    }
+  }
+]

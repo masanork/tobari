@@ -385,6 +385,60 @@ class UnifiedCLIHandler {
     private func handleDecryptData(_ request: UnifiedRequest) async -> UnifiedResponse {
         do {
             let params = try decodeParams(DecryptDataParams.self, from: request.params)
+            
+            // Check for Envelope v2 (JSON string)
+            if let jsonString = params.encryptedData,
+               let jsonData = jsonString.data(using: .utf8),
+               let envelope = try? JSONDecoder().decode(Envelope.self, from: jsonData),
+               envelope.version == "2.0" {
+                
+                // Check if we have a PRF recipient matching our (potential) passkey
+                if let prfRecipient = envelope.recipients.compactMap({ r -> WebAuthnPrfRecipient? in
+                    if case .webAuthnPrf(let val) = r { return val }
+                    return nil
+                }).first {
+                    
+                    debugLog("Found PRF recipient: \(prfRecipient.kid)")
+                    
+                    // Request PRF assertion
+                    guard let salt = Data(base64URLEncoded: prfRecipient.salt),
+                          let credentialID = Data(base64URLEncoded: prfRecipient.kid) else {
+                        throw NSError(domain: "UnifiedCLIHandler", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid Base64URL in PRF recipient"])
+                    }
+                    
+                    if #available(macOS 14.0, *) {
+                        let auth = Authenticator()
+                        // Use RP ID from metadata or default
+                        let rpID = params.metadata?["rpId"] ?? "localhost"
+                        
+                        let response = try await auth.signWithPrf(
+                            rpID: rpID, 
+                            challenge: Data(count: 32), // Random challenge for assertion
+                            salt: salt, 
+                            credentialID: credentialID
+                        )
+                        
+                        guard let prfOutputStr = response.prf,
+                              let prfOutput = Data(base64URLEncoded: prfOutputStr) else {
+                            throw NSError(domain: "UnifiedCLIHandler", code: 3, userInfo: [NSLocalizedDescriptionKey: "No PRF output received"])
+                        }
+                        
+                        let decryptor = EnvelopeEncryption()
+                        let decryptedData = try decryptor.decrypt(envelope: envelope, prfOutput: prfOutput, prfKid: prfRecipient.kid)
+                        
+                        return UnifiedResponse.success(
+                            command: request.command,
+                            type: .encrypted,
+                            format: .base64,
+                            data: decryptedData.base64URLEncodedString()
+                        )
+                    } else {
+                        throw NSError(domain: "UnifiedCLIHandler", code: 4, userInfo: [NSLocalizedDescriptionKey: "PRF decryption requires macOS 14.0+"])
+                    }
+                }
+            }
+            
+            // Fallback to Legacy/ECIES
             let encryption = SecureEnclaveEncryption()
             
             let decryptedData: Data

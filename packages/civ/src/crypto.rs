@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use x509_parser::prelude::*;
 
 pub mod bac;
+pub mod envelope;
 pub mod pace;
 pub mod sm;
 

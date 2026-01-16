@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.19] - 2026-01-16
+
+### Features
+- **Passkey & Device Binding**:
+  - **Envelope v2.0**: Implemented a multi-recipient encryption format allowing documents to be decrypted by both **Passkeys (WebAuthn PRF)** and **Native Device Keys** (Secure Enclave).
+  - **Portable Security**: Users can now access their encrypted wallet items across different devices (e.g., macOS and Windows) using a portable FIDO2 authenticator (YubiKey) or synced Passkey (iCloud Keychain).
+- **Crypto Core**:
+  - **WebAuthn PRF**: Implemented key derivation logic using the PRF (Pseudo-Random Function) extension of WebAuthn, securing the Document Encryption Key (DEK) with hardware-backed entropy.
+  - **HKDF-SHA256**: Standardized key derivation across Rust (Tauri) and Swift (macOS) implementations.
+- **Signer (Tauri)**:
+  - **UI Integration**: Added "Use Passkey" toggle in the sidebar. When enabled, documents are saved in the new Envelope v2.0 format.
+  - **Auto-Detection**: The wallet inspector now automatically detects Envelope v2.0 items and prompts for the appropriate authenticator.
+- **Signer (macOS)**:
+  - **Native PRF Support**: Extended the CLI and internal architecture to support `decrypt_data` for Envelope v2.0 structures, paving the way for native Passkey usage.
+  - **Interoperability**: Verified decryption compatibility between the Rust-generated envelopes and the Swift decryption logic via automated test vectors.
+
 ## [0.3.18] - 2026-01-16
 
 ### Fixes

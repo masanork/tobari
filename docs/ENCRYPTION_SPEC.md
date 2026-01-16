@@ -1,97 +1,99 @@
 # Encryption and Key Management Specification
 
-This document defines the technical implementation details for encryption and hardware-backed security in the `civ` library.
+This document defines the technical implementation details for encryption and hardware-backed security in the `civ` library, supporting both WebAuthn PRF and Native HPKE.
 
 ## 1. Cryptographic Primitives
 
-We adopt **HPKE (Hybrid Public Key Encryption - RFC 9180)** as the primary mechanism for asynchronous encryption.
+### Symmetric Encryption (Payload)
+- **Algorithm**: `AES-256-GCM`
+- **Purpose**: Encrypting the actual credential data (Document Encryption Key - DEK).
+- **IV**: Random 96-bit (12 bytes).
+- **Tag**: 128-bit (16 bytes) authentication tag.
 
-### Recommended Ciphersuite
-| Component | Algorithm | Reason |
-|-----------|-----------|--------|
-| **KEM**   | `DHKEM(P-256, HKDF-SHA256)` | Native support in Secure Enclave, StrongBox, and FIDO2. |
-| **KDF**   | `HKDF-SHA256` | Standardized and high-performance. |
-| **AEAD**  | `AES-128-GCM` | Hardware acceleration support on most modern CPUs. |
+### Key Derivation & Wrapping
+We use a **Key Wrapping** scheme where the DEK is encrypted by a Key Encryption Key (KEK).
 
-## 2. Key Management Tiers
+#### Method A: WebAuthn PRF (Portable)
+- **Input**: Random `salt` (32 bytes).
+- **Primitive**: `HMAC-SHA-256` (PRF extension output).
+- **KDF**: `HKDF-SHA256`
+  - Input Keying Material (IKM): PRF Output.
+  - Salt: (None or specific context).
+  - Info: "tobari-prf-kek-v1".
+- **Wrapping**: `AES-256-GCM` (Key Wrap).
 
-### A. Hardware-Backed Root Key (Long-term)
-- **Type**: NIST P-256 (secp256r1)
-- **Location**: Hardware Security Module (HSM) / Secure Enclave.
-- **Access Control**: Biometric (FaceID/TouchID), User Presence (FIDO2), or PIN.
-- **Capability**: Can perform ECDH (for HPKE decryption) and ECDSA (for Holder Binding).
+#### Method B: HPKE (Platform Native)
+- **Algorithm**: `DHKEM(P-256, HKDF-SHA256)` + `AES-256-GCM`.
+- **Wrapping**: The DEK is encrypted directly as the HPKE plaintext.
 
-### B. Ephemeral Keys (Transaction-specific)
-- **Type**: Matching the KEM of the HPKE suite.
-- **Location**: Generated in memory for a single encryption/decryption task.
-- **Capability**: Used to derive the shared secret for symmetric encryption.
+## 2. Data Structure (The Envelope)
 
-## 3. Storage Format (At-Rest)
-
-Encrypted credentials MUST be stored in a format that encapsulates HPKE parameters:
+Encrypted credentials MUST be stored in the following JSON format:
 
 ```json
 {
-  "version": "1.0",
-  "alg": "HPKE-P256-SHA256-AES128GCM",
-  "kid": "device-key-id-001",
-  "enc": "<ephemeral_public_key_bytes>",
-  "ciphertext": "<encrypted_payload>",
-  "tag": "<auth_tag_bytes>"
+  "version": "2.0",
+  "alg": "AES-256-GCM",
+  "iv": "<base64url_iv>",
+  "ciphertext": "<base64url_payload>",
+  "tag": "<base64url_tag>",
+  "recipients": [
+    {
+      "type": "webauthn-prf",
+      "kid": "<credential_id>",
+      "salt": "<base64url_salt>",
+      "iv": "<base64url_wrap_iv>",
+      "encrypted_key": "<base64url_wrapped_dek>",
+      "tag": "<base64url_wrap_tag>"
+    },
+    {
+      "type": "hpke-p256",
+      "kid": "<device_key_id>",
+      "enc": "<base64url_ephemeral_pubkey>",
+      "encrypted_key": "<base64url_wrapped_dek>",
+      "tag": "<base64url_wrap_tag>" 
+      // Note: In standard HPKE, 'tag' is part of ciphertext, 
+      // but we may separate it depending on the library used. 
+      // Standard HPKE output is just 'enc' and 'ciphertext'.
+    }
+  ]
 }
 ```
 
-## 4. Operational Flows
+## 3. Operational Flows
 
-### 4.1. Secure Storage (Issuance)
-1. Request a hardware-backed Public Key ($PK_{dev}$) from the device.
-2. The Issuer encrypts the credential $M$ using $PK_{dev}$ via `HPKE.SetupBaseI`.
-3. The resulting ciphertext and ephemeral key `enc` are stored locally.
+### 3.1. WebAuthn PRF Flow
 
-### 4.2. Authorization and Presentation (Unlock)
-1. **Challenge**: The Verifier sends a random challenge and their Public Key ($PK_{verifier}$).
-2. **User Consent**: The app triggers a biometric prompt to unlock $SK_{dev}$.
-3. **Internal Decryption**:
-   - $SK_{dev}$ is used inside the HSM to derive the shared secret.
-   - The credential $M$ is decrypted into memory (temporary).
-4. **Presentation Construction**:
-   - Apply Selective Disclosure (e.g., SD-CBOR) to $M$.
-   - Create a `DeviceSigned` object containing the selected fields.
-5. **Targeted Re-encryption**:
-   - Encrypt the final presentation for $PK_{verifier}$ using HPKE.
-6. **Zeroization**: Immediately clear raw $M$ from memory.
+#### Registration (Key Generation)
+1. Call `navigator.credentials.create` with `extensions: { prf: {} }`.
+2. Store the `credentialId`.
 
-## 5. Crypto Agility and Post-Quantum Readiness
+#### Wrapping (Encryption)
+1. Generate `DEK` (32 bytes) and `salt` (32 bytes).
+2. Call `navigator.credentials.get` with `extensions: { prf: { eval: { first: salt } } }`.
+3. Receive `prfOutput` (32 bytes).
+4. `KEK` = `HKDF(ikm=prfOutput, info="tobari-prf-kek-v1")`.
+5. `encrypted_key` = `AES-GCM-Encrypt(key=KEK, plaintext=DEK)`.
+6. Store `salt`, `iv`, `encrypted_key`, `tag` in the recipient block.
 
-To ensure the long-term viability of the `civ` library, we must account for the transition to **Post-Quantum Cryptography (PQC)**. While NIST P-256 is the current standard for hardware compatibility, we will design the system to be "Agile."
+#### Unwrapping (Decryption)
+1. Load `salt` from recipient block.
+2. Call `navigator.credentials.get` with `extensions: { prf: { eval: { first: salt } } }`.
+3. Receive `prfOutput` (32 bytes).
+4. `KEK` = `HKDF(ikm=prfOutput, info="tobari-prf-kek-v1")`.
+5. `DEK` = `AES-GCM-Decrypt(key=KEK, ciphertext=encrypted_key)`.
 
-### 5.1. Hybrid Encryption (Classical + PQC)
-We support a hybrid KEM approach, combining P-256 with ML-KEM-768 for PoC validation.
+### 3.2. Native HPKE Flow (macOS/iOS)
 
-- **Current Goal**: P-256 only (hardware-backed).
-- **PoC Goal**: Software-based hybrid KEM (`P-256 + ML-KEM-768`) to measure overhead.
-- **Data Size Evaluation**: We will evaluate the impact of PQC on:
-    - **Public Key Size**: P-256 (65 bytes) vs ML-KEM-768 (~1184 bytes).
-    - **Encapsulated Key (Ciphertext)**: ~32 bytes vs ~1088 bytes.
-    - **Performance**: Latency of key generation and encapsulation in WASM/Mobile environments.
+#### Registration
+1. Generate P-256 Key Pair in Secure Enclave.
+2. Store Public Key.
 
-#### 5.1.1. Hybrid Envelope (PoC)
-For PoC, the ciphertext is serialized as:
+#### Wrapping
+1. Generate `DEK`.
+2. `(enc, ciphertext)` = `HPKE.Seal(pk=DevicePubKey, info="tobari-hpke-kek-v1", plaintext=DEK)`.
+3. Store `enc` and `ciphertext` (as `encrypted_key`) in the recipient block.
 
-```
-[ephemeral_p256_public_key (65 bytes)] + [ml-kem-768 ciphertext (1088 bytes)] + [aead ciphertext]
-```
+## 4. Crypto Agility
 
-Metadata uses:
-- `alg = "HPKE-P256-MLKEM768-SHA256-AES128GCM"`
-
-If `alg` is `HPKE-P256-MLKEM768-SHA256-AES128GCM`, the decryptor MUST supply the ML-KEM-768 private key in addition to the P-256 private key.
-
-### 5.2. Pluggable KEM Interface
-The implementation should wrap HPKE logic in a trait that allows switching ciphersuites based on credential metadata or verifier requirements.
-
-## 6. Security Requirements
-
-- **No Key Export**: The private root key $SK_{dev}$ MUST NEVER leave the hardware security boundary.
-- **Memory Protection**: Decrypted raw data MUST be handled with `Zeroize` traits in Rust to ensure memory is cleared.
-- **Domain Separation**: HPKE `info` strings MUST be used to separate different use cases (e.g., "Storage" vs "Transfer").
+This "Envelope" structure allows adding Post-Quantum algorithms (e.g., `hpke-mlkem768`) as new recipient types without changing the payload encryption logic.

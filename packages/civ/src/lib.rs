@@ -24,6 +24,8 @@ pub mod trust;
 pub mod utils;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm_crypto;
 
 pub use jpdl::DriversLicenseController;
 pub use jpdlmnc::MynaMenkyoController;
