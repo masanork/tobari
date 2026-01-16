@@ -61,7 +61,7 @@ struct WebAuthnPrfRecipient: Codable {
     
     enum CodingKeys: String, CodingKey {
         case type, kid, salt, iv, tag
-        case encryptedKey = "encrypted-key"
+        case encryptedKey = "encrypted_key"
     }
     
     init(kid: String, salt: String, iv: String, encryptedKey: String, tag: String) {
@@ -83,6 +83,6 @@ struct HpkeP256Recipient: Codable {
     
     enum CodingKeys: String, CodingKey {
         case type, kid, enc, tag
-        case encryptedKey = "encrypted-key"
+        case encryptedKey = "encrypted_key"
     }
 }

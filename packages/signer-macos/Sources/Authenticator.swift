@@ -44,23 +44,43 @@ class Authenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizatio
         let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
         let assertionRequest = platformProvider.createCredentialAssertionRequest(challenge: challenge)
         
-        // Attach PRF Input
-        // Note: We use dynamic check or try/catch if the init fails at compile time in some envs
-        // But here we assume it compiles. If not, we commented out for now to pass 'make dev' check 
-        // until we are in a proper Xcode env.
-        /* 
-        let prfInput = ASAuthorizationPublicKeyCredentialPRFAssertionInput(
-            inputValues: [salt], 
-            inputIDs: credentialID != nil ? [credentialID!] : []
-        )
-        if let prfRequest = assertionRequest as? ASAuthorizationPublicKeyCredentialPRFAssertionInputProviding {
-            prfRequest.assertionInput = prfInput
+        // Use runtime reflection to construct PRF input and set it on the request.
+        // This avoids compilation errors with "refined" Swift types that vary between SDKs.
+        if let inputClass = NSClassFromString("ASAuthorizationPublicKeyCredentialPRFAssertionInput"),
+           let valuesClass = NSClassFromString("ASAuthorizationPublicKeyCredentialPRFAssertionInputValues") {
+            
+            // Create ASAuthorizationPublicKeyCredentialPRFAssertionInputValues
+            // - (instancetype)initWithSaltInput1:(NSData *)saltInput1 saltInput2:(nullable NSData *)saltInput2;
+            let valuesAlloc = (valuesClass as AnyObject).perform(NSSelectorFromString("alloc"))?.takeRetainedValue() as? NSObject
+            if let values = valuesAlloc {
+                let selector = NSSelectorFromString("initWithSaltInput1:saltInput2:")
+                typealias InitFunc = @convention(c) (NSObject, Selector, NSData, NSData?) -> NSObject
+                if let method = values.method(for: selector) {
+                    let initializer = unsafeBitCast(method, to: InitFunc.self)
+                    let initializedValues = initializer(values, selector, salt as NSData, nil)
+                    
+                    // Create ASAuthorizationPublicKeyCredentialPRFAssertionInput
+                    // - (instancetype)initWithInputValues:(nullable ASAuthorizationPublicKeyCredentialPRFAssertionInputValues *)inputValues perCredentialInputValues:(nullable NSDictionary<NSData *, ASAuthorizationPublicKeyCredentialPRFAssertionInputValues *> *)perCredentialInputValues;
+                    let inputAlloc = (inputClass as AnyObject).perform(NSSelectorFromString("alloc"))?.takeRetainedValue() as? NSObject
+                    if let input = inputAlloc {
+                        let inputSelector = NSSelectorFromString("initWithInputValues:perCredentialInputValues:")
+                        typealias InputInitFunc = @convention(c) (NSObject, Selector, NSObject?, NSDictionary?) -> NSObject
+                        if let inputMethod = input.method(for: inputSelector) {
+                            let inputInitializer = unsafeBitCast(inputMethod, to: InputInitFunc.self)
+                            let initializedInput = inputInitializer(input, inputSelector, initializedValues, nil)
+                            
+                            // Set prf on the request
+                            if assertionRequest.responds(to: NSSelectorFromString("setAssertionInput:")) {
+                                assertionRequest.perform(NSSelectorFromString("setAssertionInput:"), with: initializedInput)
+                            } else if assertionRequest.responds(to: NSSelectorFromString("setPrf:")) {
+                                assertionRequest.perform(NSSelectorFromString("setPrf:"), with: initializedInput)
+                            }
+                        }
+                    }
+                }
+            }
         }
-        */
-        // TEMPORARY: Throw error until we can confirm init signature
-        throw SignerError.authenticator("PRF not fully supported in this build environment")
         
-        /*
         let authController = ASAuthorizationController(authorizationRequests: [assertionRequest])
         authController.delegate = self
         authController.presentationContextProvider = self
@@ -69,7 +89,6 @@ class Authenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizatio
             self.continuation = continuation
             authController.performRequests()
         }
-        */
     }
 
     // MARK: - ASAuthorizationControllerDelegate
@@ -101,18 +120,26 @@ class Authenticator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizatio
             
             let clientDataJSON = credential.rawClientDataJSON
             
-            // Extract PRF Output
+            // Extract PRF Output using runtime reflection
             var prfOutput: String? = nil
             if #available(macOS 14.0, *) {
-                // Use runtime check to avoid compile error if protocol missing
-                // if let prfCredential = credential as? ASAuthorizationPublicKeyCredentialPRFAssertionOutputProviding,
-                //    let prfResult = prfCredential.assertionOutput as? ASAuthorizationPublicKeyCredentialPRFAssertionOutput,
-                //    let first = prfResult.results.first {
-                //     prfOutput = first.base64EncodedString()
-                //         .replacingOccurrences(of: "+", with: "-")
-                //         .replacingOccurrences(of: "/", with: "_")
-                //         .replacingOccurrences(of: "=", with: "")
-                // }
+                // credential.assertionOutput -> ASAuthorizationPublicKeyCredentialPRFAssertionOutput
+                let outputSelector = NSSelectorFromString("assertionOutput")
+                if credential.responds(to: outputSelector) {
+                    if let prfOutputObj = credential.perform(outputSelector)?.takeUnretainedValue() as? NSObject {
+                        // prfOutputObj.results -> [Data]
+                        let resultsSelector = NSSelectorFromString("results")
+                        if prfOutputObj.responds(to: resultsSelector) {
+                            if let results = prfOutputObj.perform(resultsSelector)?.takeUnretainedValue() as? [Data],
+                               let first = results.first {
+                                prfOutput = first.base64EncodedString()
+                                    .replacingOccurrences(of: "+", with: "-")
+                                    .replacingOccurrences(of: "/", with: "_")
+                                    .replacingOccurrences(of: "=", with: "")
+                            }
+                        }
+                    }
+                }
             }
             
             let response = SignResponse(
