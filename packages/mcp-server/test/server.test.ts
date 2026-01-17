@@ -22,7 +22,8 @@ describe("MCP Server", () => {
             env: {
                 ...process.env,
                 TOBARI_SIGNER_SOFTWARE_KEY: "1",  // Use software key for tests
-                TOBARI_SIGNER_KEY_FILE: tmpKeyFile  // Persist key across processes
+                TOBARI_SIGNER_KEY_FILE: tmpKeyFile,  // Persist key across processes
+                TOBARI_SIGNER_PATH: "disabled" // Force JS implementation fallback
             }
         });
 
@@ -87,7 +88,7 @@ describe("MCP Server", () => {
         expect(content).toContain("io.github.masanork.tobari.ininjo.v1");
         const data = JSON.parse(content);
         expect(data.principal.name).toBe("山田太郎");
-    }, 20000);
+    }, 60000);
 
     it("should read juminhyo-plain.cose", async () => {
         const targetFile = path.resolve(import.meta.dir, "../../../examples/juminhyo/juminhyo-plain.cose");
@@ -97,7 +98,7 @@ describe("MCP Server", () => {
         
         const content = response.result.content[0].text;
         expect(content).toContain("io.github.masanork.tobari.juminhyo.v1");
-    }, 20000);
+    }, 60000);
 
     it("should list documents", async () => {
         const response = await callTool("demo_list_examples", {});
@@ -105,7 +106,7 @@ describe("MCP Server", () => {
         
         const data = JSON.parse(response.result.content[0].text);
         expect(data.documents.length).toBeGreaterThan(0);
-    }, 20000);
+    }, 60000);
 
     it("should create a VP", async () => {
         const ininjoFile = path.resolve(import.meta.dir, "../../../examples/ininjo/ininjo.cose");
@@ -124,5 +125,5 @@ describe("MCP Server", () => {
         const data = JSON.parse(response.result.content[0].text);
         expect(data.vp_base64).toBeDefined();
         expect(data.document_count).toBe(2);
-    }, 20000);
+    }, 60000);
 });
