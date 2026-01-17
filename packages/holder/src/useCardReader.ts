@@ -91,6 +91,20 @@ export function useCardReader() {
 
   const clearCardData = () => setCardData(null);
 
+  const detectCardType = async () => {
+    setStatus("Detecting card type...");
+    setError(null);
+    try {
+      const type = await invoke<string>("detect_card_type");
+      setStatus(`Detected: ${type}`);
+      return type;
+    } catch (e: any) {
+      setError("Detection failed: " + formatError(e));
+      setStatus("Error");
+      return "unknown";
+    }
+  };
+
   return { 
     status, 
     setStatus, 
@@ -102,6 +116,7 @@ export function useCardReader() {
     readPassport, 
     readDriverLicense, 
     readResidenceCard,
+    detectCardType,
     clearCardData,
     formatError
   };

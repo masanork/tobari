@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.20] - 2026-01-17
+
+### Features
+- **Wallet UX Improvements**:
+  - **Auto-Detect ID**: Simplified the "Add ID" workflow with a new "Scan Card" feature that automatically identifies the card type (JPKI, Passport, Driver's License, Residence Card) and presents the correct input form (PIN/MRZ), reducing user friction.
+  - **Decrypted Data Priority**: Enhanced the wallet inspector to prioritize displaying decrypted attribute values (e.g., Name from a JPKI card) over file metadata, ensuring the UI reflects the actual identity content.
+  - **Human-Readable Labels**: Updated the credential grid to display clean, formatted names (e.g., "PASSPORT" instead of "PASSPORT_123...") while maintaining privacy-preserving filenames on disk.
+- **Privacy Protection**:
+  - **Anonymous Storage**: Reverted a proposal to include personal names in filenames, strictly adhering to the "Card Type + Hash" convention to prevent PII leakage at the file system level.
+
 ## [0.3.19] - 2026-01-16
 
 ### Features

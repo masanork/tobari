@@ -15,7 +15,7 @@ function App() {
   const [pin2, setPin2] = useState<string>("");
   const [mrz, setMrz] = useState<string>("");
 
-  const { status, setStatus, error, setError, cardData, setCardData, readJPKI, readPassport, readDriverLicense, readResidenceCard, formatError } = useCardReader();
+  const { status, setStatus, error, setError, cardData, setCardData, readJPKI, readPassport, readDriverLicense, readResidenceCard, detectCardType, formatError } = useCardReader();
   const { wallet, inspectItem, saveToWallet } = useWallet();
   const { usePasskey, setUsePasskey, passkeyId, registerPasskey } = usePasskeyState();
   const { request, handleSign, handleJpkiSign, handleBbsProof, handleReject, handleRegister } = usePendingRequest(setStatus, setError, formatError);
@@ -36,23 +36,63 @@ function App() {
     }
   };
 
+  const handleDetection = async () => {
+      const type = await detectCardType();
+      if (type && type !== "unknown") {
+          setCardType(type);
+      } else {
+          setError("No known card detected. Please place card on reader.");
+      }
+  };
+
   const photo = useMemo(() => {
-      if (!cardData?.face_photo && !cardData?.dg2) return null;
-      const b64 = cardData.face_photo || cardData.dg2;
-      const mime = cardData.face_photo_format ? `image/${cardData.face_photo_format}` : "image/jpeg";
-      
-      const normalize = (s: string) => {
-        let b = s.replace(/-/g, "+").replace(/_/g, "/");
-        const p = b.length % 4;
-        if (p) b += "=".repeat(4 - p);
-        return b;
+      // Helper to get photo data from different structures
+      const getPhotoData = () => {
+        // Direct access (from card reader)
+        if (cardData?.face_photo) return { data: cardData.face_photo, format: cardData.face_photo_format };
+        if (cardData?.dg2) return { data: cardData.dg2, format: cardData.face_photo_format };
+
+        // Wallet item structure (decrypted_data.data.*)
+        const decrypted = cardData?.decrypted_data?.data;
+        if (decrypted?.face_photo) return { data: decrypted.face_photo, format: decrypted.face_photo_format };
+        if (decrypted?.dg2) return { data: decrypted.dg2, format: decrypted.face_photo_format };
+
+        return null;
       };
 
-      const norm = normalize(b64);
-      const pad = norm.endsWith("==") ? 2 : norm.endsWith("=") ? 1 : 0;
-      const size = Math.max(0, Math.floor((norm.length * 3) / 4) - pad);
+      const photoInfo = getPhotoData();
+      if (!photoInfo) return null;
 
-      return { src: `data:${mime};base64,${norm}`, size };
+      const { data, format } = photoInfo;
+      const mime = format ? `image/${format === 'jpg' ? 'jpeg' : format}` : "image/jpeg";
+
+      // Handle binary data (Uint8Array or array of numbers from CBOR decode)
+      const isBinary = data instanceof Uint8Array ||
+                       (Array.isArray(data) && data.length > 0 && typeof data[0] === 'number');
+
+      if (isBinary) {
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        const blob = new Blob([bytes], { type: mime });
+        return { src: URL.createObjectURL(blob), size: bytes.length };
+      }
+
+      // Handle Base64 string (from card reader)
+      if (typeof data === 'string') {
+        const normalize = (s: string) => {
+          let b = s.replace(/-/g, "+").replace(/_/g, "/");
+          const p = b.length % 4;
+          if (p) b += "=".repeat(4 - p);
+          return b;
+        };
+
+        const norm = normalize(data);
+        const pad = norm.endsWith("==") ? 2 : norm.endsWith("=") ? 1 : 0;
+        const size = Math.max(0, Math.floor((norm.length * 3) / 4) - pad);
+
+        return { src: `data:${mime};base64,${norm}`, size };
+      }
+
+      return null;
   }, [cardData]);
 
   return (
@@ -69,6 +109,7 @@ function App() {
         onReadPassport={() => readPassport(mrz)}
         onReadLicense={() => readDriverLicense(pin, pin2)}
         onReadResidence={readResidenceCard}
+        onDetectCard={handleDetection}
         status={status} onReject={handleReject}
         hasRequest={!!request} hasError={!!error}
       />

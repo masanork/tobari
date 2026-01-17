@@ -20,7 +20,7 @@ export function CredentialGrid({ wallet, onItemClick }: CredentialGridProps) {
              cred.doc_type.includes('mynumber') ? '💳' : '📄'}
           </div>
           <div className="cred-info">
-            <div className="cred-name">{cred.name}</div>
+            <div className="cred-name">{cred.name.replace(/\.cose$/, '').replace(/_/g, ' ')}</div>
             <div className="cred-type">{cred.doc_type}</div>
           </div>
         </div>

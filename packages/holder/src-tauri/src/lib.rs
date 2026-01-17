@@ -31,6 +31,7 @@ pub fn run() {
             crate::commands::card::read_passport,
             crate::commands::card::read_driver_license,
             crate::commands::card::read_residence_card,
+            crate::commands::card::detect_card_type,
             crate::commands::crypto::bbs_generate_key,
             crate::commands::crypto::perform_bbs_proof,
             crate::commands::storage::get_wallet_credentials,

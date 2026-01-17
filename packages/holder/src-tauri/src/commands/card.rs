@@ -7,8 +7,45 @@ use civ::{
     passport::PassportController, 
     jpdl::DriversLicenseController, 
     jprc::ResidenceCardController, 
-    native_reader::PcscReader
+    native_reader::PcscReader,
+    reader::CardReader
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+#[command]
+pub async fn detect_card_type() -> Result<String, SignerError> {
+    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+
+    // JPKI AP (Attributes)
+    if let Ok(res) = reader.transmit(&[0x00, 0xA4, 0x04, 0x0C, 0x0A, 0xD3, 0x92, 0xF0, 0x00, 0x26, 0x01, 0x00, 0x00, 0x00, 0x01]).await {
+        if res.len() >= 2 && res[res.len()-2] == 0x90 && res[res.len()-1] == 0x00 {
+            return Ok("jpki".to_string());
+        }
+    }
+
+    // Passport (ICAO)
+    if let Ok(res) = reader.transmit(&[0x00, 0xA4, 0x04, 0x0C, 0x07, 0xA0, 0x00, 0x00, 0x02, 0x47, 0x10, 0x01]).await {
+        if res.len() >= 2 && res[res.len()-2] == 0x90 && res[res.len()-1] == 0x00 {
+            return Ok("passport".to_string());
+        }
+    }
+
+    // Driver License
+    if let Ok(res) = reader.transmit(&[0x00, 0xA4, 0x04, 0x0C, 0x10, 0xA0, 0x00, 0x00, 0x02, 0x31, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07]).await {
+         if res.len() >= 2 && res[res.len()-2] == 0x90 && res[res.len()-1] == 0x00 {
+            return Ok("license".to_string());
+        }
+    }
+
+    // Residence Card
+    if let Ok(res) = reader.transmit(&[0x00, 0xA4, 0x04, 0x0C, 0x06, 0xA0, 0x00, 0x00, 0x02, 0x31, 0x02]).await {
+         if res.len() >= 2 && res[res.len()-2] == 0x90 && res[res.len()-1] == 0x00 {
+            return Ok("residence".to_string());
+        }
+    }
+
+    Ok("unknown".to_string())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 #[command]
@@ -118,15 +155,26 @@ pub async fn read_passport(request: PassportReadRequest) -> Result<PassportData,
 }
 
 pub async fn read_passport_internal(mrz: String) -> Result<PassportData, SignerError> {
+    debug_log("Passport: Starting connection...");
     let reader: PcscReader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = PassportController::new(reader);
 
-    controller.select_ep_ap().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
-    let mrz_key = normalize_mrz_for_bac(&mrz)?;
-    controller.perform_bac(&mrz_key).await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    debug_log("Passport: Selecting ICAO applet...");
+    controller.select_ep_ap().await.map_err(|e| SignerError::Jpki(format!("Select AP failed: {}", e)))?;
     
-    let dg1 = controller.read_dg1().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
-    let dg2 = controller.read_dg2().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mrz_key = normalize_mrz_for_bac(&mrz)?;
+    debug_log(&format!("Passport: BAC Key generated (len={})", mrz_key.len()));
+    
+    debug_log("Passport: Performing BAC authentication...");
+    controller.perform_bac(&mrz_key).await.map_err(|e| SignerError::Jpki(format!("BAC failed: {}", e)))?;
+    
+    debug_log("Passport: BAC Success. Reading DG1...");
+    let dg1 = controller.read_dg1().await.map_err(|e| SignerError::Jpki(format!("Read DG1 failed: {}", e)))?;
+    
+    debug_log(&format!("Passport: DG1 read ({} bytes). Reading DG2...", dg1.len()));
+    let dg2 = controller.read_dg2().await.map_err(|e| SignerError::Jpki(format!("Read DG2 failed: {}", e)))?;
+    
+    debug_log(&format!("Passport: DG2 read ({} bytes). Reading SOD/others...", dg2.len()));
     let sod = controller.read_sod().await.ok();
     let dg11 = controller.read_dg11().await.ok();
     let dg12 = controller.read_dg12().await.ok();
@@ -303,33 +351,101 @@ fn extract_photo_from_dg2(dg2: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn normalize_mrz_for_bac(input: &str) -> Result<String, SignerError> {
-    let normalized_input = input.trim().replace('\r', "\n").replace(' ', "").replace('\t', "").to_ascii_uppercase();
-    let lines: Vec<&str> = normalized_input.lines().filter(|l| !l.trim().is_empty()).collect();
+    let trimmed = input.trim();
+    let normalized_input = trimmed
+        .replace('\r', "\n")
+        .replace(' ', "")
+        .replace('\t', "")
+        .to_ascii_uppercase();
+
+    let lines: Vec<&str> = normalized_input
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
 
     if lines.len() == 2 {
         let mut line2 = lines[1].to_string();
-        if line2.len() < 44 { line2.push_str(&"<".repeat(44 - line2.len())); }
+        if line2.len() < 44 {
+            line2.push_str(&"<".repeat(44 - line2.len()));
+        }
         if line2.len() >= 44 {
             let line2 = line2.as_str();
-            return Ok(format_bac_key(&line2[0..9], &line2[13..19], &line2[21..27]));
+            let doc_no = line2[0..9].to_string();
+            let birth = line2[13..19].to_string();
+            let expiry = line2[21..27].to_string();
+            return Ok(format_bac_key(&doc_no, &birth, &expiry));
         }
     }
 
     if lines.len() == 3 {
         let mut line1 = lines[0].to_string();
         let mut line2 = lines[1].to_string();
-        if line1.len() < 30 { line1.push_str(&"<".repeat(30 - line1.len())); }
-        if line2.len() < 30 { line2.push_str(&"<".repeat(30 - line2.len())); }
+        if line1.len() < 30 {
+            line1.push_str(&"<".repeat(30 - line1.len()));
+        }
+        if line2.len() < 30 {
+            line2.push_str(&"<".repeat(30 - line2.len()));
+        }
         if line1.len() >= 30 && line2.len() >= 30 {
-            return Ok(format_bac_key(&line1.as_str()[0..9], &line2.as_str()[0..6], &line2.as_str()[8..14]));
+            let line1 = line1.as_str();
+            let line2 = line2.as_str();
+            let doc_no = line1[0..9].to_string();
+            let birth = line2[0..6].to_string();
+            let expiry = line2[8..14].to_string();
+            return Ok(format_bac_key(&doc_no, &birth, &expiry));
         }
     }
 
-    let cleaned: String = normalized_input.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '<').collect();
-    if cleaned.len() == 24 { return Ok(cleaned); }
-    if cleaned.len() == 21 { return Ok(format_bac_key(&cleaned[0..9], &cleaned[9..15], &cleaned[15..21])); }
-    
-    Err(SignerError::Jpki("Invalid MRZ format".to_string()))
+    if lines.len() == 1 {
+        let line = lines[0];
+        if line.len() >= 88 && line.starts_with("P<") {
+            let slice = &line[0..88];
+            let line2 = &slice[44..88];
+            let doc_no = line2[0..9].to_string();
+            let birth = line2[13..19].to_string();
+            let expiry = line2[21..27].to_string();
+            return Ok(format_bac_key(&doc_no, &birth, &expiry));
+        } else if line.len() >= 90 {
+            let slice = &line[0..90];
+            let line1 = &slice[0..30];
+            let line2 = &slice[30..60];
+            let doc_no = line1[0..9].to_string();
+            let birth = line2[0..6].to_string();
+            let expiry = line2[8..14].to_string();
+            return Ok(format_bac_key(&doc_no, &birth, &expiry));
+        }
+    }
+
+    let cleaned: String = normalized_input
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '<')
+        .collect();
+
+    if cleaned.len() == 24 {
+        return Ok(cleaned);
+    }
+
+    let (doc_no, birth, expiry) = if cleaned.len() == 21 {
+        (
+            cleaned[0..9].to_string(),
+            cleaned[9..15].to_string(),
+            cleaned[15..21].to_string(),
+        )
+    } else if cleaned.len() == 20 {
+        let mut doc = cleaned[0..8].to_string();
+        doc.push('<');
+        (
+            doc,
+            cleaned[8..14].to_string(),
+            cleaned[14..20].to_string(),
+        )
+    } else {
+        return Err(SignerError::Jpki(
+            "Invalid MRZ length. Expected 20, 21, or 24 characters.".to_string(),
+        ));
+    };
+
+    Ok(format_bac_key(&doc_no, &birth, &expiry))
 }
 
 fn format_bac_key(doc_no: &str, birth: &str, expiry: &str) -> String {
