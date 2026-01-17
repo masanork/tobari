@@ -31,7 +31,7 @@ fn test_cli_id_demo_passport() {
 
 #[test]
 #[ignore] // TODO: Fix Secure Messaging mock in CLI context (Access Denied error)
-fn test_cli_id_demo_passport_verify() {
+fn test_cli_id_demo_icao9303_verify() {
     let mut cmd = Command::cargo_bin("civ").unwrap();
     cmd.arg("--demo")
         .arg("id")
@@ -76,7 +76,7 @@ fn test_cli_passport_missing_mrz() {
     // PassportBackend handles READ_BINARY.
     // If no session, it just returns data?
     // Mock check: `if (cla & 0x0C) != 0`. If plain read (CLA=00), it passes.
-    // PassportController uses CLA_ISO=0x00 for Read Binary.
+    // Icao9303Controller uses CLA_ISO=0x00 for Read Binary.
     // So it should succeed to read DG1 without BAC in Mock?
     // Let's see: `test_cli_passport_missing_mrz` passed in previous run.
     let mut cmd = Command::cargo_bin("civ").unwrap();

@@ -44,7 +44,7 @@ The core of `civ` is the `IdentityController` trait, which allows you to read id
 
 ```rust
 use civ::{PcscReader, CardReader, IdentityController};
-use civ::{JpkiController, DriversLicenseController, PassportController};
+use civ::{JpkiController, DriversLicenseController, Icao9303Controller};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     let mut controller: Box<dyn IdentityController> = if /* condition */ {
         Box::new(JpkiController::new(reader))
     } else {
-        Box::new(PassportController::new(reader))
+        Box::new(Icao9303Controller::new(reader))
     };
 
     // 3. Provide Credentials (if needed)

@@ -19,7 +19,7 @@ This document summarizes the current status of research and implementation for v
 ## 2. Research Findings for Other Schemes
 
 ### 2.1 International Organizations
-- **UN Laissez-Passer (UNLP):** Fully compliant with **ICAO 9303**. Covered by `PassportController`.
+- **UN Laissez-Passer (UNLP):** Fully compliant with **ICAO 9303**. Covered by `Icao9303Controller`.
 - **NATO:** Likely based on PIV (FIPS 201) or similar ISO 7816 smart cards. No public proprietary spec found; PIV driver may work.
 
 ### 2.2 East Asia
@@ -34,5 +34,5 @@ This document summarizes the current status of research and implementation for v
 ## 3. Future Expansion Plan
 - [ ] Implement `ThaiController` based on `docs/thai.md`.
 - [ ] Implement `MyKadController` based on `docs/mykad.md`.
-- [ ] Enhance `PassportController` to support EAC (Extended Access Control) for sensitive DGs.
+- [ ] Enhance `Icao9303Controller` to support EAC (Extended Access Control) for sensitive DGs.
 - [ ] Add PACE (ECDH) support for EU eIDs and newer Passports.

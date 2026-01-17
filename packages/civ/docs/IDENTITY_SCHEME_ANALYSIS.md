@@ -101,7 +101,7 @@ According to the **Digital Priority Plan 2024**, the government targets the Next
 ### 6.1. Europe (The "PACE" Standard)
 Europe is converging on **ICAO 9303 + PACE**.
 - **Observation:** The "National ID" and "Passport" technologies are merging.
-- **Civ Action:** Prioritize **PACE implementation** in `PassportController`. This single feature unlocks support for almost all modern European ID cards.
+- **Civ Action:** Prioritize **PACE implementation** in `Icao9303Controller`. This single feature unlocks support for almost all modern European ID cards.
 
 ### 6.2. Japan (JPKI)
 Japan remains on **RSA 2048** (ISO 7816 based).
