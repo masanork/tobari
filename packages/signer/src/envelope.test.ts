@@ -91,10 +91,10 @@ describe("WASM Envelope Crypto Integration", () => {
         
         try {
             await decrypt_envelope_with_prf(finalJson, kid, wrongPrf);
-            expect().unreachable(); // Should not reach here
+            expect(true).toBe(false); // Should not reach here
         } catch (e) {
+            // Expected error
             expect(e).toBeDefined();
-            // Error message usually comes from Rust's anyhow
         }
     });
 });

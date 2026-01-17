@@ -76,7 +76,7 @@ impl<R: CardReader> ThaiController<R> {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl<R: CardReader> IdentityController for ThaiController<R> {
+impl<R: CardReader + Send> IdentityController for ThaiController<R> {
     async fn provide_pin(&mut self, _pin_type: &str, _pin: &str) -> Result<()> {
         Ok(())
     }

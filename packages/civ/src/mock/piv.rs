@@ -121,7 +121,7 @@ impl MockBackend for PivBackend {
         match cmd.ins {
             0x20 => {
                 // VERIFY
-                if cmd.p2 == KeyReference::PivCardApplicationPin as u8 {
+                if cmd.p2 == KeyReference::ApplicationPin as u8 {
                     let mut pin_bytes = cmd.data.clone();
                     while pin_bytes.last() == Some(&0xFF) {
                         pin_bytes.pop();

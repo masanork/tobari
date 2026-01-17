@@ -10,6 +10,10 @@ keywords = ["jpki", "myna", "smartcard", "pcsc", "civid"]
 categories = ["cryptography", "authentication", "hardware-support"]
 default-run = "civ"
 
+[features]
+default = []
+mock = []
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

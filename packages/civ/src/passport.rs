@@ -387,7 +387,7 @@ impl<R: CardReader> PassportController<R> {
         let res_sel = self.transmit(&select).await?;
         if let Err(err) = Self::check_sw(&res_sel) {
             let sw1 = res_sel.get(res_sel.len().saturating_sub(2)).copied().unwrap_or(0);
-            let sw2 = res_sel.get(res_sel.len().saturating_sub(1)).copied().unwrap_or(0);
+            let _sw2 = res_sel.get(res_sel.len().saturating_sub(1)).copied().unwrap_or(0);
             if matches!(sw1, 0x69 | 0x67 | 0x6A) {
                 let plain_res = self
                     .reader
@@ -626,7 +626,7 @@ fn debug_passport(message: &str) {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl<R: CardReader> IdentityController for PassportController<R> {
+impl<R: CardReader + Send> IdentityController for PassportController<R> {
     async fn provide_pin(&mut self, pin_type: &str, pin: &str) -> Result<()> {
         match pin_type {
             "mrz" => self.mrz = Some(pin.to_string()),

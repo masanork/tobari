@@ -1,15 +1,13 @@
 pub mod apdu;
 pub mod crypto;
-pub mod demo_reader;
 pub mod errors;
 pub mod eu_eid;
 pub mod gaiji;
 pub mod jpdl;
 pub mod jpdlmnc;
+pub mod jpki_utils;
 pub mod jpki;
 pub mod jprc;
-pub mod mdoc;
-pub mod mock;
 pub mod models;
 pub mod mykad;
 pub mod native_reader;
@@ -22,19 +20,8 @@ pub mod thai;
 pub mod transport;
 pub mod trust;
 pub mod utils;
-#[cfg(target_arch = "wasm32")]
 pub mod wasm;
-#[cfg(target_arch = "wasm32")]
 pub mod wasm_crypto;
 
-pub use jpdl::DriversLicenseController;
-pub use jpdlmnc::MynaMenkyoController;
-pub use jpki::JpkiController;
-pub use jprc::ResidenceCardController;
-pub use models::{CitizenIdentity, IdentityController};
-pub use mykad::MyKadController;
-#[cfg(not(target_arch = "wasm32"))]
-pub use native_reader::PcscReader;
-pub use passport::PassportController;
-pub use reader::CardReader;
-pub use thai::ThaiController;
+#[cfg(feature = "mock")]
+pub mod mock;

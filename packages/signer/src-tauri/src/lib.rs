@@ -7,7 +7,13 @@ use tauri::{AppHandle, State};
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 // Note: civ crate needs to be available. PcscReader is only available on native targets.
 #[cfg(not(target_arch = "wasm32"))]
-use civ::{JpkiController, PassportController, DriversLicenseController, ResidenceCardController, PcscReader};
+use civ::{
+    jpki::JpkiController, 
+    passport::PassportController, 
+    jpdl::DriversLicenseController, 
+    jprc::ResidenceCardController, 
+    native_reader::PcscReader
+};
 
 // --- Key Management ---
 
@@ -1101,7 +1107,19 @@ pub struct RegisterResponse {
 async fn perform_register(state: State<'_, AppState>) -> Result<String, SignerError> {
     let request = {
         let lock = state.request.lock().map_err(|e| SignerError::Internal(e.to_string()))?;
-        lock.clone().ok_or(SignerError::NoRequest)?
+        match lock.clone() {
+            Some(r) => r,
+            None => {
+                // Create a default request for self-registration if none is pending
+                SignRequest {
+                    challenge: URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>()),
+                    rp_id: "tobari.local".to_string(),
+                    user_verification: Some("preferred".to_string()),
+                    message: Some("Registering Tobari Passkey".to_string()),
+                    allow_credentials: None,
+                }
+            }
+        }
     };
 
     let rp_id = request.rp_id.clone();
@@ -1193,8 +1211,11 @@ fn register_credential_full(
     use std::sync::mpsc::channel;
     use std::thread;
 
+    println!("DEBUG: Initializing AuthenticatorService...");
     let mut manager =
         AuthenticatorService::new().map_err(|e| format!("Authenticator init error: {:?}", e))?;
+    
+    println!("DEBUG: Adding detected transports...");
     manager.add_detected_transports();
 
     let user_verification_req = match request.user_verification.as_deref() {
@@ -1233,18 +1254,29 @@ fn register_credential_full(
 
     let (reg_tx, reg_rx) = channel();
     let callback = StateCallback::new(Box::new(move |rv| {
+        println!("DEBUG: Authenticator callback received: {:?}", rv);
         let _ = reg_tx.send(rv);
     }));
 
-    let (status_tx, _status_rx) = channel(); // Ignore status for now
+    let (status_tx, status_rx) = channel();
+    thread::spawn(move || {
+        while let Ok(status) = status_rx.recv() {
+            println!("DEBUG: Authenticator status: {:?}", status);
+        }
+    });
 
+    println!("DEBUG: Calling manager.register (timeout 60s)...");
     manager
         .register(60_000, ctap_args, status_tx, callback)
         .map_err(|e| format!("Authenticator register error: {:?}", e))?;
 
+    println!("DEBUG: Waiting for register result from channel...");
     let reg_result = reg_rx
         .recv_timeout(std::time::Duration::from_secs(60))
-        .map_err(|e| format!("Authenticator timeout: {:?}", e))?;
+        .map_err(|e| {
+            println!("DEBUG: Register result timeout or error: {:?}", e);
+            format!("Authenticator timeout: {:?}", e)
+        })?;
 
     match reg_result {
         Ok(attestation) => {
@@ -1252,7 +1284,10 @@ fn register_credential_full(
             let cred_data = auth_data.credential_data.ok_or("No credential data")?;
             
             // Extract X and Y from COSE_Key (assuming P-256)
-            let pub_key_bytes = cred_data.public_key; 
+            let mut pub_key_bytes = Vec::new();
+            ciborium::into_writer(&cred_data.credential_public_key, &mut pub_key_bytes)
+                .map_err(|e| format!("Failed to serialize COSEKey: {:?}", e))?;
+
             let cose_key: std::collections::HashMap<i32, ciborium::value::Value> = 
                 ciborium::from_reader(pub_key_bytes.as_slice())
                 .map_err(|e| format!("Failed to parse COSE_Key CBOR: {:?}", e))?;
@@ -1264,10 +1299,10 @@ fn register_credential_full(
             // -3: y (byte string)
             
             let x_bytes = cose_key.get(&-2)
-                .and_then(|v| v.as_bytes())
+                .and_then(|v: &ciborium::value::Value| v.as_bytes())
                 .ok_or("Missing X coordinate in COSE_Key")?;
             let y_bytes = cose_key.get(&-3)
-                .and_then(|v| v.as_bytes())
+                .and_then(|v: &ciborium::value::Value| v.as_bytes())
                 .ok_or("Missing Y coordinate in COSE_Key")?;
 
             Ok(InternalRegisterResult {
@@ -1284,21 +1319,25 @@ fn register_credential_full(
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))] // Simplified for now
+#[cfg(not(any(
+    target_os = "windows",
+    all(target_os = "macos", feature = "macos-authenticator"),
+    all(target_os = "linux", feature = "linux-authenticator")
+)))]
 fn register_credential_full(
     _request: SignRequest,
     _rp_id: String,
     _client_data_hash: [u8; 32],
 ) -> Result<InternalRegisterResult, String> {
-    Err("Registration not fully implemented on this platform in this build".to_string())
+    Err("Registration not fully implemented (FEATURE_MISSING). Check Cargo.toml features.".to_string())
 }
 
 
 #[cfg(not(target_arch = "wasm32"))]
 #[tauri::command]
 async fn jpki_sign(app: AppHandle, request: JpkiSignRequest) -> Result<(), SignerError> {
-    let reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
-    let mut controller = JpkiController::new(reader);
+    let reader: PcscReader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let mut controller: JpkiController<PcscReader> = JpkiController::new(reader);
 
     controller.select_jpki_ap().await.map_err(SignerError::from)?;
 
@@ -1329,8 +1368,7 @@ async fn read_my_number_card(request: MyNumberCardRequest) -> Result<MyNumberCar
 }
 
 async fn read_my_number_card_internal(pin: String, include_my_number: bool, include_face_photo: bool) -> Result<MyNumberCardData, SignerError> {
-    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
-    reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let reader: PcscReader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = JpkiController::new(reader);
 
     // My Number Card has multiple APs.
@@ -1376,7 +1414,7 @@ async fn read_my_number_card_internal(pin: String, include_my_number: bool, incl
             Some(photo) => Some(photo),
             // Fallback: Try 4-digit PIN directly
             None => {
-                match controller.read_face_photo_with_pin(&pin).await {
+                match controller.read_face_photo(&pin).await {
                     Ok(photo) => Some(photo),
                     Err(e) => {
                         if std::env::var("TOBARI_DEBUG").ok().as_deref() == Some("1") {
@@ -1434,8 +1472,7 @@ async fn read_passport(request: PassportReadRequest) -> Result<PassportData, Sig
 }
 
 async fn read_passport_internal(mrz: String) -> Result<PassportData, SignerError> {
-    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
-    reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let reader: PcscReader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = PassportController::new(reader);
 
     debug_log("Passport: selecting ICAO applet");
@@ -1672,8 +1709,7 @@ fn format_bac_key(doc_no: &str, birth: &str, expiry: &str) -> String {
 #[cfg(not(target_arch = "wasm32"))]
 #[tauri::command]
 async fn read_driver_license(request: DriverLicenseRequest) -> Result<DriverLicenseData, SignerError> {
-    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
-    reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let reader: PcscReader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = DriversLicenseController::new(reader);
 
     controller.select_dl_ap().await.map_err(|e| SignerError::Jpki(e.to_string()))?;
@@ -1956,8 +1992,7 @@ fn jp2_codestream_box(codestream: &[u8]) -> Vec<u8> {
 #[cfg(not(target_arch = "wasm32"))]
 #[tauri::command]
 async fn read_residence_card() -> Result<serde_json::Value, SignerError> {
-    let mut reader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
-    reader.connect().map_err(|e| SignerError::Jpki(e.to_string()))?;
+    let reader: PcscReader = PcscReader::new().map_err(|e| SignerError::Jpki(e.to_string()))?;
     let mut controller = ResidenceCardController::new(reader);
 
     controller.select_df2().await.map_err(|e| SignerError::Jpki(e.to_string()))?;

@@ -74,7 +74,7 @@ impl<R: CardReader> DriversLicenseController<R> {
     /// Select MF (Master File)
     pub async fn select_mf(&mut self) -> Result<()> {
         let apdu = ApduCommand::new(0x00, 0xA4, 0x00, 0x00); // Select MF by ID (implicit empty)
-        let res = self.reader.transmit(&apdu.to_bytes()).await?;
+        let _res = self.reader.transmit(&apdu.to_bytes()).await?;
         // Ignore SW for MF select as it might be already selected or return 61xx
         Ok(())
     }
@@ -433,7 +433,7 @@ impl<R: CardReader> DriversLicenseController<R> {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl<R: CardReader> IdentityController for DriversLicenseController<R> {
+impl<R: CardReader + Send> IdentityController for DriversLicenseController<R> {
     async fn provide_pin(&mut self, pin_type: &str, pin: &str) -> Result<()> {
         match pin_type {
             "pin1" => self.pin1 = Some(pin.to_string()),

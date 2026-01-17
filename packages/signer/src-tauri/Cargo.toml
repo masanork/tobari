@@ -47,6 +47,6 @@ security-framework = "2.9.1"
 security-framework-sys = "2.9.1"
 
 [features]
-default = []
+default = ["macos-authenticator"]
 linux-authenticator = ["dep:authenticator"]
 macos-authenticator = ["dep:authenticator"]

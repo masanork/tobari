@@ -1,103 +1,48 @@
-use crate::jpdl::DriversLicenseController;
-use crate::jpdlmnc::MynaMenkyoController;
-use crate::jpki::JpkiController;
-use crate::jprc::ResidenceCardController;
-use crate::mock::MockSmartCard;
-use crate::models::IdentityController;
-use crate::passport::PassportController;
-use crate::piv::PivController;
 use crate::reader::CardReader;
-use crate::transport::WebUsbReader;
+use crate::errors::{Result, CivError};
 use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 
-// Enum to hold either a WebUSB reader or a Mock reader
-#[derive(Clone)]
-enum WasmReader {
-    Web(Arc<Mutex<WebUsbReader>>),
-    Mock(Arc<Mutex<MockSmartCard>>),
+#[wasm_bindgen]
+pub struct WasmReader {
+    // JS object that implements transmit(apdu: Uint8Array): Promise<Uint8Array>
+    js_reader: JsValue,
 }
 
+#[wasm_bindgen]
+impl WasmReader {
+    #[wasm_bindgen(constructor)]
+    pub fn new(js_reader: JsValue) -> Self {
+        Self { js_reader }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 #[async_trait(?Send)]
 impl CardReader for WasmReader {
-    async fn transmit(&mut self, apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
-        match self {
-            WasmReader::Web(r) => r.lock().unwrap().transmit(apdu).await,
-            WasmReader::Mock(m) => Ok(m.lock().unwrap().handle_apdu(apdu)),
-        }
+    async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>> {
+        use wasm_bindgen_futures::JsFuture;
+        let apdu_js = js_sys::Uint8Array::from(apdu);
+        let promise = js_sys::Reflect::get(&self.js_reader, &JsValue::from_str("transmit"))
+            .map_err(|e| CivError::Communication(format!("No transmit method: {:?}", e)))?;
+        let function = js_sys::Function::from(promise);
+        let result_promise = function.call1(&self.js_reader, &apdu_js)
+            .map_err(|e| CivError::Communication(format!("Transmit call failed: {:?}", e)))?;
+        let result = JsFuture::from(js_sys::Promise::from(result_promise)).await
+            .map_err(|e| CivError::Communication(format!("Transmit await failed: {:?}", e)))?;
+        let uint8_array = js_sys::Uint8Array::new(&result);
+        Ok(uint8_array.to_vec())
     }
 }
 
-#[wasm_bindgen]
-pub struct CivContext {
-    reader: WasmReader,
-}
-
-#[wasm_bindgen]
-impl CivContext {
-    /// Initialize with a Mock Reader
-    pub fn new_mock() -> Self {
-        use crate::mock::MockSmartCard;
-        let mock = MockSmartCard::new();
-
-        Self {
-            reader: WasmReader::Mock(Arc::new(Mutex::new(mock))),
-        }
-    }
-
-    /// Initialize with a JavaScript CardReader object
-    /// The JS object must have a `transmit(apdu: Uint8Array): Promise<Uint8Array>` method.
-    pub fn new_web(js_reader: JsValue) -> Self {
-        Self {
-            reader: WasmReader::Web(Arc::new(Mutex::new(WebUsbReader::new(js_reader)))),
-        }
-    }
-
-    /// Read Identity
-    /// card_type: "jpki", "dl", "rc", "passport", "piv"
-    /// pin: PIN or MRZ
-    pub async fn read_identity(&mut self, card_type: &str, pin: &str) -> Result<JsValue, JsValue> {
-        let mut controller: Box<dyn IdentityController> = match card_type {
-            "jpki" => Box::new(JpkiController::new(self.reader.clone())),
-            "dl" => Box::new(DriversLicenseController::new(self.reader.clone())),
-            "rc" => Box::new(ResidenceCardController::new(self.reader.clone())),
-            "passport" => Box::new(PassportController::new(self.reader.clone())),
-            "piv" => Box::new(PivController::new(self.reader.clone())),
-            "mynamenkyo" => Box::new(MynaMenkyoController::new(self.reader.clone())),
-            _ => return Err(JsValue::from_str("Unknown card type")),
-        };
-
-        // Provide PIN based on type
-        // TODO: More granular PIN types support in Wasm
-        if card_type == "passport" {
-            controller
-                .provide_pin("mrz", pin)
-                .await
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        } else if card_type == "dl" || card_type == "mynamenkyo" {
-            controller
-                .provide_pin("pin1", pin)
-                .await
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        } else if card_type == "jpki" {
-            controller
-                .provide_pin("auth", pin)
-                .await
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        } else {
-            controller
-                .provide_pin("pin", pin)
-                .await
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        }
-
-        let identity = controller
-            .read_identity()
-            .await
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-        serde_wasm_bindgen::to_value(&identity)
-            .map_err(|e| JsValue::from_str("Serialization failed"))
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait]
+impl CardReader for WasmReader {
+    async fn transmit(&mut self, _apdu: &[u8]) -> Result<Vec<u8>> {
+        Err(CivError::Communication("WasmReader only available on wasm32".to_string()))
     }
 }
+
+// In WASM, we don't need Send. On other platforms, we need it but WasmReader won't be used.
+#[cfg(not(target_arch = "wasm32"))]
+unsafe impl Send for WasmReader {}
