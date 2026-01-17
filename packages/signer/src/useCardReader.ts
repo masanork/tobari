@@ -26,9 +26,10 @@ export function useCardReader() {
     setError(null);
     try {
       const data = await invoke<any>("read_my_number_card", { request: { pin } });
-      setCardData(data);
+      const enrichedData = { ...data, card_type: "Japanese My Number Card" };
+      setCardData(enrichedData);
       setStatus("Card read successfully!");
-      return data;
+      return enrichedData;
     } catch (e: any) {
       setError("Failed to read card: " + formatError(e));
       setStatus("Error");
@@ -44,9 +45,10 @@ export function useCardReader() {
     setError(null);
     try {
       const data = await invoke<any>("read_passport", { request: { mrz } });
-      setCardData(data);
+      const enrichedData = { ...data, card_type: "Electronic Passport" };
+      setCardData(enrichedData);
       setStatus("Passport read successfully!");
-      return data;
+      return enrichedData;
     } catch (e: any) {
       setError("Failed to read passport: " + formatError(e));
       setStatus("Error");
@@ -62,9 +64,10 @@ export function useCardReader() {
     setError(null);
     try {
       const data = await invoke<any>("read_driver_license", { request: { pin1, pin2 } });
-      setCardData(data);
+      const enrichedData = { ...data, card_type: "Driver's License" };
+      setCardData(enrichedData);
       setStatus("Driver License read successfully!");
-      return data;
+      return enrichedData;
     } catch (e: any) {
       setError("Failed to read driver license: " + formatError(e));
       setStatus("Error");
@@ -76,9 +79,10 @@ export function useCardReader() {
     setError(null);
     try {
       const data = await invoke<any>("read_residence_card");
-      setCardData(data);
+      const enrichedData = { ...data, card_type: "Residence Card" };
+      setCardData(enrichedData);
       setStatus("Residence Card read successfully!");
-      return data;
+      return enrichedData;
     } catch (e: any) {
       setError("Failed to read residence card: " + formatError(e));
       setStatus("Error");
