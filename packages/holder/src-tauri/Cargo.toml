@@ -1,12 +1,12 @@
 [package]
-name = "tobari-signer"
+name = "tobari-holder"
 version = "0.1.0"
-description = "Tobari WebAuthn Signer"
+description = "Tobari Identity Holder"
 authors = ["masanork"]
 edition = "2021"
 
 [lib]
-name = "tobari_signer_lib"
+name = "tobari_holder_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
