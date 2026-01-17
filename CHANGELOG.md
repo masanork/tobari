@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.21] - 2026-01-18
+
+### Refactor
+- **CIV Passport Module**:
+  - **Modular Architecture**: Successfully refactored the monolithic 3,700-line `passport.rs` into a clean, modular structure under `src/passport/`.
+  - **Logic Separation**: Decoupled high-level `PassportController` logic from low-level protocol implementations (BAC, PACE, CA, TA, AA) and session management.
+  - **Improved Maintainability**: Reorganized file-related constants, TLV utilities, and MRZ extraction into dedicated sub-modules, significantly reducing cognitive load for future enhancements.
+- **Protocol Stability**:
+  - **Synchronization Fixes**: Resolved critical SSC (Send Sequence Counter) synchronization issues in the mock environment by ensuring proper Applet selection (SELECT ICAO) before each authentication sequence.
+  - **Unified Testing**: Verified 100% test parity across unit tests, integrated identity tests, and CLI E2E tests, confirming that the modularization preserves all core functionalities including real-device compatibility.
+
 ## [0.3.20] - 2026-01-17
 
 ### Features

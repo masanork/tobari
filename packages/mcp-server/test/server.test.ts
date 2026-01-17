@@ -51,8 +51,13 @@ describe("MCP Server", () => {
         proc.stdin.write(JSON.stringify(toolReq) + "\n");
 
         let outputBuffer = "";
+        let errorBuffer = "";
         proc.stdout.on("data", (chunk) => {
             outputBuffer += chunk.toString();
+        });
+        proc.stderr?.on("data", (chunk) => {
+            errorBuffer += chunk.toString();
+            console.error(`[Server Stderr] ${chunk.toString()}`);
         });
 
         const waitForResponse = async () => {
