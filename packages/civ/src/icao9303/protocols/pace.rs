@@ -3,7 +3,7 @@ use crate::crypto::pace::{PaceMappingType, PaceP256};
 use crate::crypto::sm::AesSecureMessaging;
 use crate::errors::{CivError, Result};
 use crate::reader::CardReader;
-use crate::passport::utils::{check_sw, encode_len, parse_pace_response};
+use crate::icao9303::utils::{check_sw, encode_len, parse_pace_response};
 
 pub async fn perform_pace<R: CardReader>(reader: &mut R, mrz_or_can: &str) -> Result<AesSecureMessaging> {
     let select = ApduCommand::new(0x00, 0xA4, 0x04, 0x0C).with_data(&[

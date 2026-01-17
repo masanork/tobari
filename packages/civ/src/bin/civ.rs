@@ -1,9 +1,9 @@
+use civ::icao9303::Icao9303Controller;
 use civ::jpdl::DriversLicenseController;
 use civ::jpdlmnc::MynaMenkyoController;
 use civ::jpki::JpkiController;
 use civ::models::{CitizenIdentity, IdentityController};
 use civ::native_reader::PcscReader;
-use civ::passport::PassportController;
 use civ::reader::CardReader;
 use clap::{Parser, Subcommand};
 use std::sync::{Arc, Mutex};
@@ -108,7 +108,7 @@ async fn process_command<R: CardReader + Send + 'static>(
             identity.card_type = "MyNumberCard".to_string(); // Normalized name for output
         }
         "passport" => {
-            let mut controller = PassportController::new(reader);
+            let mut controller = Icao9303Controller::new(reader);
             if let Some(m) = mrz {
                 controller.provide_pin("mrz", &m).await?;
             }

@@ -62,7 +62,7 @@ impl MockSmartCard {
             Box::new(ResidenceCardBackend::new_df2()),
         );
         card.add_backend(
-            crate::passport::file_ids::DF_ICAO.to_vec(),
+            crate::icao9303::file_ids::DF_ICAO.to_vec(),
             Box::new(PassportBackend::new("123456")),
         );
         card.add_backend(

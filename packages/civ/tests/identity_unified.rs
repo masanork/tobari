@@ -4,7 +4,7 @@ use civ::test_utils::TestReader;
 use civ::models::IdentityController;
 use civ::jpki::JpkiController;
 use civ::mykad::MyKadController;
-use civ::passport::PassportController;
+use civ::icao9303::Icao9303Controller as PassportController;
 use civ::jprc::ResidenceCardController;
 use civ::thai::ThaiController;
 use civ::errors::CivError;

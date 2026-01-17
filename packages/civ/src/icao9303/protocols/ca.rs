@@ -3,7 +3,7 @@ use crate::crypto::pace::derive_session_keys_sha256;
 use crate::crypto::sm::AesSecureMessaging;
 use crate::errors::{CivError, Result};
 use crate::reader::CardReader;
-use crate::passport::utils::{check_sw, encode_len};
+use crate::icao9303::utils::{check_sw, encode_len};
 use p256::{ecdh::EphemeralSecret, elliptic_curve::sec1::ToEncodedPoint, PublicKey};
 use rand_core::OsRng;
 

@@ -1,7 +1,7 @@
 use crate::apdu::ApduCommand;
 use crate::errors::{CivError, Result};
 use crate::reader::CardReader;
-use crate::passport::utils::check_sw;
+use crate::icao9303::utils::check_sw;
 use p256::ecdsa::{Signature, SigningKey};
 use signature::Signer;
 

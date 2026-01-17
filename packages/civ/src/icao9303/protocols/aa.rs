@@ -1,7 +1,7 @@
 use crate::apdu::{ApduCommand, CLA_ISO, INS_INTERNAL_AUTHENTICATE};
 use crate::errors::Result;
 use crate::reader::CardReader;
-use crate::passport::utils::check_sw;
+use crate::icao9303::utils::check_sw;
 
 pub async fn perform_active_authentication<R: CardReader>(
     reader: &mut R,

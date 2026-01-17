@@ -1,18 +1,18 @@
 use crate::errors::Result;
-use crate::passport::PassportController;
+use crate::icao9303::Icao9303Controller;
 use crate::reader::CardReader;
 
 /// European Identity Card Controller
 /// Most EU National ID cards (compliant with EU 2019/1157) are ICAO 9303 compliant.
 /// They function as MRTDs (Machine Readable Travel Documents).
 pub struct EuIdController<R: CardReader> {
-    passport: PassportController<R>,
+    passport: Icao9303Controller<R>,
 }
 
 impl<R: CardReader> EuIdController<R> {
     pub fn new(reader: R) -> Self {
         Self {
-            passport: PassportController::new(reader),
+            passport: Icao9303Controller::new(reader),
         }
     }
 

@@ -24,14 +24,14 @@ pub struct LdsSecurityObject {
     pub data_group_hashes: HashMap<u8, Vec<u8>>,
 }
 
-/// Verifier for ePassport authenticity
+/// Verifier for ICAO 9303 (MRTD) authenticity
 #[derive(Default)]
-pub struct PassportVerifier {
+pub struct Icao9303Verifier {
     /// Loaded CSCA certificates (Raw DER)
     csca_certs: Vec<Vec<u8>>,
 }
 
-impl PassportVerifier {
+impl Icao9303Verifier {
     pub fn new() -> Self {
         Self::default()
     }
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_load_csca_pem() {
-        let mut verifier = PassportVerifier::new();
+        let mut verifier = Icao9303Verifier::new();
         let pem = "-----BEGIN CERTIFICATE-----\nNDI=\n-----END CERTIFICATE-----";
         assert!(verifier.load_csca_pem(pem).is_ok());
         assert_eq!(verifier.csca_certs.len(), 1);
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn test_verify_data_group_sha256() {
-        let verifier = PassportVerifier::new();
+        let verifier = Icao9303Verifier::new();
         let data = vec![0x01, 0x02, 0x03, 0x04];
         let hash = Sha256::digest(&data).to_vec();
 

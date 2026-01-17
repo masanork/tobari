@@ -14,8 +14,8 @@ use super::protocols::{bac, pace};
 use super::session::SecureSession;
 use super::utils::{check_sw, debug_passport, extract_mrz_from_dg1, parse_tlv_total_length, encode_len};
 
-/// Passport (ePassport/ICAO 9303) Application Controller
-pub struct PassportController<R: CardReader> {
+/// ICAO 9303 (MRTD/Passport) Application Controller
+pub struct Icao9303Controller<R: CardReader> {
     reader: R,
     secure_session: Option<SecureSession>,
     mrz: Option<String>,
@@ -23,7 +23,7 @@ pub struct PassportController<R: CardReader> {
     last_verified: bool,
 }
 
-impl<R: CardReader> PassportController<R> {
+impl<R: CardReader> Icao9303Controller<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
@@ -176,7 +176,7 @@ impl<R: CardReader> PassportController<R> {
         dgs: &HashMap<u8, Vec<u8>>,
     ) -> Result<()> {
         let sod_data = self.read_sod().await?;
-        let verifier = crate::passport_verify::PassportVerifier::new();
+        let verifier = super::verify::Icao9303Verifier::new();
         let sod = verifier.parse_sod(&sod_data)?;
         for (&dg_num, content) in dgs {
             verifier.verify_data_group(&sod, dg_num, content)?;
@@ -237,7 +237,7 @@ impl<R: CardReader> PassportController<R> {
                 if expected_size.is_none() {
                     expected_size = parse_tlv_total_length(&data);
                     if let Some(size) = expected_size {
-                        debug_passport(&format!("Passport: EF total size from TLV header: {} bytes", size));
+                        debug_passport(&format!("ICAO 9303: EF total size from TLV header: {} bytes", size));
                     }
                 }
             }
@@ -288,7 +288,7 @@ impl<R: CardReader> PassportController<R> {
                     return Err(CivError::from_sw(retry_sw1, retry_sw2));
                 }
             } else if sw1 == 0x6B || (sw1 == 0x62 && sw2 == 0x82) {
-                debug_passport(&format!("Passport: read terminated SW={:02X}{:02X} at offset {}, total {}", sw1, sw2, offset, data.len()));
+                debug_passport(&format!("ICAO 9303: read terminated SW={:02X}{:02X} at offset {}, total {}", sw1, sw2, offset, data.len()));
                 break;
             } else {
                 return Err(CivError::from_sw(sw1, sw2));
@@ -301,13 +301,13 @@ impl<R: CardReader> PassportController<R> {
     }
 
     async fn transmit(&mut self, apdu: &ApduCommand) -> Result<Vec<u8>> {
-        debug_passport(&format!("Passport APDU => {}", hex::encode(apdu.to_bytes())));
+        debug_passport(&format!("ICAO 9303 APDU => {}", hex::encode(apdu.to_bytes())));
         
         let response = if let Some(session) = self.secure_session.as_mut() {
             let is_sm_command = (apdu.cla & 0x0C) != 0;
             let wrapped = session.wrap_command(apdu)?;
             
-            debug_passport(&format!("Passport APDU (wrapped) => {}", hex::encode(&wrapped)));
+            debug_passport(&format!("ICAO 9303 APDU (wrapped) => {}", hex::encode(&wrapped)));
             
             let response = self
                 .reader
@@ -316,7 +316,7 @@ impl<R: CardReader> PassportController<R> {
                 .map_err(|e| CivError::Communication(e.to_string()))?;
             
             if response.len() >= 2 {
-                debug_passport(&format!("Passport APDU <= {:02X}{:02X}", response[response.len()-2], response[response.len()-1]));
+                debug_passport(&format!("ICAO 9303 APDU <= {:02X}{:02X}", response[response.len()-2], response[response.len()-1]));
             }
 
             if is_sm_command || response.len() > 2 {
@@ -335,7 +335,7 @@ impl<R: CardReader> PassportController<R> {
                 .await
                 .map_err(|e| CivError::Communication(e.to_string()))?;
             if response.len() >= 2 {
-                debug_passport(&format!("Passport APDU <= {:02X}{:02X}", response[response.len()-2], response[response.len()-1]));
+                debug_passport(&format!("ICAO 9303 APDU <= {:02X}{:02X}", response[response.len()-2], response[response.len()-1]));
             }
             response
         };
@@ -346,13 +346,13 @@ impl<R: CardReader> PassportController<R> {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl<R: CardReader + Send> IdentityController for PassportController<R> {
+impl<R: CardReader + Send> IdentityController for Icao9303Controller<R> {
     async fn provide_pin(&mut self, pin_type: &str, pin: &str) -> Result<()> {
         match pin_type {
             "mrz" => self.mrz = Some(pin.to_string()),
             "can" => self.can = Some(pin.to_string()),
             _ => {
-                return Err(CivError::InvalidData(format!("Unknown PIN/Password type for Passport: {}", pin_type)))
+                return Err(CivError::InvalidData(format!("Unknown PIN/Password type for ICAO 9303: {}", pin_type)))
             }
         }
         Ok(())
@@ -433,7 +433,7 @@ mod tests {
     async fn test_select_ep_ap() {
         let reader = TestReader::new();
         let _mock = setup_passport_mock(&reader);
-        let mut controller = PassportController::new(reader.clone());
+        let mut controller = Icao9303Controller::new(reader.clone());
         let res = controller.select_ep_ap().await;
         assert!(res.is_ok());
     }
@@ -442,7 +442,7 @@ mod tests {
     async fn test_read_dg14() {
         let reader = TestReader::new();
         let _mock = setup_passport_mock(&reader);
-        let mut controller = PassportController::new(reader.clone());
+        let mut controller = Icao9303Controller::new(reader.clone());
         let _ = controller.select_ep_ap().await;
         let res = controller.read_dg14().await;
         assert!(res.is_ok());
@@ -452,7 +452,7 @@ mod tests {
     async fn test_perform_pace_flow() {
         let reader = TestReader::new();
         let _mock = setup_passport_mock(&reader);
-        let mut controller = PassportController::new(reader.clone());
+        let mut controller = Icao9303Controller::new(reader.clone());
         let _ = controller.select_ep_ap().await;
         let res = controller.perform_pace("123456").await;
         assert!(res.is_ok());
@@ -464,7 +464,7 @@ mod tests {
     async fn test_active_authentication() {
         let reader = TestReader::new();
         let _mock = setup_passport_mock(&reader);
-        let mut controller = PassportController::new(reader.clone());
+        let mut controller = Icao9303Controller::new(reader.clone());
         let _ = controller.select_ep_ap().await;
         let challenge = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
         let res = controller.perform_active_authentication(&challenge).await;
@@ -475,7 +475,7 @@ mod tests {
     async fn test_chip_authentication_flow() {
         let reader = TestReader::new();
         let _mock = setup_passport_mock(&reader);
-        let mut controller = PassportController::new(reader.clone());
+        let mut controller = Icao9303Controller::new(reader.clone());
         let _ = controller.select_ep_ap().await;
         let picc_pk = hex::decode("046B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C2964FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5").unwrap();
         let ca_oid = vec![
@@ -491,7 +491,7 @@ mod tests {
     async fn test_passive_authentication_flow() {
         let reader = TestReader::new();
         let _mock = setup_passport_mock(&reader);
-        let mut controller = PassportController::new(reader.clone());
+        let mut controller = Icao9303Controller::new(reader.clone());
         let _ = controller.select_ep_ap().await;
         let dg1 = controller.read_dg1().await.unwrap();
         let mut dgs = HashMap::new();
@@ -504,7 +504,7 @@ mod tests {
     async fn test_read_dg_failure() {
         let reader = TestReader::new();
         reader.set_failure(0x6A, 0x82);
-        let mut controller = PassportController::new(reader.clone());
+        let mut controller = Icao9303Controller::new(reader.clone());
         assert!(controller.read_dg(1).await.is_err());
     }
 }
