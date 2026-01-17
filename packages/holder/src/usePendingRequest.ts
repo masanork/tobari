@@ -7,6 +7,7 @@ export interface SignRequest {
   user_verification?: string;
   message?: string;
   allow_credentials?: { id: string; type_: string }[];
+  disclosureItems?: { label: string; value: string }[];
   bbs?: {
     publicKey: string;
     signature: string;
@@ -20,9 +21,22 @@ export function usePendingRequest(setStatus: (s: string) => void, setError: (e: 
 
   const fetchRequest = useCallback(async () => {
     try {
-      const req = await invoke<SignRequest | null>("get_pending_request");
-      if (req) {
-        setRequest(req);
+      const rawReq = await invoke<any>("get_pending_request");
+      if (rawReq) {
+        // Map from Unified Response preview if present
+        let mappedReq: SignRequest = rawReq;
+        if (rawReq.preview && rawReq.status === "preview") {
+           mappedReq = {
+             challenge: rawReq.preview.sessionId || "demo-nonce",
+             rp_id: rawReq.command === "sign_presentation" ? "Identity Verifier" : "Tobari",
+             message: rawReq.preview.summary,
+             disclosureItems: rawReq.preview.fields?.map((f: any) => ({
+               label: f.name,
+               value: f.value
+             }))
+           };
+        }
+        setRequest(mappedReq);
         setStatus("Waiting for user approval");
       } else {
         setStatus("No pending request found.");
