@@ -31,12 +31,14 @@ pub fn parse_basic_info(data: &[u8]) -> crate::errors::Result<BasicInfo> {
     let tlvs = parse_jpki_flat_tlv(data);
     fn collect_tags(tlvs: &[BerTlv], map: &mut std::collections::HashMap<u32, String>) {
         for tlv in tlvs {
-            if tlv.tag == 0xDF20 || tlv.tag == 0xFF20 {
+            // Recurse into common container tags (0x30: Sequence, 0xDF20/FF20: JPKI containers)
+            if tlv.tag == 0x30 || tlv.tag == 0xDF20 || tlv.tag == 0xFF20 {
                 let nested = parse_jpki_flat_tlv(&tlv.value);
                 collect_tags(&nested, map);
             }
-            let value = String::from_utf8_lossy(&tlv.value).to_string();
-            map.insert(tlv.tag, value);
+            if let Ok(value) = String::from_utf8(tlv.value.clone()) {
+                map.insert(tlv.tag, value);
+            }
         }
     }
     let mut tag_map = std::collections::HashMap::new();

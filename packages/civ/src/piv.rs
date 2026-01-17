@@ -120,12 +120,16 @@ mod tests {
     #[tokio::test]
     async fn test_piv_flow() {
         let reader = TestReader::new();
-        reader.push_response(&[0x90, 0x00]); // Select
-        reader.push_response(&[0x90, 0x00]); // Verify
-        reader.push_response(&[0x53, 0x02, 0x01, 0x02, 0x90, 0x00]); // Read Obj
+        // provide_pin sequence: select_piv_ap -> verify_pin
+        reader.push_response(&[0x90, 0x00]); 
+        reader.push_response(&[0x90, 0x00]); 
         
-        let mut controller = PivController::new(reader.clone());
-        let _ = controller.provide_pin("piv", "123456").await;
+        // read_identity sequence: select_piv_ap -> read_data_object
+        reader.push_response(&[0x90, 0x00]); 
+        reader.push_response(&[0x53, 0x02, 0x01, 0x02, 0x90, 0x00]); 
+        
+        let mut controller: PivController<TestReader> = PivController::new(reader.clone());
+        controller.provide_pin("piv", "123456").await.unwrap();
         let res = controller.read_identity().await;
         assert!(res.is_ok());
     }

@@ -1,7 +1,8 @@
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
-use civ::IdentityController;
-use civ::MyKadController;
+use civ::models::IdentityController;
+use civ::mykad::MyKadController;
+use civ::errors::CivError;
 use std::sync::{Arc, Mutex};
 
 struct MockRelay {
@@ -10,7 +11,7 @@ struct MockRelay {
 
 #[async_trait::async_trait]
 impl CardReader for MockRelay {
-    async fn transmit(&mut self, apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+    async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>, CivError> {
         Ok(self.card.lock().unwrap().handle_apdu(apdu))
     }
 }
@@ -18,7 +19,7 @@ impl CardReader for MockRelay {
 #[tokio::test]
 async fn test_mykad_identity_full() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = MyKadController::new(MockRelay { card });
+    let mut controller: MyKadController<MockRelay> = MyKadController::new(MockRelay { card });
 
     let identity = controller.read_identity().await.unwrap();
     assert_eq!(identity.card_type, "MyKad");
@@ -38,7 +39,7 @@ async fn test_mykad_invalid_ic_format() {
     let mut card = MockSmartCard::new();
     card.add_backend(civ::mykad::file_ids::DF_JPN.to_vec(), Box::new(backend));
 
-    let mut controller = MyKadController::new(MockRelay {
+    let mut controller: MyKadController<MockRelay> = MyKadController::new(MockRelay {
         card: Arc::new(Mutex::new(card)),
     });
     let identity = controller.read_identity().await.unwrap();
@@ -54,16 +55,9 @@ async fn test_mykad_gender_variants() {
     let mut card = MockSmartCard::new();
     card.add_backend(civ::mykad::file_ids::DF_JPN.to_vec(), Box::new(backend));
 
-    let mut controller = MyKadController::new(MockRelay {
+    let mut controller: MyKadController<MockRelay> = MyKadController::new(MockRelay {
         card: Arc::new(Mutex::new(card)),
     });
     let identity = controller.read_identity().await.unwrap();
     assert_eq!(identity.gender, "Female");
-}
-
-#[test]
-fn test_mykad_dob_derivation() {
-    // This requires exposing the internal logic or testing through read_identity with custom mock.
-    // Let's add a test for the year pivot logic if it was a public function.
-    // Since it's not, we'll rely on integration tests.
 }

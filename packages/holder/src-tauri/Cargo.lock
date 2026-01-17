@@ -5274,7 +5274,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tobari-signer"
+name = "tobari-holder"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",

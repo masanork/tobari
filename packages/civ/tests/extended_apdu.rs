@@ -1,6 +1,7 @@
 use civ::apdu::ApduCommand;
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
+use civ::errors::CivError;
 use std::sync::{Arc, Mutex};
 
 // Manual implementation of Reader for Mock
@@ -10,7 +11,7 @@ struct MockRelay {
 
 #[async_trait::async_trait]
 impl CardReader for MockRelay {
-    async fn transmit(&mut self, apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+    async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>, CivError> {
         Ok(self.card.lock().unwrap().handle_apdu(apdu))
     }
 }

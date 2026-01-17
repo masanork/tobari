@@ -1,8 +1,9 @@
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
 use civ::test_utils::TestReader;
-use civ::IdentityController;
-use civ::ThaiController;
+use civ::models::IdentityController;
+use civ::thai::ThaiController;
+use civ::errors::CivError;
 use std::sync::{Arc, Mutex};
 
 struct MockRelay {
@@ -11,7 +12,7 @@ struct MockRelay {
 
 #[async_trait::async_trait]
 impl CardReader for MockRelay {
-    async fn transmit(&mut self, apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+    async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>, CivError> {
         Ok(self.card.lock().unwrap().handle_apdu(apdu))
     }
 }
@@ -19,7 +20,7 @@ impl CardReader for MockRelay {
 #[tokio::test]
 async fn test_thai_read_identity() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = ThaiController::new(MockRelay { card });
+    let mut controller: ThaiController<MockRelay> = ThaiController::new(MockRelay { card });
 
     let identity = controller.read_identity().await.unwrap();
     assert_eq!(identity.card_type, "ThaiID");
@@ -30,38 +31,22 @@ async fn test_thai_read_identity() {
 }
 
 #[tokio::test]
-async fn test_thai_gender_female() {
-    let mut backend = civ::mock::thai::ThaiBackend::new();
-    // Set female gender in raw data buffer
-    // Gender is at 0x00E1
-    let mut data = vec![0u8; 8192];
-    data[0x00E1] = b'2';
-    // Re-initialize backend or just use a custom one if possible.
-    // Since ThaiBackend.data is private, let's add a setter or just use mock relay to fake it.
-
-    // Actually, let's just test read_identity with the existing mock first to ensure it's fully covered.
-}
-
-#[tokio::test]
 async fn test_thai_read_identity_failure_at_cid() {
     let reader = TestReader::new();
-    let mut controller = ThaiController::new(reader.clone());
+    let mut controller: ThaiController<TestReader> = ThaiController::new(reader.clone());
 
     // Succeed at select, fail at read_data (cid)
     reader.push_response(&[0x90, 0x00]); // select ap
     reader.set_failure(0x6A, 0x82);
 
-    let res: anyhow::Result<civ::models::CitizenIdentity> = controller
-        .read_identity()
-        .await
-        .map_err(|e| anyhow::anyhow!(e));
+    let res = controller.read_identity().await;
     assert!(res.is_err());
 }
 
 #[tokio::test]
 async fn test_thai_read_raw_data() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = ThaiController::new(MockRelay { card });
+    let mut controller: ThaiController<MockRelay> = ThaiController::new(MockRelay { card });
 
     controller.select_thai_ap().await.unwrap();
 
@@ -84,7 +69,7 @@ async fn test_thai_read_data_retry() {
     let relay = MockRelay {
         card: Arc::new(Mutex::new(card)),
     };
-    let mut controller = ThaiController::new(relay);
+    let mut controller: ThaiController<MockRelay> = ThaiController::new(relay);
 
     controller.select_thai_ap().await.unwrap();
 
@@ -97,11 +82,11 @@ async fn test_thai_selection_failure() {
     struct ErrorRelay;
     #[async_trait::async_trait]
     impl CardReader for ErrorRelay {
-        async fn transmit(&mut self, _apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+        async fn transmit(&mut self, _apdu: &[u8]) -> Result<Vec<u8>, CivError> {
             Ok(vec![0x6A, 0x82])
         }
     }
 
-    let mut controller = ThaiController::new(ErrorRelay);
+    let mut controller: ThaiController<ErrorRelay> = ThaiController::new(ErrorRelay);
     assert!(controller.select_thai_ap().await.is_err());
 }

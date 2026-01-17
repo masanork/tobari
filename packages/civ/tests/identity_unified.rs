@@ -1,10 +1,13 @@
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
 use civ::test_utils::TestReader;
-use civ::{
-    IdentityController, JpkiController, MyKadController, PassportController,
-    ResidenceCardController, ThaiController,
-};
+use civ::models::IdentityController;
+use civ::jpki::JpkiController;
+use civ::mykad::MyKadController;
+use civ::passport::PassportController;
+use civ::jprc::ResidenceCardController;
+use civ::thai::ThaiController;
+use civ::errors::CivError;
 use std::sync::{Arc, Mutex};
 
 struct MockRelay {
@@ -13,7 +16,7 @@ struct MockRelay {
 
 #[async_trait::async_trait]
 impl CardReader for MockRelay {
-    async fn transmit(&mut self, apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+    async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>, CivError> {
         Ok(self.card.lock().unwrap().handle_apdu(apdu))
     }
 }
@@ -24,30 +27,30 @@ async fn test_failure_paths_all_cards() {
     reader.set_failure(0x6A, 0x82); // Application not found
 
     // JPKI
-    let mut c = JpkiController::new(reader.clone());
+    let mut c: JpkiController<TestReader> = JpkiController::new(reader.clone());
     assert!(c.read_identity().await.is_err());
 
     // Passport
-    let mut c = PassportController::new(reader.clone());
+    let mut c: PassportController<TestReader> = PassportController::new(reader.clone());
     assert!(c.read_identity().await.is_err());
 
     // Thai
-    let mut c = ThaiController::new(reader.clone());
+    let mut c: ThaiController<TestReader> = ThaiController::new(reader.clone());
     assert!(c.read_identity().await.is_err());
 
     // MyKad
-    let mut c = MyKadController::new(reader.clone());
+    let mut c: MyKadController<TestReader> = MyKadController::new(reader.clone());
     assert!(c.read_identity().await.is_err());
 
     // RC
-    let mut c = ResidenceCardController::new(reader.clone());
+    let mut c: ResidenceCardController<TestReader> = ResidenceCardController::new(reader.clone());
     assert!(c.read_identity().await.is_err());
 }
 
 #[tokio::test]
 async fn test_jpki_unified_photo() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = JpkiController::new(MockRelay { card });
+    let mut controller: JpkiController<MockRelay> = JpkiController::new(MockRelay { card });
 
     // Set PINs
     controller.provide_pin("auth", "1234").await.unwrap();
@@ -64,7 +67,7 @@ async fn test_jpki_unified_photo() {
 #[tokio::test]
 async fn test_passport_unified_photo() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = civ::PassportController::new(MockRelay { card });
+    let mut controller: PassportController<MockRelay> = PassportController::new(MockRelay { card });
 
     // Set MRZ
     controller.provide_pin("mrz", "123456").await.unwrap();
@@ -76,7 +79,7 @@ async fn test_passport_unified_photo() {
 #[tokio::test]
 async fn test_thai_unified() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = civ::ThaiController::new(MockRelay { card });
+    let mut controller: ThaiController<MockRelay> = ThaiController::new(MockRelay { card });
 
     let identity = controller.read_identity().await.unwrap();
     assert_eq!(identity.card_type, "ThaiID");
@@ -87,7 +90,7 @@ async fn test_thai_unified() {
 #[tokio::test]
 async fn test_mykad_unified() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = civ::MyKadController::new(MockRelay { card });
+    let mut controller: MyKadController<MockRelay> = MyKadController::new(MockRelay { card });
 
     let identity = controller.read_identity().await.unwrap();
     assert_eq!(identity.card_type, "MyKad");
@@ -103,7 +106,7 @@ async fn test_mykad_unified() {
 #[tokio::test]
 async fn test_jprc_unified_details() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = civ::ResidenceCardController::new(MockRelay { card });
+    let mut controller: ResidenceCardController<MockRelay> = ResidenceCardController::new(MockRelay { card });
 
     let identity = controller.read_identity().await.unwrap();
     assert_eq!(identity.card_type, "ResidenceCard");
@@ -122,12 +125,12 @@ async fn test_mykad_read_failure() {
     struct ErrorRelay;
     #[async_trait::async_trait]
     impl CardReader for ErrorRelay {
-        async fn transmit(&mut self, _apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+        async fn transmit(&mut self, _apdu: &[u8]) -> Result<Vec<u8>, CivError> {
             Ok(vec![0x6F, 0x00])
         }
     }
 
-    let mut controller = civ::MyKadController::new(ErrorRelay);
+    let mut controller: MyKadController<ErrorRelay> = MyKadController::new(ErrorRelay);
     let res = controller.read_identity().await;
     assert!(res.is_err());
 }
@@ -135,7 +138,7 @@ async fn test_mykad_read_failure() {
 #[tokio::test]
 async fn test_mykad_address_full() {
     let card = Arc::new(Mutex::new(MockSmartCard::new()));
-    let mut controller = civ::MyKadController::new(MockRelay { card });
+    let mut controller: MyKadController<MockRelay> = MyKadController::new(MockRelay { card });
 
     controller.select_jpn_ap().await.unwrap();
     // Read Line 1

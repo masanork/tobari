@@ -1,7 +1,8 @@
 use civ::mock::jpdl::DriversLicenseBackend;
 use civ::mock::MockSmartCard;
 use civ::reader::CardReader;
-use civ::DriversLicenseController;
+use civ::jpdl::DriversLicenseController;
+use civ::errors::CivError;
 use std::sync::{Arc, Mutex};
 
 struct MockRelay {
@@ -10,7 +11,7 @@ struct MockRelay {
 
 #[async_trait::async_trait]
 impl CardReader for MockRelay {
-    async fn transmit(&mut self, apdu: &[u8]) -> anyhow::Result<Vec<u8>> {
+    async fn transmit(&mut self, apdu: &[u8]) -> Result<Vec<u8>, CivError> {
         Ok(self.card.lock().unwrap().handle_apdu(apdu))
     }
 }
@@ -28,7 +29,7 @@ async fn test_jpdl_signature_verification() {
     let relay = MockRelay {
         card: Arc::new(Mutex::new(card)),
     };
-    let mut controller = DriversLicenseController::new(relay);
+    let mut controller: DriversLicenseController<MockRelay> = DriversLicenseController::new(relay);
 
     // 2. Perform verification
     controller.select_dl_ap().await.unwrap();
@@ -53,7 +54,7 @@ async fn test_jpdl_signature_verification_failure() {
     let relay = MockRelay {
         card: Arc::new(Mutex::new(card)),
     };
-    let mut controller = DriversLicenseController::new(relay);
+    let mut controller: DriversLicenseController<MockRelay> = DriversLicenseController::new(relay);
 
     controller.select_dl_ap().await.unwrap();
     controller.verify_pin1("123456").await.unwrap();
