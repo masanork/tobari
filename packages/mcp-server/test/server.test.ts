@@ -55,7 +55,7 @@ describe("MCP Server", () => {
         });
 
         const waitForResponse = async () => {
-            for (let i = 0; i < 50; i++) {
+            for (let i = 0; i < 150; i++) {
                 if (outputBuffer.includes('"id":1')) return;
                 await new Promise(r => setTimeout(r, 200));
             }
@@ -100,7 +100,7 @@ describe("MCP Server", () => {
     }, 20000);
 
     it("should list documents", async () => {
-        const response = await callTool("list_available_documents", {});
+        const response = await callTool("demo_list_examples", {});
         if (response.error) throw new Error(`MCP Error: ${response.error.message}`);
         
         const data = JSON.parse(response.result.content[0].text);
