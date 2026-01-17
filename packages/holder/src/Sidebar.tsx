@@ -90,6 +90,7 @@ export function Sidebar({
                         <button className="sign-btn small" onClick={() => setCardType('jpki')}>JPKI</button>
                         <button className="sign-btn small" onClick={() => setCardType('passport')}>Passport</button>
                         <button className="sign-btn small" onClick={() => setCardType('license')}>License</button>
+                        <button className="sign-btn small" onClick={() => setCardType('residence')}>Residence</button>
                     </div>
                  </div>
                </div>
