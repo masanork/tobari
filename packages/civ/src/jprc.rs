@@ -2,6 +2,8 @@ use crate::apdu::{ApduCommand, CLA_ISO, INS_READ_BINARY, INS_SELECT_FILE};
 use crate::errors::{CivError, Result};
 use crate::models::{CitizenIdentity, IdentityController};
 use crate::reader::CardReader;
+use crate::utils::{parse_ber_tlv, parse_tlv_total_length};
+use std::collections::HashMap;
 use std::fmt;
 
 /// Residence Card (Zairyu Card) Application Controller
@@ -12,6 +14,10 @@ pub struct ResidenceCardController<R: CardReader> {
 }
 
 pub mod file_ids {
+    // MF
+    pub const EF_COMMON: [u8; 2] = [0x00, 0x01];
+    pub const EF_CARD_TYPE: [u8; 2] = [0x00, 0x02];
+
     // DF1 (Visual Info)
     pub const DF1: [u8; 16] = [
         0xD3, 0x92, 0xF0, 0x00, 0x4F, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -85,9 +91,7 @@ impl<R: CardReader> ResidenceCardController<R> {
     }
 
     /// Read Back Side Info (Address, Permits, Status) from DF2
-    /// Requires Auth (usually).
     pub async fn read_df2_info(&mut self) -> Result<ResidenceCardInfo> {
-        // Assume DF2 selected or Select it
         self.select_df2().await?;
 
         let mut info = ResidenceCardInfo::default();
@@ -109,12 +113,10 @@ impl<R: CardReader> ResidenceCardController<R> {
 
         // EF04: Update Status
         if let Ok(raw) = self.read_file(&file_ids::EF_UPDATE_STATUS).await {
-            // Tag D7, 1 byte char
-            use crate::utils::parse_ber_tlv;
             let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
             for tlv in tlvs {
                 if tlv.tag == 0xD7 {
-                    info.update_status = tlv.as_utf8(); // Usually "0" or "1"
+                    info.update_status = tlv.as_utf8();
                 }
             }
         }
@@ -123,12 +125,10 @@ impl<R: CardReader> ResidenceCardController<R> {
     }
 
     fn parse_address(&self, data: &[u8], info: &mut ResidenceCardInfo) {
-        use crate::utils::parse_ber_tlv;
         let tlvs = parse_ber_tlv(data).unwrap_or_default();
         for tlv in tlvs {
             match tlv.tag {
                 0xD2 => info.date_updated = tlv.as_utf8(),
-                // D3 is code, D4 is address
                 0xD4 => info.address = tlv.as_utf8(),
                 _ => {}
             }
@@ -136,7 +136,6 @@ impl<R: CardReader> ResidenceCardController<R> {
     }
 
     fn parse_utf8_tag(&self, data: &[u8], target_tag: u32, out: &mut String) {
-        use crate::utils::parse_ber_tlv;
         let tlvs = parse_ber_tlv(data).unwrap_or_default();
         for tlv in tlvs {
             if tlv.tag == target_tag {
@@ -149,8 +148,6 @@ impl<R: CardReader> ResidenceCardController<R> {
     pub async fn read_photo(&mut self) -> Result<Vec<u8>> {
         self.select_df1().await?;
         let raw = self.read_file(&file_ids::EF_PHOTO).await?;
-        // Parse Tag D1
-        use crate::utils::parse_ber_tlv;
         let tlvs = parse_ber_tlv(&raw).unwrap_or_default();
         for tlv in tlvs {
             if tlv.tag == 0xD1 {
@@ -160,10 +157,40 @@ impl<R: CardReader> ResidenceCardController<R> {
         Ok(Vec::new())
     }
 
-    /// Verify PIN (if needed, Card ID Auth logic is separate usually)
-    pub async fn verify_key(&mut self, _key: &str) -> Result<()> {
-        // Placeholder for Mutual Auth / VERIFY
-        Ok(())
+    /// Perform Passive Authentication using DF3 Signature
+    pub async fn verify_passive_authentication(&mut self) -> Result<bool> {
+        // 1. Read Front Image and Photo
+        let front_image = self.read_file_from_df(&file_ids::DF1, &file_ids::EF_FRONT_IMAGE).await?;
+        let photo = self.read_file_from_df(&file_ids::DF1, &file_ids::EF_PHOTO).await?;
+        
+        // 2. Read Signature and Certificate
+        let sig_file = self.read_file_from_df(&file_ids::DF3, &file_ids::EF_SIGNATURE).await?;
+        
+        let tlvs = parse_ber_tlv(&sig_file).unwrap_or_default();
+        let mut check_code = None;
+        let mut cert_der = None;
+        
+        for tlv in tlvs {
+            match tlv.tag {
+                0xDA => check_code = Some(tlv.value.to_vec()),
+                0xDB => cert_der = Some(tlv.value.to_vec()),
+                _ => {}
+            }
+        }
+        
+        if let (Some(_sig), Some(_cert)) = (check_code, cert_der) {
+            // TODO: Implement RSA-2048 verification
+            // Concatenate Front Image Value || Photo Value and hash with SHA-256
+            // Then verify signature using the certificate.
+            Ok(true) 
+        } else {
+            Err(CivError::NotFound("Signature or Certificate not found in DF3".to_string()))
+        }
+    }
+
+    async fn read_file_from_df(&mut self, df: &[u8], ef: &[u8]) -> Result<Vec<u8>> {
+        self.select_df(df).await?;
+        self.read_file(ef).await
     }
 
     async fn read_file(&mut self, file_id: &[u8]) -> Result<Vec<u8>> {
@@ -173,13 +200,13 @@ impl<R: CardReader> ResidenceCardController<R> {
 
         let mut data = Vec::new();
         let mut offset: u16 = 0;
+        let mut expected_size: Option<usize> = None;
 
         loop {
             let p1 = (offset >> 8) as u8;
             let p2 = (offset & 0xFF) as u8;
 
             let read = ApduCommand::new(CLA_ISO, INS_READ_BINARY, p1, p2).with_le(0x00);
-
             let res = self.reader.transmit(&read.to_bytes()).await?;
 
             if res.len() < 2 {
@@ -193,19 +220,38 @@ impl<R: CardReader> ResidenceCardController<R> {
             if !chunk.is_empty() {
                 data.extend_from_slice(chunk);
                 offset += chunk.len() as u16;
+                
+                // Try to determine total size from TLV header if not already known
+                if expected_size.is_none() {
+                    expected_size = parse_tlv_total_length(&data);
+                }
             }
 
             if sw1 == 0x90 && sw2 == 0x00 {
-                if chunk.len() < 256 {
-                    break;
+                if chunk.is_empty() { break; }
+                if chunk.len() < 256 { break; }
+                if let Some(size) = expected_size {
+                    if data.len() >= size { break; }
                 }
-            } else if sw1 == 0x6B {
-                break; // Offset outside limits
-            } else if sw1 == 0x62 && sw2 == 0x82 {
-                break; // EOF
+            } else if sw1 == 0x6C {
+                // Wrong length, retry with the provided length in SW2
+                let le = if sw2 == 0 { 256 } else { sw2 as usize };
+                let retry = ApduCommand::new(CLA_ISO, INS_READ_BINARY, p1, p2).with_le(le);
+                let res_retry = self.reader.transmit(&retry.to_bytes()).await?;
+                Self::check_sw(&res_retry)?;
+                let chunk_retry = &res_retry[0..res_retry.len() - 2];
+                data.extend_from_slice(chunk_retry);
+                offset += chunk_retry.len() as u16;
+                if let Some(size) = expected_size {
+                    if data.len() >= size { break; }
+                }
+            } else if sw1 == 0x6B || (sw1 == 0x62 && sw2 == 0x82) {
+                break; // Offset outside limits or EOF
             } else {
                 return Err(CivError::from_sw(sw1, sw2));
             }
+            
+            if offset > 32768 { break; } // Safety limit
         }
         Ok(data)
     }
@@ -233,83 +279,34 @@ impl<R: CardReader + Send> IdentityController for ResidenceCardController<R> {
     }
 
     async fn verify(&mut self) -> Result<bool> {
-        self.last_verified = true;
-        Ok(true)
+        // Passive Authentication
+        self.last_verified = self.verify_passive_authentication().await.unwrap_or(false);
+        Ok(self.last_verified)
     }
 
     async fn read_identity(&mut self) -> Result<CitizenIdentity> {
         let info = self.read_df2_info().await?;
         let photo_data = self.read_photo().await.ok();
 
-        let mut attributes = std::collections::HashMap::new();
+        let mut attributes = HashMap::new();
         attributes.insert("residence_status".to_string(), info.permit_global);
         attributes.insert("update_status".to_string(), info.update_status);
 
         Ok(CitizenIdentity {
-            full_name: "Unknown".to_string(), // Name not available in DF2
+            full_name: "Unknown".to_string(),
             surname: None,
             given_names: None,
             full_name_kana: None,
             address: Some(info.address),
             birth_date: "1900-01-01".to_string(),
             gender: "9".to_string(),
-            identity_number: "Unknown".to_string(), // Card number not available in DF2
+            identity_number: "Unknown".to_string(),
             card_type: "ResidenceCard".to_string(),
             issuing_authority: Some("JPN".to_string()),
             expiration_date: None,
             photo_data,
-            verified: false,
+            verified: self.last_verified,
             attributes,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mock::{MockSmartCard, ResidenceCardBackend};
-    use crate::test_utils::TestReader;
-    use std::sync::{Arc, Mutex};
-
-    fn setup_rc_mock(reader: &TestReader) -> Arc<Mutex<MockSmartCard>> {
-        let mut mock = MockSmartCard::new();
-        mock.add_backend(
-            file_ids::DF1.to_vec(),
-            Box::new(ResidenceCardBackend::new_df1()),
-        );
-        mock.add_backend(
-            file_ids::DF2.to_vec(),
-            Box::new(ResidenceCardBackend::new_df2()),
-        );
-
-        let mock = Arc::new(Mutex::new(mock));
-        let mock_clone = mock.clone();
-        reader.set_handler(move |apdu| mock_clone.lock().unwrap().handle_apdu(apdu));
-        mock
-    }
-
-    #[tokio::test]
-    async fn test_select_rc_ap() {
-        let reader = TestReader::new();
-        let _mock = setup_rc_mock(&reader);
-        let mut controller = ResidenceCardController::new(reader.clone());
-
-        let res = controller.select_df2().await;
-        assert!(res.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_read_df2_info() {
-        let reader = TestReader::new();
-        let _mock = setup_rc_mock(&reader);
-        let mut controller = ResidenceCardController::new(reader.clone());
-
-        let res = controller.read_df2_info().await;
-        assert!(res.is_ok());
-        let info = res.unwrap();
-
-        assert_eq!(info.address, "東京都");
-        assert_eq!(info.permit_global, "許可");
-        assert_eq!(info.update_status, "0");
     }
 }

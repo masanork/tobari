@@ -1,5 +1,5 @@
 use crate::errors::{CivError, Result};
-use crate::utils::parse_ber_tlv;
+pub use crate::utils::{parse_ber_tlv, parse_tlv_total_length};
 
 pub fn encode_len(len: usize) -> Vec<u8> {
     if len <= 0x7F {
@@ -88,57 +88,6 @@ pub fn extract_mrz_from_dg1(dg1: &[u8]) -> Option<String> {
         mrz.insert(44, '\n');
     }
     Some(mrz)
-}
-
-pub fn parse_tlv_total_length(data: &[u8]) -> Option<usize> {
-    if data.len() < 2 {
-        return None;
-    }
-    let mut offset = 0usize;
-    let first_tag = data[offset];
-    offset += 1;
-    if (first_tag & 0x1F) == 0x1F {
-        while offset < data.len() && (data[offset] & 0x80) != 0 {
-            offset += 1;
-        }
-        if offset < data.len() {
-            offset += 1;
-        }
-    }
-    if offset >= data.len() {
-        return None;
-    }
-    let len_byte = data[offset];
-    offset += 1;
-    let content_len = if len_byte <= 0x7F {
-        len_byte as usize
-    } else if len_byte == 0x81 {
-        if offset >= data.len() {
-            return None;
-        }
-        let len = data[offset] as usize;
-        offset += 1;
-        len
-    } else if len_byte == 0x82 {
-        if offset + 1 >= data.len() {
-            return None;
-        }
-        let len = ((data[offset] as usize) << 8) | data[offset + 1] as usize;
-        offset += 2;
-        len
-    } else if len_byte == 0x83 {
-        if offset + 2 >= data.len() {
-            return None;
-        }
-        let len = ((data[offset] as usize) << 16)
-            | ((data[offset + 1] as usize) << 8)
-            | data[offset + 2] as usize;
-        offset += 3;
-        len
-    } else {
-        return None;
-    };
-    Some(offset + content_len)
 }
 
 pub fn debug_passport(message: &str) {

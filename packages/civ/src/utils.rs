@@ -201,6 +201,59 @@ pub fn parse_ber_tlv(data: &[u8]) -> Result<Vec<BerTlv>> {
     Ok(tlvs)
 }
 
+/// Parse the total length of a BER-TLV object from its header (tag + length).
+/// Returns Some(total_length) if the header is valid.
+pub fn parse_tlv_total_length(data: &[u8]) -> Option<usize> {
+    if data.len() < 2 {
+        return None;
+    }
+    let mut offset = 0usize;
+    let first_tag = data[offset];
+    offset += 1;
+    if (first_tag & 0x1F) == 0x1F {
+        while offset < data.len() && (data[offset] & 0x80) != 0 {
+            offset += 1;
+        }
+        if offset < data.len() {
+            offset += 1;
+        }
+    }
+    if offset >= data.len() {
+        return None;
+    }
+    let len_byte = data[offset];
+    offset += 1;
+    let content_len = if len_byte <= 0x7F {
+        len_byte as usize
+    } else if len_byte == 0x81 {
+        if offset >= data.len() {
+            return None;
+        }
+        let len = data[offset] as usize;
+        offset += 1;
+        len
+    } else if len_byte == 0x82 {
+        if offset + 1 >= data.len() {
+            return None;
+        }
+        let len = ((data[offset] as usize) << 8) | data[offset + 1] as usize;
+        offset += 2;
+        len
+    } else if len_byte == 0x83 {
+        if offset + 2 >= data.len() {
+            return None;
+        }
+        let len = ((data[offset] as usize) << 16)
+            | ((data[offset + 1] as usize) << 8)
+            | data[offset + 2] as usize;
+        offset += 3;
+        len
+    } else {
+        return None;
+    };
+    Some(offset + content_len)
+}
+
 /// MRZ (Machine Readable Zone) utilities for Passport
 pub struct MrzUtils;
 
