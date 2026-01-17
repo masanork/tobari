@@ -1294,7 +1294,7 @@ export class TobariForm extends LitElement {
       <div class="field-group full-width">
         <div class="group-container">
           ${options.noLabel ? nothing : html`<span class="group-label">${field.label || field.key}</span>`}
-          ${field.fields.map(child => this.renderField(child, [...path, child.key], { rowIndex: options.rowIndex }))}
+          ${field.fields.map(child => this.renderField(child, [...path, child.key], { rowIndex: options.rowIndex, noLabel: options.noLabel }))}
         </div>
         ${this.renderError(path)}
       </div>
