@@ -19,6 +19,9 @@
   - **Taro Saito Persona**: Introduced a consistent demo identity "Taro Saito" (斉藤太朗) with pre-generated, hardware-encrypted certificates for JPKI, Drivers License, and Passport.
   - **Integrated Demo Server**: Developed `run-prefill-demo.ts`, a Bun-based server that bridges physical smart card reading with web-based application forms for end-to-end E2E demonstrations.
   - **Enhanced Reliability**: Implemented comprehensive logic unit tests for formula evaluation, array handling, and data normalization within the Form Engine.
+- **Documentation & Literacy**:
+  - **Identity Data Management Memo (v3.0.0)**: Completely refactored `JAPAN_IDENTITY_DATA_SPEC.md` into a practical "Introduction to Attribute Information Management across Different Business Systems." Added deep insights on historical context (Gaiji, Koseki Act), address pitfalls (Maihama, Kasumigaseki), and the "Normalization Paradox" in electronic signatures.
+  - **New Demo Scenarios**: Added a "Power of Attorney" (ininjo) scenario to the Demo Guide, demonstrating a full chain of trust from JPKI prefill to Secure Enclave signing for delegated administrative requests.
 - **MCP Server**:
   - **Flexible VP Integration**: Updated `create_presentation` to seamlessly handle full DeviceResponse VPs returned by the native macOS signer, enabling more complex signing workflows.
 
