@@ -217,7 +217,9 @@ struct PresentationPreviewView_Previews: PreviewProvider {
                         "birth_date": "1990-01-01",
                         "issue_date": "2020-01-01"
                     ]
-                ]
+                ],
+                rawNameSpaces: [:],
+                rawIssuerSigned: Data()
             ),
             disclosedFields: ["org.iso.18013.5.1.family_name", "org.iso.18013.5.1.given_name"],
             verifierId: "example.com",

@@ -62,14 +62,20 @@ class PresentationHandler: CommandHandler {
             }
 
             let signer = SecureEnclaveSigner()
-            let challenge = session.disclosedFields.joined(separator: ",").data(using: .utf8)!
-            let (signature, publicKey) = try signer.sign(challenge: challenge)
+            let vp = try DeviceAuth.generatePresentation(
+                mdoc: session.mdoc,
+                disclosedFields: session.disclosedFields,
+                verifierId: session.verifierId,
+                nonce: session.nonce,
+                signer: signer
+            )
 
             return UnifiedResponse.success(
                 command: request.command,
                 type: .vp,
                 format: .cose,
-                data: ["signature": signature, "publicKey": publicKey, "docType": session.mdoc.docType, "disclosedFields": session.disclosedFields, "nonce": session.nonce ?? ""]
+                data: vp.base64URLEncodedString(),
+                metadata: ["docType": session.mdoc.docType, "disclosedFields": session.disclosedFields]
             )
         } catch {
             return handleSignerError(error, command: request.command)
@@ -96,9 +102,15 @@ class PresentationHandler: CommandHandler {
             }
 
             let mdoc = try CoseParser.parseMdoc(data: documentData)
-            var fields: [String: String] = [:]
-            for field in mdoc.getAllFields() { fields[field] = mdoc.getFieldValue(field) }
-            return UnifiedResponse.success(command: request.command, type: .cardData, format: .json, data: ["docType": mdoc.docType, "fields": fields])
+            let inspection = mdoc.inspect()
+            
+            return UnifiedResponse.success(
+                command: request.command, 
+                type: .cardData, 
+                format: .json, 
+                data: inspection,
+                metadata: ["format": "mdoc/cose"]
+            )
         } catch {
             return handleSignerError(error, command: request.command)
         }

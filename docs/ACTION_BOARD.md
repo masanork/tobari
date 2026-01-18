@@ -1,24 +1,26 @@
 # Tobari Action Board
 
-**Last Updated:** 2026-01-14
+**Last Updated:** 2026-01-18
 **Scope:** Tobari Project (MCP/Signer/SCAC/Compliance/civ)
 
 ## 🚀 Now (Current Sprint)
 
 ### macOS & Signer Integration
 - [x] **macOS Native Integration**: `mcp-server` automatically detects macOS and invokes `signer-macos` (CTK/Secure Enclave) for JPKI and Device Auth.
+- [x] **JPKI Full Support (macOS)**: Implemented signing, reading attributes, My Number, and face photo in `signer-macos` with comprehensive unit tests.
 - [x] **Device-bound Decryption (ECIES)**: Implemented full-stack decryption flow using Secure Enclave Key Agreement via `mcp-server` and `signer-macos`.
 - [x] **Hardware-backed Registration**: Added `register_device` tool to export Secure Enclave public keys for issuance.
-- [x] **Self-Issuance Workflow**: Implemented `issue_local_credential` to create hardware-bound "Master mdocs" from JPKI data, enabling card-less future interactions.
-- [x] **LLM Communication Optimization**: Added `inspect_document` to `signer-macos` to offload CBOR parsing and minimize binary data transfer to LLM.
+- [x] **Hardware Reader Optimization**: Identified Sony RC-S380 driver issues with Rust/PCSC on macOS; established `signer-macos` (Swift/CryptoTokenKit) as the primary stable path for macOS users.
+- [x] **VP Signing (macOS)**: Implemented native Verifiable Presentation (VP) signing using Secure Enclave and ISO 18013-5 Device Authentication.
 
 ### 🔄 Cross-Platform Signer Alignment (Tauri/Rust)
 - [x] **Unified Interface Porting**: Ported full `UnifiedRequest`/`UnifiedResponse` protocol to Tauri signer CLI, achieving parity with Swift implementation.
-- [x] **Recursive Document Inspector**: Implemented advanced `inspect_document` logic in Rust with support for nested structures (Resident Records).
+- [x] **Recursive Document Inspector**: Implemented advanced `inspect_document` logic in both Rust and Swift with support for nested structures and binary inspection.
 - [x] **File-based I/O Support**: Integrated `outputPath` across all native tools to handle large transfers (face photos, mdocs) efficiently.
 - [ ] **Windows TPM Integration**: Research and implement hardware-bound key support for Windows (NCrypt/TPM) to match Secure Enclave functionality.
 
 ### Performance & PQC
+- [x] **PQC Countersign Verification**: Implemented and verified full PQC flow (Generation -> Verification) in `verify-cli` and `mcp-server`.
 - [x] **PQC Benchmark Refinement**: Updated whitepaper with exact WASM size breakdowns for ML-DSA and ML-KEM.
 - [x] **AI-Ready Identity**: Implemented mdoc-to-JSON translation to enable LLM agents to process complex identity documents.
 // ... (omitted) ...
@@ -44,8 +46,8 @@
 // ... (omitted) ...
 ### Civ Library Refinement
 - [x] **Error Handling**: Explicitly handle card-specific errors (`IncorrectPin`, `CardLocked`) across all platforms.
-- [ ] **Extended Length APDU**: Verify stability for large data across various readers.
-- [ ] **Full PACE/BAC Crypto**: Complete the ECC/MAC implementation for macOS native passport reading.
+- [x] **Extended Length APDU**: Implemented and verified for large data (e.g., high-res face photos) across macOS and Rust controllers.
+- [x] **Full PACE/BAC Protocol Sync**: Resolved synchronization issues between controller and reader for Secure Messaging (SM) on macOS and Rust.
 
 ### Signer UX Evolution
 - [ ] **macOS GUI (SwiftUI)**: Port Tauri's rich identity display and interaction to a native macOS SwiftUI application.

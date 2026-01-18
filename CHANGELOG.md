@@ -2,6 +2,17 @@
 
 ## [0.3.21] - 2026-01-18
 
+### Features
+- **Signer (macOS)**:
+  - **Native VP Signing**: Implemented ISO 18013-5 compliant Verifiable Presentation (VP) signing using **Secure Enclave** and `DeviceAuthentication` structure.
+  - **Recursive Document Inspector**: Enhanced `inspect_document` with a native Swift CBOR parser, supporting recursive extraction of nested identity data (e.g., family members in Resident Records) and binary inspection.
+  - **Improved Passport Reading**: Ported robust reading logic from the Rust `civ` implementation, including automatic SW 0x6C/0x61 retry handling and TLV-based size detection.
+  - **Extended APDU Support**: Formally integrated **Extended Length APDU (Case 2E)** support for high-resolution face photo retrieval, improving stability across different NFC readers.
+  - **Security Fallbacks**: Added automatic plain-text fallback for `SELECT` commands when Secure Messaging (SM) is rejected by certain card chips.
+  - **CBOR Core**: Developed a lightweight `CBORWriter` in Swift to support native structure generation for mdoc signatures without external dependencies.
+- **MCP Server**:
+  - **Flexible VP Integration**: Updated `create_presentation` to seamlessly handle full DeviceResponse VPs returned by the native macOS signer, enabling more complex signing workflows.
+
 ### Refactor
 - **CIV Passport Module**:
   - **Modular Architecture**: Successfully refactored the monolithic 3,700-line `passport.rs` into a clean, modular structure under `src/passport/`.

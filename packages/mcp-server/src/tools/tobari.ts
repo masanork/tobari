@@ -653,7 +653,6 @@ export async function handleCreatePresentation(toolArgs: any) {
 
                     if (response.status === "preview") {
                         // In case of preview, the signer GUI should be open now.
-                        // For a stateless tool call, we might need to inform the user.
                         return {
                             content: [{
                                 type: "text",
@@ -671,6 +670,25 @@ export async function handleCreatePresentation(toolArgs: any) {
                     }
 
                     const output = response.result.data;
+                    
+                    // NEW: Support full VP returned by signer-macos
+                    if (typeof output === 'string' && response.result.format === 'cose') {
+                        const vpBytes = Buffer.from(output, 'base64url');
+                        const decodedVp = decode(vpBytes);
+                        
+                        // If it's a full DeviceResponse, use its documents
+                        if (decodedVp && decodedVp.documents) {
+                            documents.push(...decodedVp.documents);
+                            continue; 
+                        }
+                        
+                        // If it's a single document structure, use it
+                        if (decodedVp && decodedVp.deviceSigned) {
+                            documents.push(decodedVp);
+                            continue;
+                        }
+                    }
+
                     const signatureBytes = new Uint8Array(Buffer.from(output.signature, 'base64url'));
 
                     if (output.authData && output.clientDataJSON) {
