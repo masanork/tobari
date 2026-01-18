@@ -1,0 +1,42 @@
+# Taro Saito (斉藤 太朗) - Tobari Demo Persona
+profile:
+  name: "斉藤 太朗"
+  name_kana: "サイトウ タロウ"
+  name_en: "SAITO TARO"
+  birth_date: "1985-01-01"
+  gender: "1" # Male
+  address: "東京都千代田区千代田1-1"
+  zip_code: "100-0001"
+  mynumber: "123456789012"
+
+jpki:
+  docType: "io.github.masanork.tobari.juminhyo.v1"
+  title: "住民票 (Digital Copy)"
+  data:
+    name: "斉藤 太朗"
+    address: "東京都千代田区千代田1-1"
+    birthDate: "1985-01-01"
+    gender: "1"
+    mynumber: "123456789012"
+
+license:
+  docType: "io.github.masanork.tobari.drivers-license.v1"
+  title: "運転免許証 (Digital)"
+  data:
+    name: "斉藤 太朗"
+    address: "東京都千代田区千代田1-1"
+    birth_date: "1985-01-01"
+    license_number: "301234567890"
+    color: "Gold"
+    expiry_date: "2030-01-31"
+
+passport:
+  docType: "io.github.masanork.tobari.passport.v1"
+  title: "ePassport (Digital Copy)"
+  data:
+    name: "SAITO, TARO"
+    passport_number: "TK987654321"
+    nationality: "JPN"
+    birth_date: "850101"
+    expiry_date: "300101"
+    gender: "M"

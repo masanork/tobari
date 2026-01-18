@@ -1,7 +1,7 @@
 meta:
   title: "児童手当認定請求書 (Web/A v2)"
   version: "2.0"
-  security: "standard"
+  security: "high"
 
 fields:
   - key: applicant_section
@@ -21,7 +21,13 @@ fields:
       - key: birthday
         type: date
         label: "生年月日"
+        required: true
         autofill: "jpki:birthDate"
+      - key: mynumber
+        type: text
+        label: "個人番号"
+        required: true
+        autofill: "jpki:mynumber"
 
   - key: children
     type: array

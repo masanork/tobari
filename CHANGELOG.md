@@ -14,6 +14,11 @@
   - **Loading Overlays**: Implemented a professional, full-screen loading overlay with animated spinners and phase-specific status updates (e.g., "Extracting Face Photo...") to provide reassurance during physical card reading.
   - **Visual Identity**: Enhanced the Wallet with card-like row designs featuring DocType-specific gradients (Passport: Deep Blue, License: Cyan, Resident Record: Teal) and iconography.
   - **Refined Detail Views**: Updated the Identity Inspector header to mirror the card's visual identity, creating a cohesive user experience across the app.
+- **Form-Engine & Demo Assets**:
+  - **Automatic Prefill**: Standardized `autofill: "source:path"` mapping in `TobariForm`, enabling one-click data injection from mdocs into administrative forms.
+  - **Taro Saito Persona**: Introduced a consistent demo identity "Taro Saito" (斉藤太朗) with pre-generated, hardware-encrypted certificates for JPKI, Drivers License, and Passport.
+  - **Integrated Demo Server**: Developed `run-prefill-demo.ts`, a Bun-based server that bridges physical smart card reading with web-based application forms for end-to-end E2E demonstrations.
+  - **Enhanced Reliability**: Implemented comprehensive logic unit tests for formula evaluation, array handling, and data normalization within the Form Engine.
 - **MCP Server**:
   - **Flexible VP Integration**: Updated `create_presentation` to seamlessly handle full DeviceResponse VPs returned by the native macOS signer, enabling more complex signing workflows.
 
