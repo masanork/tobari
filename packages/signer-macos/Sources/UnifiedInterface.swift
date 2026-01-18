@@ -91,7 +91,8 @@ struct ErrorInfo: Codable {
 struct SignPresentationParams: Codable {
     let documentPath: String?          // Path to mdoc file
     let documentData: String?          // Base64URL encoded document
-    let disclosureFields: [String]?    // Fields to disclose
+    let disclosureFields: [String]?    // Fields to disclose (explicit)
+    let presentationDefinition: AnyCodable? // DIF Presentation Definition (OID4VP)
     let verifierId: String?            // OID4VP Client ID
     let nonce: String?                 // OID4VP session nonce
     let responseUri: String?           // OID4VP response URI

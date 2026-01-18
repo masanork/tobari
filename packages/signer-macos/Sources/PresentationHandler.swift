@@ -30,7 +30,23 @@ class PresentationHandler: CommandHandler {
             }
 
             let mdoc = try CoseParser.parseMdoc(data: documentData)
-            let disclosedFields = params.disclosureFields ?? mdoc.getAllFields()
+            var disclosedFields = params.disclosureFields ?? []
+            
+            // If Presentation Definition is provided, parse it to find required fields
+            if let def = params.presentationDefinition?.value as? [String: Any],
+               let request = PresentationExchange.parseDefinition(["presentation_definition": def]) {
+                // Find matching input descriptor for this mdoc
+                for desc in request.inputDescriptors {
+                    if desc.docType == nil || desc.docType == mdoc.docType {
+                        disclosedFields.append(contentsOf: desc.fields)
+                    }
+                }
+            }
+            
+            // Fallback to all fields if none specified
+            if disclosedFields.isEmpty && params.presentationDefinition == nil {
+                disclosedFields = mdoc.getAllFields()
+            }
 
             if request.preview == true {
                 let previewFields = mdoc.getAllFields().map { field in

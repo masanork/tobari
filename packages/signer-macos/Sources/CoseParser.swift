@@ -106,6 +106,31 @@ struct MdocDocument {
         }
         return value
     }
+
+    /// Try to extract a face photo from common fields (DG2 for passport, portrait for mDL)
+    func getFacePhoto() -> Data? {
+        // Look for DG2 in passport namespaces
+        if let dg2 = nameSpaces["org.icao.lds.1"]?["dg2"] as? Data ?? nameSpaces["dg2"]?["dg2"] as? Data {
+            return extractPhotoFromDG2(dg2)
+        }
+        // Look for portrait in mDL namespaces
+        if let portrait = nameSpaces["org.iso.18013.5.1"]?["portrait"] as? Data {
+            return portrait
+        }
+        return nil
+    }
+
+    private func extractPhotoFromDG2(_ data: Data) -> Data? {
+        let jpegSig = Data([0xFF, 0xD8, 0xFF])
+        if let range = data.range(of: jpegSig) {
+            return data.subdata(in: range.lowerBound..<data.count)
+        }
+        let jp2Sig = Data([0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20])
+        if let range = data.range(of: jp2Sig) {
+            return data.subdata(in: range.lowerBound..<data.count)
+        }
+        return nil
+    }
 }
 
 /// COSE/CBOR parser for mdoc documents

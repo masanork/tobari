@@ -3,6 +3,7 @@ import SwiftUI
 struct WalletView: View {
     @EnvironmentObject var state: AppState
     @State private var credentials: [WalletCredential] = []
+    @State private var selectedCredential: WalletCredential?
     
     var body: some View {
         VStack {
@@ -25,6 +26,9 @@ struct WalletView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(credentials) { cred in
                             CredentialRow(credential: cred)
+                                .onTapGesture {
+                                    selectedCredential = cred
+                                }
                         }
                     }
                     .padding()
@@ -39,6 +43,19 @@ struct WalletView: View {
             .foregroundColor(.blue)
         }
         .onAppear(perform: refresh)
+        .sheet(item: $selectedCredential) { cred in
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: cred.path)),
+               let mdoc = try? CoseParser.parseMdoc(data: data) {
+                CredentialDetailView(mdoc: mdoc, filename: cred.name)
+            } else {
+                VStack {
+                    Text("Failed to load document")
+                    Button("Close") { selectedCredential = nil }
+                }
+                .padding()
+                .frame(width: 300, height: 200)
+            }
+        }
     }
     
     func refresh() {
