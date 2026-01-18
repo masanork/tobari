@@ -52,12 +52,12 @@ bun run demo:scac
 ## Project Structure
 
 - `packages/codec`: CDDL generation from YAML, signed binary (.cose) generation, HTML viewer bundling.
-- `packages/civ`: Universal Identity Library for manipulating smart cards (JPKI, Driver's License, Passport/ICAO).
+- `packages/civ`: Universal Identity Library for manipulating smart cards. Verified with My Number Card (JPKI), Driver's License, and Passport (BAC).
 - `packages/crypto`: P-384 COSE signing/verification core implementation.
 - `packages/mcp-server`: Model Context Protocol interface for AI Agent integration.
 - `packages/holder`: Tauri-based companion app for WebAuthn/FIDO signing and ID card reading.
 - `packages/signer-macos`: Native Swift implementation for improved macOS smart card support.
-  - **Note**: Passport reading via BAC/PACE is currently unstable on real devices, often resulting in `Select EF failed: 6988` errors. Use with caution.
+  - **Note**: Passport reading via BAC is verified. PACE support is currently experimental.
 - `examples`: Implementation references (Juminhyo, Ininjo) demonstrating SD-CBOR and nested structures.
 
 ## Documentation
