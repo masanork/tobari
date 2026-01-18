@@ -10,6 +10,10 @@
   - **Extended APDU Support**: Formally integrated **Extended Length APDU (Case 2E)** support for high-resolution face photo retrieval, improving stability across different NFC readers.
   - **Security Fallbacks**: Added automatic plain-text fallback for `SELECT` commands when Secure Messaging (SM) is rejected by certain card chips.
   - **CBOR Core**: Developed a lightweight `CBORWriter` in Swift to support native structure generation for mdoc signatures without external dependencies.
+- **GUI & UX Polish**:
+  - **Loading Overlays**: Implemented a professional, full-screen loading overlay with animated spinners and phase-specific status updates (e.g., "Extracting Face Photo...") to provide reassurance during physical card reading.
+  - **Visual Identity**: Enhanced the Wallet with card-like row designs featuring DocType-specific gradients (Passport: Deep Blue, License: Cyan, Resident Record: Teal) and iconography.
+  - **Refined Detail Views**: Updated the Identity Inspector header to mirror the card's visual identity, creating a cohesive user experience across the app.
 - **MCP Server**:
   - **Flexible VP Integration**: Updated `create_presentation` to seamlessly handle full DeviceResponse VPs returned by the native macOS signer, enabling more complex signing workflows.
 

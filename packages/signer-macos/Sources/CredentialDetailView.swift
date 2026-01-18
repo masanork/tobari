@@ -5,28 +5,40 @@ struct CredentialDetailView: View {
     let filename: String
     @Environment(\.dismiss) var dismiss
 
+    var headerGradient: LinearGradient {
+        if mdoc.docType.contains("passport") {
+            return LinearGradient(colors: [Color(red: 0.1, green: 0.2, blue: 0.4), Color(red: 0.2, green: 0.4, blue: 0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        } else if mdoc.docType.contains("license") {
+            return LinearGradient(colors: [Color.blue.opacity(0.8), Color.cyan.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        } else if mdoc.docType.contains("resident") {
+            return LinearGradient(colors: [Color.green.opacity(0.7), Color.teal.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+        return LinearGradient(colors: [Color.gray.opacity(0.6), Color.gray.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // Card-style Header with Gradient
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(formatDocType(mdoc.docType))
-                        .font(.title2)
+                        .font(.system(.title2, design: .rounded))
                         .fontWeight(.bold)
+                        .foregroundColor(.white)
                     Text(filename)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.8))
                 }
                 Spacer()
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.7))
                 }
                 .buttonStyle(.plain)
             }
-            .padding()
-            .background(Color(NSColor.windowBackgroundColor))
+            .padding(24)
+            .background(headerGradient)
 
             Divider()
 
@@ -114,7 +126,7 @@ struct FieldRowView: View {
             Text(formatLabel(label))
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-                .frame(width: 120, alignment: .leading)
+                .frame(width: 140, alignment: .leading)
             
             Spacer()
             
@@ -130,7 +142,6 @@ struct FieldRowView: View {
                             .fontWeight(.medium)
                     }
                 } else if let dict = value as? [String: Any] {
-                    // Recursive call for nested objects
                     ForEach(dict.keys.sorted(), id: \.self) { k in
                         HStack {
                             Text(k).font(.caption).foregroundColor(.secondary)

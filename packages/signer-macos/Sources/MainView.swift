@@ -37,13 +37,16 @@ struct MainView: View {
                     IdentityResultView(data: data)
                     
                     Button("Return to Wallet") {
-                        state.cardData = nil
-                        entryMode = .wallet
+                        withAnimation {
+                            state.cardData = nil
+                            entryMode = .wallet
+                        }
                     }
                     .buttonStyle(.bordered)
+                    .padding(.bottom)
                 } else if entryMode == .wallet {
                     WalletView()
-                        .transition(.move(edge: .leading))
+                        .transition(.asymmetric(insertion: .move(edge: .leading), removal: .opacity))
                     
                     Button("Read New Card") {
                         withAnimation {
@@ -55,24 +58,27 @@ struct MainView: View {
                     .padding(.bottom)
                 } else if entryMode != .none {
                     EntryView(mode: $entryMode, pin: $pin, pin2: $pin2, mrz: $mrz, showScanner: $showScanner)
+                        .transition(.move(edge: .trailing))
                 } else {
                     CardMenuView(entryMode: $entryMode)
+                        .transition(.opacity)
                 }
                 
                 Spacer()
                 
-                // Status Bar
-                VStack(spacing: 8) {
-                    if state.isReading {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    }
-                    
+                // Bottom Status Bar (Hidden during full reading)
+                if !state.isReading {
                     Text(state.status)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .padding(.bottom, 20)
                 }
-                .padding(.bottom, 20)
+            }
+            
+            // Full screen loading overlay
+            if state.isReading {
+                LoadingOverlayView(status: state.status, progress: nil)
+                    .transition(.opacity)
             }
         }
         .sheet(isPresented: $showScanner) {

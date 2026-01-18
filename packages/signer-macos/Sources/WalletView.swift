@@ -70,25 +70,38 @@ struct CredentialRow: View {
     var icon: String {
         if credential.docType.contains("passport") { return "passport" }
         if credential.docType.contains("license") { return "person.badge.shield.check" }
-        if credential.docType.contains("resident") { return "house" }
-        return "doc.plaintext"
+        if credential.docType.contains("resident") { return "house.fill" }
+        return "doc.plaintext.fill"
+    }
+    
+    var gradient: LinearGradient {
+        if credential.docType.contains("passport") {
+            return LinearGradient(colors: [Color(red: 0.1, green: 0.2, blue: 0.4), Color(red: 0.2, green: 0.4, blue: 0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        } else if credential.docType.contains("license") {
+            return LinearGradient(colors: [Color.blue.opacity(0.8), Color.cyan.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        } else if credential.docType.contains("resident") {
+            return LinearGradient(colors: [Color.green.opacity(0.7), Color.teal.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+        return LinearGradient(colors: [Color.gray.opacity(0.6), Color.gray.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     
     var body: some View {
         HStack(spacing: 15) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.blue.opacity(0.1))
-                    .frame(width: 48, height: 48)
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(gradient)
+                    .frame(width: 54, height: 54)
+                    .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 2)
+                
                 Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(.blue)
+                    .font(.title3)
+                    .foregroundColor(.white)
             }
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(credential.name)
-                    .font(.headline)
-                Text(credential.docType)
+                Text(formatName(credential.name))
+                    .font(.system(.headline, design: .rounded))
+                Text(formatDocType(credential.docType))
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -96,16 +109,36 @@ struct CredentialRow: View {
             
             Spacer()
             
+            if let date = credential.createdAt {
+                Text(date, style: .date)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+            
             Image(systemName: "chevron.right")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(.secondary.opacity(0.5))
         }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+        )
+    }
+
+    private func formatName(_ name: String) -> String {
+        return name.replacingOccurrences(of: ".cose", with: "").replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private func formatDocType(_ docType: String) -> String {
+        if docType.contains("mDL") { return "Driver's License" }
+        if docType.contains("passport") { return "ICAO 9303 Passport" }
+        if docType.contains("resident") { return "Resident Record" }
+        return docType
     }
 }

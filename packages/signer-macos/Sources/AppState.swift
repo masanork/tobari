@@ -45,7 +45,7 @@ class AppState: ObservableObject {
     @MainActor
     func readMyNumber(pin: String) async {
         isReading = true
-        status = "Accessing My Number Card..."
+        status = "Identifying My Number Card..."
         error = nil
         
         let scm = SmartCardManager.shared
@@ -55,11 +55,12 @@ class AppState: ObservableObject {
         do {
             try await scm.establishSession()
             let jpki = JPKIController(manager: scm)
+            
+            status = "Reading Personal Attributes..."
             let info = try await jpki.readAttributes(pin: pin)
-            print("DEBUG: Attributes retrieved - Name: '\(info.name)', Address: '\(info.address)', Birth: '\(info.birthDate)', Gender: '\(info.gender)'")
 
+            status = "Verifying My Number..."
             let myNumber = try await jpki.readMyNumber(pin: pin)
-            print("DEBUG: My Number: '\(myNumber)'")
 
             let fields = [
                 "Name": info.name,
@@ -70,21 +71,16 @@ class AppState: ObservableObject {
             ]
 
             var photo: NSImage? = nil
-            var photoStatus = ""
+            status = "Extracting Face Photo (may take a few seconds)..."
             do {
                 let photoData = try await jpki.readFacePhoto(myNumber: myNumber)
                 photo = NSImage(data: photoData)
-                if photo == nil {
-                    photoStatus = " (Photo: failed to decode \(photoData.count) bytes)"
-                } else {
-                    photoStatus = " (Photo: OK)"
-                }
             } catch {
-                photoStatus = " (Photo error: \(error.localizedDescription))"
+                print("Photo extraction failed: \(error)")
             }
 
             self.cardData = IdentityData(type: "My Number Card", fields: fields, facePhoto: photo)
-            status = "Success" + photoStatus
+            status = "Ready"
         } catch {
             self.error = error.localizedDescription
             status = "Error"
@@ -95,7 +91,7 @@ class AppState: ObservableObject {
     @MainActor
     func readPassport(mrz: String? = nil, can: String? = nil) async {
         isReading = true
-        status = "Accessing Passport..."
+        status = "Connecting to Passport..."
         error = nil
         
         let scm = SmartCardManager.shared
@@ -108,11 +104,14 @@ class AppState: ObservableObject {
             try await controller.selectPassportAP()
             
             if let can = can {
+                status = "PACE Authentication (CAN)..."
                 try await controller.performPACE(password: can, isCan: true)
             } else if let mrz = mrz {
+                status = "BAC Authentication (MRZ)..."
                 try await controller.performBAC(mrz: mrz)
             }
             
+            status = "Reading Data Groups..."
             let info = try await controller.readFullPassportInfo()
             
             let fields = [
@@ -129,7 +128,7 @@ class AppState: ObservableObject {
             }
             
             self.cardData = IdentityData(type: "ePassport", fields: fields, facePhoto: photo)
-            status = "Success"
+            status = "Ready"
         } catch {
             self.error = error.localizedDescription
             status = "Error"
@@ -150,6 +149,8 @@ class AppState: ObservableObject {
         do {
             try await scm.establishSession()
             let controller = DriversLicenseController(manager: scm)
+            
+            status = "Verifying PIN & Extracting Text..."
             let info = try await controller.readData(pin1: pin1, pin2: pin2)
 
             var fields = [
@@ -171,7 +172,7 @@ class AppState: ObservableObject {
             }
 
             self.cardData = IdentityData(type: "Driver's License", fields: fields, facePhoto: photo)
-            status = "Success"
+            status = "Ready"
         } catch {
             self.error = error.localizedDescription
             status = "Error"
