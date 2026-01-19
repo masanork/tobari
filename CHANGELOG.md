@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.22] - 2026-01-19
+
+### Features
+- **FATF Travel Rule Compliance**:
+  - **Operational Mapping**: Defined a formal mapping between FATF risk tiers (Low/Medium/High) and required mDoc identity elements to enable risk-based selective disclosure.
+  - **Travel Rule Interface**: Specified a minimal OID4VP-based interface for VASP-to-Wallet interactions, including IVMS 101 mapping for inter-VASP data exchange.
+- **SCAC (Self-hosted Crypto Account Ownership Credential)**:
+  - **Updated Specification**: Enhanced the `org.jaopp.scac` namespace with `chain_id` and `verification_method` to support robust cross-chain compliance and technical interoperability.
+  - **Native mDoc Generation (Rust)**: Implemented `ScacData` structure and ISO 18013-5 compliant mDoc generation logic in the `civ` package.
+- **mDoc Implementation**:
+  - **Modular mDoc Engine**: Refactored the `mdoc` module in `civ` to support multiple document types and namespaces, improving extensibility for custom credentials.
+  - **Unit Testing**: Added comprehensive tests for SCAC mDoc generation, verifying CBOR structure and version compliance.
+
+### Fixes
+- **Civ Package**: Fixed a critical issue where the `mdoc` module was not included in the compilation tree due to a missing declaration in `lib.rs`, enabling cross-platform testing.
+
 ## [0.3.21] - 2026-01-18
 
 ### Features
