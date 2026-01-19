@@ -16,10 +16,13 @@ Based on ISO 18013-5, the SCAC uses the `org.jaopp.scac` namespace.
 
 | Element Identifier | Type | Description |
 |--------------------|------|-------------|
-| `wallet_address`   | tstr | Public key or address of the crypto wallet. |
-| `blockchain`       | tstr | Name of the network (e.g., "Ethereum", "Polygon"). |
+| `wallet_address`   | tstr | **Mandatory**. Public key or address of the crypto wallet (e.g., "0x..."). |
+| `blockchain`       | tstr | **Mandatory**. Name of the network (e.g., "Ethereum", "Bitcoin"). |
+| `chain_id`         | tstr | **Recommended**. Network identifier (e.g., "1" for Ethereum Mainnet, "137" for Polygon). |
+| `verification_method`| tstr| Method used to link ID to wallet (e.g., "jpki", "passport_nfc"). |
 | `verified_at`      | tfmt | Date and time the ownership was verified. |
-| `assurance_level`  | tstr | Level of identity verification (e.g., "high" if tied to JPKI). |
+| `assurance_level`  | tstr | Level of identity verification (e.g., "high", "substantial"). |
+| `issuer_id`        | tstr | Identifier of the SCAC issuer. |
 
 ## 3. Holder Binding
 

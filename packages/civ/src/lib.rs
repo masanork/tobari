@@ -9,6 +9,7 @@ pub mod jpdlmnc;
 pub mod jpki;
 pub mod jpki_utils;
 pub mod jprc;
+pub mod mdoc;
 pub mod models;
 pub mod mykad;
 pub mod native_reader;

@@ -40,6 +40,17 @@ impl IssuerSignedItem {
     }
 }
 
+/// SCAC (Self-hosted Crypto Account Ownership Credential) Data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScacData {
+    pub wallet_address: String,
+    pub blockchain: String,
+    pub chain_id: Option<String>,
+    pub verification_method: Option<String>,
+    pub assurance_level: Option<String>,
+    pub issuer_id: Option<String>,
+}
+
 /// Convert CitizenIdentity to mDoc Items for a specific namespace
 pub fn identity_to_mdoc_items(
     identity: &CitizenIdentity,
@@ -77,6 +88,132 @@ pub fn identity_to_mdoc_items(
 
     let _ = id; // Suppress unused assignment warning
     items
+}
+
+/// Convert ScacData to mDoc Items for org.jaopp.scac namespace
+pub fn scac_to_mdoc_items(data: &ScacData) -> Vec<IssuerSignedItem> {
+    let mut items = Vec::new();
+    let mut id = 0;
+
+    items.push(IssuerSignedItem::new(
+        id,
+        "wallet_address",
+        Value::Text(data.wallet_address.clone()),
+    ));
+    id += 1;
+
+    items.push(IssuerSignedItem::new(
+        id,
+        "blockchain",
+        Value::Text(data.blockchain.clone()),
+    ));
+    id += 1;
+
+    if let Some(v) = &data.chain_id {
+        items.push(IssuerSignedItem::new(id, "chain_id", Value::Text(v.clone())));
+        id += 1;
+    }
+    if let Some(v) = &data.verification_method {
+        items.push(IssuerSignedItem::new(
+            id,
+            "verification_method",
+            Value::Text(v.clone()),
+        ));
+        id += 1;
+    }
+    if let Some(v) = &data.assurance_level {
+        items.push(IssuerSignedItem::new(
+            id,
+            "assurance_level",
+            Value::Text(v.clone()),
+        ));
+        id += 1;
+    }
+    if let Some(v) = &data.issuer_id {
+        items.push(IssuerSignedItem::new(
+            id,
+            "issuer_id",
+            Value::Text(v.clone()),
+        ));
+        // id += 1;
+    }
+
+    items
+}
+
+/// Helper to generate a SCAC mDoc DeviceResponse
+pub fn generate_scac_mdoc(data: &ScacData) -> Result<Vec<u8>> {
+    let namespace = "org.jaopp.scac";
+    let doc_type = "org.jaopp.scac"; // Using namespace as docType for SCAC
+
+    let items = scac_to_mdoc_items(data);
+    let mut mso = MobileSecurityObject::new(doc_type);
+    mso.add_items(namespace, &items);
+
+    let mso_cbor = mso.to_cbor();
+
+    // Create COSE Sign1 (Mock for now)
+    use coset::{iana, CoseSign1Builder, HeaderBuilder};
+
+    let protected = HeaderBuilder::new()
+        .algorithm(iana::Algorithm::ES256)
+        .build();
+
+    let signer = CoseSign1Builder::new()
+        .protected(protected)
+        .payload(mso_cbor)
+        .build();
+
+    // Use coset's native serialization
+    use coset::CborSerializable;
+    let issuer_auth_bytes = signer
+        .to_vec()
+        .map_err(|e| anyhow::anyhow!("COSE serialization error: {:?}", e))?;
+
+    // Encode Items as tagged bytes for IssuerSigned
+    let mut name_spaces = std::collections::HashMap::new();
+    let mut encoded_items = Vec::new();
+    for item in items {
+        encoded_items.push(Value::Bytes(item.to_cbor()));
+    }
+    name_spaces.insert(namespace.to_string(), Value::Array(encoded_items));
+
+    let issuer_signed = Value::Map(vec![
+        (
+            Value::Text("nameSpaces".to_string()),
+            Value::Map(vec![(
+                Value::Text(namespace.to_string()),
+                name_spaces.get(namespace).unwrap().clone(),
+            )]),
+        ),
+        (
+            Value::Text("issuerAuth".to_string()),
+            Value::Bytes(issuer_auth_bytes),
+        ),
+    ]);
+
+    let document = Value::Map(vec![
+        (
+            Value::Text("docType".to_string()),
+            Value::Text(doc_type.to_string()),
+        ),
+        (Value::Text("issuerSigned".to_string()), issuer_signed),
+    ]);
+
+    let response = Value::Map(vec![
+        (
+            Value::Text("version".to_string()),
+            Value::Text("1.0".to_string()),
+        ),
+        (
+            Value::Text("documents".to_string()),
+            Value::Array(vec![document]),
+        ),
+    ]);
+
+    let mut mdoc_bytes = Vec::new();
+    ciborium::ser::into_writer(&response, &mut mdoc_bytes)?;
+    Ok(mdoc_bytes)
 }
 
 /// Helper to generate a full mDoc DeviceResponse (Simplified)
@@ -172,6 +309,35 @@ mod tests {
         };
 
         let res = generate_mdoc(&identity, "org.iso.18013.5.1");
+        assert!(res.is_ok());
+        let mdoc = res.unwrap();
+        assert!(!mdoc.is_empty());
+
+        // Basic CBOR check
+        let val: Value = ciborium::de::from_reader(&mdoc[..]).unwrap();
+        if let Value::Map(map) = val {
+            let version = map
+                .iter()
+                .find(|(k, _)| k.as_text() == Some("version"))
+                .unwrap()
+                .1
+                .as_text();
+            assert_eq!(version, Some("1.0"));
+        }
+    }
+
+    #[test]
+    fn test_generate_scac_mdoc() {
+        let data = ScacData {
+            wallet_address: "0x1234567890abcdef1234567890abcdef12345678".to_string(),
+            blockchain: "Ethereum".to_string(),
+            chain_id: Some("1".to_string()),
+            verification_method: Some("jpki".to_string()),
+            assurance_level: Some("high".to_string()),
+            issuer_id: None,
+        };
+
+        let res = generate_scac_mdoc(&data);
         assert!(res.is_ok());
         let mdoc = res.unwrap();
         assert!(!mdoc.is_empty());

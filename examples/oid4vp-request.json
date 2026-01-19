@@ -1,0 +1,28 @@
+{
+  "client_id": "did:example:verifier",
+  "response_uri": "https://verifier.example.com/callback",
+  "nonce": "n-0S6_WzA2Mj",
+  "presentation_definition": {
+    "id": "vp-request-scac",
+    "input_descriptors": [
+      {
+        "id": "scac",
+        "constraints": {
+          "fields": [
+            { "path": ["$.mdoc.org.jaopp.scac.wallet_address"] },
+            { "path": ["$.mdoc.org.jaopp.scac.blockchain"] }
+          ]
+        }
+      },
+      {
+        "id": "identity",
+        "constraints": {
+          "fields": [
+             { "path": ["$.mdoc.org.iso.18013.5.1.family_name"] },
+             { "path": ["$.mdoc.org.iso.18013.5.1.birth_date"] }
+          ]
+        }
+      }
+    ]
+  }
+}

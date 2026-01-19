@@ -25,9 +25,10 @@
 - [x] **AI-Ready Identity**: Implemented mdoc-to-JSON translation to enable LLM agents to process complex identity documents.
 // ... (omitted) ...
 ### Compliance & SCAC
-- [ ] **FATF/SCAC Operations Mapping**
-  - [ ] Create correspondence table for VASP risk assessment vs VP elements.
-  - [ ] Draft minimal Travel Rule interface.
+- [x] **FATF/SCAC Operations Mapping**: Created correspondence table for VASP risk assessment vs VP elements in `docs/FATF_OPERATIONS_MAP.md`.
+- [x] **Travel Rule Interface Draft**: Defined minimal OID4VP-based interface in `docs/TRAVEL_RULE_INTERFACE.md`.
+- [x] **SCAC mDoc Implementation**: Implemented `org.jaopp.scac` mDoc generation and testing in `packages/civ`.
+- [ ] **OID4VP Implementation**: Extend `present-cli` to handle `presentation_definition` and generate compliant responses.
 - [x] **DTC Type 1 Implementation**: Enhanced `issue_identity_document` to support ICAO DTC Type 1 (Derived) structure, preserving government signatures.
 - [x] **Passport SOD Verification**: Implemented government signature verification against 570+ CSCA root certificates.
 
