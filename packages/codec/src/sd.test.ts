@@ -6,19 +6,19 @@ const { encodeCanonical: encode } = await import('../../crypto/src/cbor');
 
 describe("Selective Disclosure (sd.ts)", () => {
   test("creates a presentation with selected fields", async () => {
-    // 1. Create mock IssuerSignedItem bytes
-    const item1 = encode({
-      digestID: 1,
-      random: new Uint8Array(16),
-      elementIdentifier: "family_name",
-      elementValue: "Yamada"
-    });
-    const item2 = encode({
-      digestID: 2,
-      random: new Uint8Array(16),
-      elementIdentifier: "given_name",
-      elementValue: "Taro"
-    });
+    // 1. Create mock IssuerSignedItem bytes as ARRAYS (matching encodeIssuerSignedItem)
+    const item1 = encode([
+      1, // digestID
+      new Uint8Array(16), // random
+      "family_name", // elementIdentifier
+      "Yamada" // elementValue
+    ]);
+    const item2 = encode([
+      2,
+      new Uint8Array(16),
+      "given_name",
+      "Taro"
+    ]);
 
     // 2. Create mock MSO
     const mso = {
@@ -67,8 +67,8 @@ describe("Selective Disclosure (sd.ts)", () => {
     // Check if the item is indeed family_name
     const { decode } = await import('../../crypto/src/cbor');
     const disclosedItem = decode(vp.issuerSigned.nameSpaces["org.iso.18013.5.1"][0]);
-    expect(disclosedItem.elementIdentifier).toBe("family_name");
-    expect(disclosedItem.elementValue).toBe("Yamada");
+    expect(disclosedItem[2]).toBe("family_name"); // elementIdentifier
+    expect(disclosedItem[3]).toBe("Yamada"); // elementValue
 
     // Ensure issuerAuth is preserved
     expect(vp.issuerSigned.issuerAuth).toEqual(issuerAuth);

@@ -12,6 +12,7 @@ import * as path from "path";
 import { runUnifiedSigner, isErrorResponse, isSuccessResponse } from "../unified-signer.js";
 import { getNativeSignerPath } from "../utils.js";
 import { generateSignedTobari } from "@tobari/codec/tobari-gen";
+import { extractFieldsFromDefinition, parseOid4vpRequest } from "@tobari/codec/presentation-exchange";
 
 /**
  * Application document structure (matches Swift ApplicationDocument)
@@ -234,10 +235,36 @@ export async function handleIssueWithBinding(toolArgs: any) {
  */
 export async function handleCreateOid4vpPresentation(toolArgs: any) {
     try {
-        const { documentPath, disclosureFields, verifierId, nonce, responseUri, outputPath } = toolArgs;
+        let { documentPath, disclosureFields, verifierId, nonce, responseUri, presentationDefinition, outputPath } = toolArgs;
 
         if (!documentPath) {
             throw new Error("documentPath is required");
+        }
+
+        // Process presentation definition if provided
+        if (presentationDefinition) {
+            const json = typeof presentationDefinition === "string" 
+                ? JSON.parse(presentationDefinition) 
+                : presentationDefinition;
+            
+            const parsed = parseOid4vpRequest(json);
+            
+            if (parsed.definition) {
+                const extractedFields = extractFieldsFromDefinition(parsed.definition);
+                // Merge or set fields
+                if (!disclosureFields || disclosureFields.length === 0) {
+                    disclosureFields = extractedFields;
+                }
+            }
+
+            // Auto-fill session data if not provided
+            if (!verifierId && parsed.clientId) verifierId = parsed.clientId;
+            if (!nonce && parsed.nonce) nonce = parsed.nonce;
+            if (!responseUri && parsed.responseUri) responseUri = parsed.responseUri;
+        }
+
+        if (!verifierId || !nonce) {
+            throw new Error("verifierId and nonce are required (either directly or via presentationDefinition)");
         }
 
         const signerPath = getNativeSignerPath();
@@ -325,6 +352,6 @@ import { z } from "zod";
 export const holderBindingTools: McpTool<any>[] = [
     { name: "create_application", description: "Creates an application with holder binding.", schema: z.object({ requestedDocType: z.string(), requestedFields: z.array(z.string()).optional(), jpkiPin: z.string().optional(), outputPath: z.string() }), handler: handleCreateApplication },
     { name: "issue_with_binding", description: "Issues an mdoc with binding.", schema: z.object({ applicationPath: z.string(), docSchemaPath: z.string(), issuerKeyPath: z.string(), outputPath: z.string() }), handler: handleIssueWithBinding },
-    { name: "create_oid4vp_presentation", description: "Creates an OID4VP presentation.", schema: z.object({ documentPath: z.string(), disclosureFields: z.array(z.string()).optional(), verifierId: z.string(), nonce: z.string(), responseUri: z.string().optional(), outputPath: z.string() }), handler: handleCreateOid4vpPresentation }
+    { name: "create_oid4vp_presentation", description: "Creates an OID4VP presentation from a document and optional DIF Presentation Definition.", schema: z.object({ documentPath: z.string(), disclosureFields: z.array(z.string()).optional(), verifierId: z.string().optional(), nonce: z.string().optional(), responseUri: z.string().optional(), presentationDefinition: z.any().optional(), outputPath: z.string() }), handler: handleCreateOid4vpPresentation }
 ];
 

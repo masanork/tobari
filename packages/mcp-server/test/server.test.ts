@@ -1,29 +1,28 @@
-import { spawn } from "node:child_process";
 import { describe, it, expect, afterAll } from "bun:test";
 import path from "path";
-import { decode } from "cbor-x";
 import * as fs from "fs/promises";
 
 describe("MCP Server", () => {
     const serverPath = path.resolve(import.meta.dir, "../src/index.ts");
-    // Use a temporary key file for testing to avoid Touch ID prompts
-    const tmpKeyFile = path.resolve(import.meta.dir, "tmp_test_key.bin");
+    // Use a temporary key file for testing
+    const tmpKeyFile = path.resolve(import.meta.dir, "tmp_server_test_key.bin");
 
     afterAll(async () => {
-        // Clean up temporary key file
         try {
             await fs.unlink(tmpKeyFile);
-        } catch {}
+        } catch {} // Ignore errors during cleanup
     });
 
     async function callTool(name: string, args: any) {
-        const proc = spawn("bun", ["run", serverPath], {
-            stdio: ["pipe", "pipe", "pipe"],
+        const proc = Bun.spawn(["bun", "run", serverPath], {
+            stdin: "pipe",
+            stdout: "pipe",
+            stderr: "pipe",
             env: {
                 ...process.env,
-                TOBARI_SIGNER_SOFTWARE_KEY: "1",  // Use software key for tests
-                TOBARI_SIGNER_KEY_FILE: tmpKeyFile,  // Persist key across processes
-                TOBARI_SIGNER_PATH: "disabled" // Force JS implementation fallback
+                TOBARI_SIGNER_SOFTWARE_KEY: "1",
+                TOBARI_SIGNER_KEY_FILE: tmpKeyFile,
+                TOBARI_SIGNER_PATH: "disabled"
             }
         });
 
@@ -45,41 +44,19 @@ describe("MCP Server", () => {
             params: { name, arguments: args }
         };
 
-        if (!proc.stdin || !proc.stdout) throw new Error("No stdio");
-
         proc.stdin.write(JSON.stringify(initReq) + "\n");
         proc.stdin.write(JSON.stringify(toolReq) + "\n");
+        proc.stdin.end();
 
-        let outputBuffer = "";
-        let errorBuffer = "";
-        proc.stdout.on("data", (chunk) => {
-            outputBuffer += chunk.toString();
-        });
-        proc.stderr?.on("data", (chunk) => {
-            errorBuffer += chunk.toString();
-            console.error(`[Server Stderr] ${chunk.toString()}`);
-        });
-
-        const waitForResponse = async () => {
-            for (let i = 0; i < 150; i++) {
-                if (outputBuffer.includes('"id":1')) return;
-                await new Promise(r => setTimeout(r, 200));
-            }
-            throw new Error(`Timeout waiting for response. Output: ${outputBuffer}`);
-        };
-
-        try {
-            await waitForResponse();
-        } finally {
-            proc.kill();
-        }
-
-        const lines = outputBuffer.split("\n");
+        const stdout = await new Response(proc.stdout).text();
+        const stderr = await new Response(proc.stderr).text();
+        
+        const lines = stdout.split("\n");
         const responseLine = lines.find(l => {
             try { return JSON.parse(l).id === 1; } catch { return false; }
         });
 
-        if (!responseLine) throw new Error("No response line found in: " + outputBuffer);
+        if (!responseLine) throw new Error(`No response line found in: ${stdout}\nStderr: ${stderr}`);
         return JSON.parse(responseLine);
     }
 

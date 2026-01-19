@@ -15,7 +15,7 @@ describe("Signer-macOS & MCP Integration", () => {
         }
 
         // Create a temporary key file for this test session
-        const tmpKeyFile = path.join(PROJECT_ROOT, "packages/mcp-server/test/tmp_test_key.bin");
+        const tmpKeyFile = path.join(PROJECT_ROOT, "packages/mcp-server/test/tmp_signer_test_key.bin");
 
         const env = {
             ...process.env,
@@ -71,6 +71,10 @@ describe("Signer-macOS & MCP Integration", () => {
 
         // Get encryption public key using register_device
         const registerResult = await callSigner("register_device", {});
+        // console.log("Register Result:", JSON.stringify(registerResult, null, 2));
+        if (!registerResult.data || !registerResult.data.encryptionPublicKey) {
+            throw new Error(`Invalid register_device result: ${JSON.stringify(registerResult)}`);
+        }
         const encryptionPubKeyJson = JSON.parse(registerResult.data.encryptionPublicKey);
         const { x, y } = encryptionPubKeyJson;
 
