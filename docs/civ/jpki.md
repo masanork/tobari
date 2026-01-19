@@ -141,10 +141,40 @@ Used in **Basic 4 Info** (Card-AP `00 02`, Surface-AP `00 01`).
 - `0`: Unknown
 - `9`: Other
 
+### 8.2 Date Codes (Japanese Era & Special Values)
+Defined in J-LIS JPKI Profile Specification. Used in **Basic 4 Info** DOB field.
+
+**Format**: `EYYYYMMDD` (9 chars, Numeric/Alpha)
+- **E**: Era Code
+- **YYYY**: Western Year (4 digits)
+- **MM**: Month or Season Code
+- **DD**: Day or Period Code
+
+| Type | Code | Meaning | Western Start |
+|---|---|---|---|
+| **Era (E)** | `1` | Meiji (明治) | 1868 |
+| | `2` | Taisho (大正) | 1912 |
+| | `3` | Showa (昭和) | 1926 |
+| | `4` | Heisei (平成) | 1989 |
+| | `5` | Reiwa (令和) | 2019 |
+| | `0` | Unknown (不明) | |
+| **Month (MM)** | `01`-`12` | Month | |
+| | `A1` | Spring (春) | |
+| | `A2` | Summer (夏) | |
+| | `A3` | Autumn (秋) | |
+| | `A4` | Winter (冬) | |
+| | `00` | Unknown (不明) | |
+| **Day (DD)** | `01`-`31` | Day | |
+| | `A1` | Early (上旬) | |
+| | `A2` | Mid (中旬) | |
+| | `A3` | Late (下旬) | |
+| | `00` | Unknown (不明) | |
+
 ## 9. Reference
 
+- [J-LIS 公的個人認証サービス プロファイル仕様書 3.1.1 版](https://www.j-lis.go.jp/file.jsp?id=3223)
+- [J-LIS JPKI利用者クライアントソフトに係る技術仕様について](https://www.j-lis.go.jp/jpki/procedure/procedure1_2_3.html)
 - [myna - マイナンバーカード・ユーティリティ](https://github.com/jpki/myna)
 - [OSSTech Corp / libjeid-android-app](https://github.com/OSSTech-jp/libjeid-android-app)
 - [treastrain/TRETJapanNFCReader: NFC (FeliCa) Reader for iOS 13 later Core NFC / Japanese e-Money prepaid or identification cards](https://github.com/treastrain/TRETJapanNFCReader)
 - [マイナンバーカードから顔写真データを読み込む \#APDU \- Qiita](https://qiita.com/ribig/items/3814cf7f095854ce0e61)
-- [J-LIS JPKI利用者クライアントソフトに係る技術仕様について](https://www.j-lis.go.jp/jpki/procedure/procedure1_2_3.html)
