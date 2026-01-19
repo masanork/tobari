@@ -46,7 +46,13 @@ pub fn parse_basic_info(data: &[u8]) -> crate::errors::Result<BasicInfo> {
     
     if let Some(v) = tag_map.get(&0xDF22) { info.name = v.clone(); }
     if let Some(v) = tag_map.get(&0xDF23) { info.address = v.clone(); }
-    if let Some(v) = tag_map.get(&0xDF24) { info.birth_date = v.clone(); }
+    if let Some(v) = tag_map.get(&0xDF24) { 
+        if let Some(date) = crate::jp_date::JapanDate::from_str(v) {
+            info.birth_date = date.to_string();
+        } else {
+            info.birth_date = v.clone(); 
+        }
+    }
     if let Some(v) = tag_map.get(&0xDF25) { info.gender = v.clone(); }
     
     Ok(info)

@@ -6,6 +6,7 @@ pub mod gaiji;
 pub mod icao9303;
 pub mod jpdl;
 pub mod jpdlmnc;
+pub mod jp_date;
 pub mod jpki;
 pub mod jpki_utils;
 pub mod jprc;

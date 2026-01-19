@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.23] - 2026-01-20
+
+### Features
+- **Japanese Date Support (JPKI/Civ)**:
+  - **Native Date Parsing**: Implemented a specialized `jp_date` module in the `civ` crate to handle the unique date formats defined in the J-LIS JPKI Profile specification.
+  - **Special Code Support**: Added full support for special date codes such as "Spring/Summer/Autumn/Winter" (Season), "Early/Mid/Late" (Period), and Era codes (Meiji to Reiwa), ensuring "Unknown" values are correctly represented as "不明".
+  - **Automatic Formatting**: Integrated `JapanDate` into the JPKI attribute parsing logic, automatically converting raw date strings (e.g., "5050501") into human-readable text (e.g., "令和5年5月1日") for the "Basic 4 Information" (Name, Address, DOB, Gender).
+
 ## [0.3.22] - 2026-01-19
 
 ### Features
