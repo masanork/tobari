@@ -46,9 +46,9 @@
 - [ ] **Production ZKP Pipeline (snarkjs)**
 
 ### 🏛️ Regulatory Compliance (Travel Rule & FATF)
-- [ ] **Audit Trail Architecture**: Design the schema for VASP-side logging of "SCAC Issue/Verify" events to link anonymized ZKPs with real identities for audit purposes.
-- [ ] **LEA Endpoint Specification**: Define a standardized API/Protocol for Law Enforcement Agencies to query the underlying identity of a ZKP subject (given a warrant).
-- [ ] **IVMS101 Extension**: Draft a proposal for embedding ZKP-based "Pointer References" and "Issuer Signatures" into the standard FATF data exchange format.
+- [ ] **Traceability Data Spec**: Define the standard for embedding audit identifiers (`cso_serial_number`, etc.) within SCAC and the metadata structure returned to VASPs upon issuance to ensure legal reachability.
+- [ ] **IVMS101 Integration Profile**: Define a standard profile for embedding Tobari ZKPs (SCAC/BBS+) into existing FATF IVMS101 message structures (e.g., using `national_identification` or extension fields).
+- [ ] **Issuer Discovery Protocol**: Specify the resolution method to obtain the LEA (Law Enforcement Agency) contact endpoint from the Issuer ID (`did` or X.509 DN) embedded in the credential.
 
 ### Civ Library Refinement
 - [x] **Error Handling**: Explicitly handle card-specific errors (`IncorrectPin`, `CardLocked`) across all platforms.
