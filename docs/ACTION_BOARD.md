@@ -44,7 +44,12 @@
 - [x] **BBS+ Unlinkable Credentials (Tauri)**: Integrated keygen and proof generation into Tauri signer.
 - [ ] **BBS+ Portability**: Port/Bridge BBS+ implementation to `signer-macos` via Rust FFI.
 - [ ] **Production ZKP Pipeline (snarkjs)**
-// ... (omitted) ...
+
+### 🏛️ Regulatory Compliance (Travel Rule & FATF)
+- [ ] **Audit Trail Architecture**: Design the schema for VASP-side logging of "SCAC Issue/Verify" events to link anonymized ZKPs with real identities for audit purposes.
+- [ ] **LEA Endpoint Specification**: Define a standardized API/Protocol for Law Enforcement Agencies to query the underlying identity of a ZKP subject (given a warrant).
+- [ ] **IVMS101 Extension**: Draft a proposal for embedding ZKP-based "Pointer References" and "Issuer Signatures" into the standard FATF data exchange format.
+
 ### Civ Library Refinement
 - [x] **Error Handling**: Explicitly handle card-specific errors (`IncorrectPin`, `CardLocked`) across all platforms.
 - [x] **Extended Length APDU**: Implemented and verified for large data (e.g., high-res face photos) across macOS and Rust controllers.
