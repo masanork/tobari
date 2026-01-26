@@ -16,10 +16,37 @@ use ml_dsa::{
     KeyGen,
     Signature as MlSignature,
     SigningKey as MlSigningKey,
-    VerifyingKey as MlVerifyingKey
+    VerifyingKey as MlVerifyingKey,
+    ExpandedSigningKey,
+    EncodedVerifyingKey,
+    EncodedSignature
 };
 #[cfg(feature = "pqc_dsa")]
-use ml_dsa::signature::{Signer, Verifier};
+use ml_dsa::signature::{Signer, Verifier, SignatureEncoding};
+
+#[cfg(feature = "pqc_dsa")]
+struct RngWrapper<R>(R);
+
+#[cfg(feature = "pqc_dsa")]
+impl<R: rand::RngCore> rand_core::TryRng for RngWrapper<R> {
+    type Error = core::convert::Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.0.next_u32())
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(self.0.next_u64())
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
+        self.0.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+#[cfg(feature = "pqc_dsa")]
+impl<R: rand::CryptoRng + rand::RngCore> rand_core::TryCryptoRng for RngWrapper<R> {}
 
 #[cfg(feature = "pqc_kem")]
 use ml_kem::{
@@ -214,9 +241,12 @@ pub fn derive_p256_keypair(seed: &[u8]) -> Result<Vec<u8>, JsValue> {
 #[cfg(feature = "pqc_dsa")]
 #[wasm_bindgen]
 pub fn ml_dsa_65_generate_keypair() -> Result<Vec<u8>, JsValue> {
-    let mut rng = StdRng::from_entropy();
-    let kp = MlDsa65::key_gen(&mut rng);
-    let sk_bytes = kp.signing_key().encode();
+    let rng = StdRng::from_entropy();
+    let mut wrapped_rng = RngWrapper(rng);
+    let kp = MlDsa65::key_gen(&mut wrapped_rng);
+
+    #[allow(deprecated)]
+    let sk_bytes = kp.signing_key().to_expanded();
     let vk_bytes = kp.verifying_key().encode();
 
     let mut out = Vec::with_capacity(sk_bytes.len() + vk_bytes.len());
@@ -228,23 +258,25 @@ pub fn ml_dsa_65_generate_keypair() -> Result<Vec<u8>, JsValue> {
 #[cfg(feature = "pqc_dsa")]
 #[wasm_bindgen]
 pub fn ml_dsa_65_sign(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>, JsValue> {
-    let sk_array = <&ml_dsa::EncodedSigningKey<MlDsa65>>::try_from(private_key)
+    let sk_array = ExpandedSigningKey::<MlDsa65>::try_from(private_key)
         .map_err(|_| JsValue::from_str("Invalid private key length"))?;
-    let signing_key = MlSigningKey::<MlDsa65>::decode(sk_array);
+
+    #[allow(deprecated)]
+    let signing_key = MlSigningKey::<MlDsa65>::from_expanded(&sk_array);
     let signature = signing_key.sign(message);
-    Ok(signature.encode().to_vec())
+    Ok(signature.to_bytes().to_vec())
 }
 
 #[cfg(feature = "pqc_dsa")]
 #[wasm_bindgen]
 pub fn ml_dsa_65_verify(public_key: &[u8], message: &[u8], signature_bytes: &[u8]) -> Result<bool, JsValue> {
-    let vk_array = <&ml_dsa::EncodedVerifyingKey<MlDsa65>>::try_from(public_key)
+    let vk_array = EncodedVerifyingKey::<MlDsa65>::try_from(public_key)
         .map_err(|_| JsValue::from_str("Invalid public key length"))?;
-    let verifying_key = MlVerifyingKey::<MlDsa65>::decode(vk_array);
+    let verifying_key = MlVerifyingKey::<MlDsa65>::decode(&vk_array);
 
-    let sig_array = <&ml_dsa::EncodedSignature<MlDsa65>>::try_from(signature_bytes)
+    let sig_array = EncodedSignature::<MlDsa65>::try_from(signature_bytes)
         .map_err(|_| JsValue::from_str("Invalid signature length"))?;
-    let signature = MlSignature::<MlDsa65>::decode(sig_array)
+    let signature = MlSignature::<MlDsa65>::decode(&sig_array)
         .ok_or_else(|| JsValue::from_str("Invalid signature data"))?;
     Ok(verifying_key.verify(message, &signature).is_ok())
 }
